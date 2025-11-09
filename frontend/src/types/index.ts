@@ -66,3 +66,46 @@ export interface WebSocketMessage {
   type: string;
   data: any;
 }
+
+// ============================================================================
+// Desktop App Types
+// ============================================================================
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  completed: boolean;
+  parent_id?: string | null;
+}
+
+export interface TaskList {
+  id: string;
+  name: string;
+  tasks: Task[];
+}
+
+export interface FileNode {
+  id: string;
+  name: string;
+  type: "file" | "directory";
+  parent_id?: string | null;
+  content?: string | null;
+  mime_type?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BrowserPage {
+  id: string;
+  url: string;
+  title: string;
+  content: string;
+}
