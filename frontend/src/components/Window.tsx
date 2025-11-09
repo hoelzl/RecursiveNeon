@@ -42,7 +42,7 @@ export function Window({ window }: WindowProps) {
         }}
         onMouseDown={() => focusWindow(window.id)}
       >
-        <div className="window-titlebar">
+        <div className="window-titlebar" onMouseDown={() => focusWindow(window.id)}>
           <div className="window-title">{window.title}</div>
           <div className="window-controls">
             <button
