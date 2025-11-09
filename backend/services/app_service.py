@@ -6,8 +6,8 @@ Manages state for desktop applications (notes, tasks, filesystem, browser).
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from models.game_state import GameState
-from models.app_models import (
+from ..models.game_state import GameState
+from ..models.app_models import (
     Note,
     Task,
     TaskList,
