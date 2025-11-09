@@ -22,12 +22,32 @@ def mock_llm():
     """
     from langchain_core.runnables import Runnable
     from langchain_core.language_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import LLMResult, Generation
 
     # Create a more sophisticated mock that inherits from a base class
     # This avoids Pydantic validation issues with ConversationChain
     mock = Mock(spec=BaseChatModel)
-    mock.invoke = Mock(return_value="Mock response from LLM")
-    mock.ainvoke = AsyncMock(return_value="Mock async response from LLM")
+
+    # Create a proper LLMResult object
+    default_response = "Mock response from LLM"
+    llm_result = LLMResult(
+        generations=[[Generation(text=default_response)]],
+        llm_output={}
+    )
+
+    # Return AIMessage objects for message-based methods
+    mock.invoke = Mock(return_value=AIMessage(content=default_response))
+    mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
+
+    # Add additional methods that ConversationChain might use
+    mock.generate_prompt = Mock(return_value=llm_result)
+    mock.predict = Mock(return_value=default_response)
+    mock.predict_messages = Mock(return_value=AIMessage(content=default_response))
+    mock.__call__ = Mock(return_value=default_response)
+
+    # Make the mock iterable (return empty list) to avoid "not iterable" errors
+    mock.__iter__ = Mock(return_value=iter([]))
 
     # Add necessary attributes for LangChain compatibility
     mock._is_runnable = True

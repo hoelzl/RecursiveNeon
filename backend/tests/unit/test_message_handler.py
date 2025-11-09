@@ -245,7 +245,7 @@ class TestMessageHandlerIntegration:
         system_state.status = SystemStatus.READY
 
         # Create mock NPC manager with realistic behavior
-        mock_npc_manager = AsyncMock()
+        mock_npc_manager = Mock()
         test_npc = NPC(
             id="guide",
             name="Luna",
@@ -257,12 +257,14 @@ class TestMessageHandlerIntegration:
             greeting="Hi! I'm Luna, your guide.",
             conversation_style="friendly and patient"
         )
-        mock_npc_manager.list_npcs.return_value = [test_npc]
-        mock_npc_manager.chat.return_value = ChatResponse(
+        # list_npcs is synchronous, not async
+        mock_npc_manager.list_npcs = Mock(return_value=[test_npc])
+        # chat is async
+        mock_npc_manager.chat = AsyncMock(return_value=ChatResponse(
             npc_id="guide",
             npc_name="Luna",
             message="Welcome! How can I help you today?"
-        )
+        ))
 
         # Create message handler
         handler = MessageHandler(
