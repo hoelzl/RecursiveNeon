@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { wsClient } from '../../services/websocket';
-import { NPC, ChatMessage as ChatMessageType } from '../../types';
+import { ChatMessage as ChatMessageType } from '../../types';
 
 interface Message {
   sender: 'user' | 'npc';
@@ -63,10 +63,12 @@ export function ChatApp() {
       // Always clear sending state when any response is received
       setSending(false);
 
-      // Restore focus to input field after response
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 0);
+      // Restore focus to input field after response (only if this is the selected NPC)
+      if (selectedNPCId === data.npc_id) {
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 100);
+      }
     };
 
     const handleChatThinking = () => {
@@ -96,6 +98,11 @@ export function ChatApp() {
         npcName: selectedNPC.name,
       }));
       setMessages(history);
+
+      // Auto-focus the input field when switching to a new NPC
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     } else {
       setMessages([]);
     }
