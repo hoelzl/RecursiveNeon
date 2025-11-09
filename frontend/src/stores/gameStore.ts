@@ -4,34 +4,12 @@
 
 import { create } from 'zustand';
 import { NPC, WindowState, SystemStatus } from '../types';
+import { IGameStore } from '../contexts/GameStoreContext';
 
-interface GameStore {
-  // NPCs
-  npcs: NPC[];
-  setNPCs: (npcs: NPC[]) => void;
-  getNPC: (id: string) => NPC | undefined;
-  updateNPC: (id: string, updates: Partial<NPC>) => void;
+// Re-export the interface for convenience
+export type { IGameStore };
 
-  // Windows
-  windows: WindowState[];
-  nextZIndex: number;
-  openWindow: (window: Omit<WindowState, 'id' | 'zIndex'>) => void;
-  closeWindow: (id: string) => void;
-  minimizeWindow: (id: string) => void;
-  restoreWindow: (id: string) => void;
-  focusWindow: (id: string) => void;
-  updateWindow: (id: string, updates: Partial<WindowState>) => void;
-
-  // System status
-  systemStatus: SystemStatus | null;
-  setSystemStatus: (status: SystemStatus) => void;
-
-  // Connection status
-  connected: boolean;
-  setConnected: (connected: boolean) => void;
-}
-
-export const useGameStore = create<GameStore>((set, get) => ({
+export const useGameStore = create<IGameStore>((set, get) => ({
   // NPCs
   npcs: [],
   setNPCs: (npcs) => set({ npcs }),

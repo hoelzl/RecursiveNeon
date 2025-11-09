@@ -1,9 +1,12 @@
 """
 NPC Manager - Orchestrates NPC conversations using LangChain
+
+This module has been refactored for dependency injection to improve testability.
+The NPCManager now accepts an LLM instance via constructor injection.
 """
 import logging
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from langchain_ollama import ChatOllama
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationChain
@@ -11,34 +14,83 @@ from langchain.prompts import PromptTemplate
 
 from ..models.npc import NPC, NPCPersonality, NPCRole, ChatResponse
 from ..config import settings
+from .interfaces import INPCManager, LLMInterface
 
 logger = logging.getLogger(__name__)
 
 
-class NPCManager:
+class NPCManager(INPCManager):
     """
     Manages all NPCs and their conversations
+
+    This class has been refactored to support dependency injection for better testability.
+    The LLM instance is now injected via the constructor, allowing for easy mocking in tests.
 
     Uses LangChain for:
     - Conversation management
     - Memory/context handling
     - Prompt templating
+
+    Example:
+        # Production usage with real LLM
+        llm = ChatOllama(base_url="http://localhost:11434", model="llama3.2:3b")
+        manager = NPCManager(llm=llm)
+
+        # Test usage with mock LLM
+        mock_llm = Mock(spec=LLMInterface)
+        manager = NPCManager(llm=mock_llm)
     """
 
-    def __init__(self, ollama_host: str = None, ollama_port: int = None):
-        self.ollama_host = ollama_host or settings.ollama_host
-        self.ollama_port = ollama_port or settings.ollama_port
+    def __init__(self, llm: Optional[LLMInterface] = None, ollama_host: str = None, ollama_port: int = None):
+        """
+        Initialize NPCManager with dependency injection.
+
+        Args:
+            llm: Language model instance (injected dependency). If None, creates default ChatOllama.
+            ollama_host: Ollama server host (deprecated, use llm parameter instead)
+            ollama_port: Ollama server port (deprecated, use llm parameter instead)
+        """
         self.npcs: Dict[str, NPC] = {}
         self.chains: Dict[str, ConversationChain] = {}
 
-        # Initialize LangChain LLM
-        self.llm = ChatOllama(
-            base_url=f"http://{self.ollama_host}:{self.ollama_port}",
+        # Support both new dependency injection and legacy initialization
+        if llm is not None:
+            # New approach: injected dependency
+            self.llm = llm
+            logger.info("NPCManager initialized with injected LLM")
+        else:
+            # Legacy approach: create LLM internally (for backward compatibility)
+            self.ollama_host = ollama_host or settings.ollama_host
+            self.ollama_port = ollama_port or settings.ollama_port
+            self.llm = ChatOllama(
+                base_url=f"http://{self.ollama_host}:{self.ollama_port}",
+                model=settings.default_model,
+                temperature=0.7,
+            )
+            logger.info("NPCManager initialized with default LLM")
+
+    @classmethod
+    def create_with_ollama(cls, ollama_host: str = None, ollama_port: int = None) -> 'NPCManager':
+        """
+        Factory method to create NPCManager with Ollama LLM.
+
+        This is a convenience method for production use cases.
+
+        Args:
+            ollama_host: Ollama server host
+            ollama_port: Ollama server port
+
+        Returns:
+            NPCManager instance configured with ChatOllama
+        """
+        host = ollama_host or settings.ollama_host
+        port = ollama_port or settings.ollama_port
+        llm = ChatOllama(
+            base_url=f"http://{host}:{port}",
             model=settings.default_model,
             temperature=0.7,
         )
-
-        logger.info("NPCManager initialized")
+        return cls(llm=llm)
 
     def register_npc(self, npc: NPC):
         """Register a new NPC"""

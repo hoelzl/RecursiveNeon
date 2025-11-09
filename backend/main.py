@@ -6,22 +6,22 @@ FastAPI server that manages:
 - NPC conversations via LangChain
 - Ollama process lifecycle
 - Game state
+
+Refactored to use dependency injection for improved testability.
 """
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .services.process_manager import OllamaProcessManager
-from .services.ollama_client import OllamaClient
-from .services.npc_manager import NPCManager
 from .models.npc import ChatRequest, ChatResponse, NPCListResponse
-from .models.game_state import SystemState, SystemStatus, StatusResponse
+from .models.game_state import SystemStatus, StatusResponse
+from .dependencies import ServiceContainer, ServiceFactory, get_container, initialize_container
 
 # Configure logging
 logging.basicConfig(
@@ -30,75 +30,57 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global state
-process_manager: OllamaProcessManager = None
-ollama_client: OllamaClient = None
-npc_manager: NPCManager = None
-system_state = SystemState()
-start_time = datetime.now()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Application lifespan manager
-    Handles startup and shutdown
-    """
-    global process_manager, ollama_client, npc_manager, system_state
+    Application lifespan manager - refactored with dependency injection
 
+    Creates and initializes the service container, then stores it in app.state
+    for use throughout the application.
+    """
     logger.info("=" * 60)
     logger.info("Recursive://Neon Backend Starting")
     logger.info("=" * 60)
 
-    try:
-        # 1. Initialize process manager
-        logger.info("Initializing ollama process manager...")
-        process_manager = OllamaProcessManager(
-            binary_path=settings.ollama_binary_path,
-            host=settings.ollama_host,
-            port=settings.ollama_port
-        )
+    container = None
 
-        # 2. Start ollama server
+    try:
+        # Create service container with all dependencies
+        logger.info("Creating service container...")
+        container = ServiceFactory.create_production_container()
+
+        # Initialize global container for dependency injection
+        initialize_container(container)
+
+        # Store in app state for access in endpoints
+        app.state.services = container
+
+        # 1. Start ollama server
         logger.info("Starting ollama server...")
-        if not await process_manager.start():
+        if not await container.process_manager.start():
             raise Exception("Failed to start ollama server")
 
-        # 3. Initialize ollama client
-        logger.info("Initializing ollama client...")
-        ollama_client = OllamaClient(
-            host=settings.ollama_host,
-            port=settings.ollama_port,
-            timeout=settings.ollama_timeout
-        )
-
-        # 4. Wait for ollama to be ready
+        # 2. Wait for ollama to be ready
         logger.info("Waiting for ollama to be ready...")
-        if not await ollama_client.wait_for_ready(max_wait=30):
+        if not await container.ollama_client.wait_for_ready(max_wait=30):
             raise Exception("Ollama server did not become ready")
 
-        system_state.ollama_running = True
+        container.system_state.ollama_running = True
 
-        # 5. List available models
-        models = await ollama_client.list_models()
+        # 3. List available models
+        models = await container.ollama_client.list_models()
         logger.info(f"Available models: {models}")
-        system_state.ollama_models_loaded = models
+        container.system_state.ollama_models_loaded = models
 
-        # 6. Initialize NPC manager
-        logger.info("Initializing NPC manager...")
-        npc_manager = NPCManager(
-            ollama_host=settings.ollama_host,
-            ollama_port=settings.ollama_port
-        )
-
-        # 7. Create default NPCs
+        # 4. Create default NPCs
         logger.info("Creating default NPCs...")
-        npcs = npc_manager.create_default_npcs()
-        system_state.npcs_loaded = len(npcs)
+        npcs = container.npc_manager.create_default_npcs()
+        container.system_state.npcs_loaded = len(npcs)
         logger.info(f"Loaded {len(npcs)} NPCs")
 
-        # 8. System ready
-        system_state.status = SystemStatus.READY
+        # 5. System ready
+        container.system_state.status = SystemStatus.READY
         logger.info("=" * 60)
         logger.info("Recursive://Neon Backend Ready!")
         logger.info(f"WebSocket: ws://{settings.host}:{settings.port}/ws")
@@ -109,20 +91,19 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Startup error: {e}")
-        system_state.status = SystemStatus.ERROR
-        system_state.last_error = str(e)
+        if container:
+            container.system_state.status = SystemStatus.ERROR
+            container.system_state.last_error = str(e)
         raise
 
     finally:
         # Shutdown
         logger.info("Shutting down...")
-        system_state.status = SystemStatus.SHUTTING_DOWN
+        if container:
+            container.system_state.status = SystemStatus.SHUTTING_DOWN
 
-        if ollama_client:
-            await ollama_client.close()
-
-        if process_manager:
-            await process_manager.stop()
+            await container.ollama_client.close()
+            await container.process_manager.stop()
 
         logger.info("Shutdown complete")
 
@@ -150,44 +131,38 @@ app.add_middleware(
 # ============================================================================
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
+async def root(container: ServiceContainer = Depends(get_container)):
+    """Root endpoint - now uses dependency injection"""
     return {
         "name": "Recursive://Neon",
         "version": "0.1.0",
-        "status": system_state.status.value
+        "status": container.system_state.status.value
     }
 
 
 @app.get("/health", response_model=StatusResponse)
-async def health_check():
-    """Health check endpoint"""
-    uptime = (datetime.now() - start_time).total_seconds()
-    system_state.uptime_seconds = uptime
+async def health_check(container: ServiceContainer = Depends(get_container)):
+    """Health check endpoint - now uses dependency injection"""
+    uptime = (datetime.now() - container.start_time).total_seconds()
+    container.system_state.uptime_seconds = uptime
 
     return StatusResponse(
-        status="healthy" if system_state.status == SystemStatus.READY else "unhealthy",
-        system=system_state
+        status="healthy" if container.system_state.status == SystemStatus.READY else "unhealthy",
+        system=container.system_state
     )
 
 
 @app.get("/npcs", response_model=NPCListResponse)
-async def list_npcs():
-    """Get list of all NPCs"""
-    if not npc_manager:
-        raise HTTPException(status_code=503, detail="NPC manager not initialized")
-
-    npcs = npc_manager.list_npcs()
+async def list_npcs(container: ServiceContainer = Depends(get_container)):
+    """Get list of all NPCs - now uses dependency injection"""
+    npcs = container.npc_manager.list_npcs()
     return NPCListResponse(npcs=npcs)
 
 
 @app.get("/npcs/{npc_id}")
-async def get_npc(npc_id: str):
-    """Get specific NPC details"""
-    if not npc_manager:
-        raise HTTPException(status_code=503, detail="NPC manager not initialized")
-
-    npc = npc_manager.get_npc(npc_id)
+async def get_npc(npc_id: str, container: ServiceContainer = Depends(get_container)):
+    """Get specific NPC details - now uses dependency injection"""
+    npc = container.npc_manager.get_npc(npc_id)
     if not npc:
         raise HTTPException(status_code=404, detail=f"NPC not found: {npc_id}")
 
@@ -195,16 +170,16 @@ async def get_npc(npc_id: str):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_npc(request: ChatRequest):
+async def chat_with_npc(
+    request: ChatRequest,
+    container: ServiceContainer = Depends(get_container)
+):
     """
-    Chat with an NPC (HTTP endpoint)
+    Chat with an NPC (HTTP endpoint) - now uses dependency injection
     For simple request/response. Use WebSocket for streaming.
     """
-    if not npc_manager:
-        raise HTTPException(status_code=503, detail="NPC manager not initialized")
-
     try:
-        response = await npc_manager.chat(
+        response = await container.npc_manager.chat(
             npc_id=request.npc_id,
             message=request.message,
             player_id=request.player_id
@@ -218,15 +193,12 @@ async def chat_with_npc(request: ChatRequest):
 
 
 @app.get("/stats")
-async def get_stats():
-    """Get system statistics"""
-    if not npc_manager or not process_manager:
-        raise HTTPException(status_code=503, detail="System not initialized")
-
+async def get_stats(container: ServiceContainer = Depends(get_container)):
+    """Get system statistics - now uses dependency injection"""
     return {
-        "system": system_state.dict(),
-        "ollama_process": process_manager.get_status(),
-        "npc_manager": npc_manager.get_stats()
+        "system": container.system_state.dict(),
+        "ollama_process": container.process_manager.get_status(),
+        "npc_manager": container.npc_manager.get_stats()
     }
 
 
@@ -265,9 +237,15 @@ manager = ConnectionManager()
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    container: ServiceContainer = Depends(get_container)
+):
     """
-    Main WebSocket endpoint for real-time communication
+    Main WebSocket endpoint for real-time communication - refactored with DI
+
+    Now uses dependency injection to access services, making it testable
+    without a running server.
 
     Message format:
     {
@@ -276,6 +254,9 @@ async def websocket_endpoint(websocket: WebSocket):
     }
     """
     await manager.connect(websocket)
+
+    # Get message handler from container
+    message_handler = container.message_handler
 
     try:
         while True:
@@ -286,69 +267,19 @@ async def websocket_endpoint(websocket: WebSocket):
 
             logger.debug(f"WebSocket message: {msg_type}")
 
-            # Handle different message types
-            if msg_type == "ping":
-                await manager.send_personal({"type": "pong", "data": {}}, websocket)
-
-            elif msg_type == "get_npcs":
-                npcs = npc_manager.list_npcs()
-                await manager.send_personal({
-                    "type": "npcs_list",
-                    "data": {
-                        "npcs": [npc.model_dump(mode='json') for npc in npcs]
-                    }
-                }, websocket)
-
-            elif msg_type == "chat":
+            # Special handling for chat to send thinking indicator
+            if msg_type == "chat":
                 npc_id = msg_data.get("npc_id")
-                message = msg_data.get("message")
-                player_id = msg_data.get("player_id", "player_1")
+                if npc_id:
+                    # Send thinking indicator before processing
+                    thinking = await message_handler.create_thinking_indicator(npc_id)
+                    await manager.send_personal(thinking, websocket)
 
-                if not npc_id or not message:
-                    await manager.send_personal({
-                        "type": "error",
-                        "data": {"message": "Missing npc_id or message"}
-                    }, websocket)
-                    continue
+            # Handle message using message handler service
+            response = await message_handler.handle_message(msg_type, msg_data)
 
-                try:
-                    # Send thinking indicator
-                    await manager.send_personal({
-                        "type": "chat_thinking",
-                        "data": {"npc_id": npc_id}
-                    }, websocket)
-
-                    # Get response from NPC
-                    response = await npc_manager.chat(npc_id, message, player_id)
-
-                    # Send response
-                    await manager.send_personal({
-                        "type": "chat_response",
-                        "data": response.model_dump(mode='json')
-                    }, websocket)
-
-                except Exception as e:
-                    logger.error(f"Chat error: {e}")
-                    await manager.send_personal({
-                        "type": "error",
-                        "data": {"message": str(e)}
-                    }, websocket)
-
-            elif msg_type == "get_status":
-                uptime = (datetime.now() - start_time).total_seconds()
-                await manager.send_personal({
-                    "type": "status",
-                    "data": {
-                        "system": system_state.model_dump(mode='json'),
-                        "uptime_seconds": uptime
-                    }
-                }, websocket)
-
-            else:
-                await manager.send_personal({
-                    "type": "error",
-                    "data": {"message": f"Unknown message type: {msg_type}"}
-                }, websocket)
+            # Send response
+            await manager.send_personal(response, websocket)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)

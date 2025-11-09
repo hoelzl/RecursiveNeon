@@ -1,5 +1,7 @@
 """
 Process Manager - Controls the ollama server process
+
+Refactored to implement IProcessManager interface for better testability.
 """
 import subprocess
 import platform
@@ -11,12 +13,16 @@ from pathlib import Path
 from typing import Optional
 import psutil
 
+from .interfaces import IProcessManager
+
 logger = logging.getLogger(__name__)
 
 
-class OllamaProcessManager:
+class OllamaProcessManager(IProcessManager):
     """
     Manages the ollama server process lifecycle
+
+    Implements IProcessManager interface for dependency injection support.
 
     Responsibilities:
     - Start/stop ollama server
