@@ -53,3 +53,6 @@ global.WebSocket = class WebSocket {
   removeEventListener = vi.fn();
   dispatchEvent = vi.fn();
 } as any;
+
+// Mock scrollIntoView if not available (not implemented in jsdom)
+Element.prototype.scrollIntoView = vi.fn();
