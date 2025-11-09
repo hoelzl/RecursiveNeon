@@ -81,7 +81,7 @@ chmod +x scripts/setup.sh
 ./scripts/setup.sh
 
 # Pull a model for ollama
-ollama pull phi3:mini
+ollama pull qwen2.5:3b
 ```
 
 #### Windows
@@ -95,7 +95,7 @@ REM Run setup script
 scripts\setup.bat
 
 REM Pull a model for ollama
-ollama pull phi3:mini
+ollama pull qwen2.5:3b
 ```
 
 ### Running the Game
@@ -207,7 +207,7 @@ PORT=8000
 # Ollama
 OLLAMA_HOST=127.0.0.1
 OLLAMA_PORT=11434
-DEFAULT_MODEL=phi3:mini
+DEFAULT_MODEL=qwen2.5:3b
 
 # Game
 MAX_NPCS=20
@@ -216,7 +216,7 @@ MAX_RESPONSE_TOKENS=200
 
 ## Why Ollama Instead of llama.cpp?
 
-See [ASSESSMENT.md](ASSESSMENT.md) for a detailed technical analysis.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a detailed technical analysis.
 
 **TL;DR**: Building llama.cpp with CUDA support is complex and fragile. Ollama provides:
 
@@ -239,13 +239,38 @@ See [ASSESSMENT.md](ASSESSMENT.md) for a detailed technical analysis.
 
 ### Model Recommendations
 
-| Model | Size | RAM | Speed | Quality |
-|-------|------|-----|-------|---------|
-| phi3:mini | 3.8GB | 8GB | Fast | Good |
-| mistral:7b | 7.1GB | 16GB | Medium | Great |
-| llama3:8b | 8.5GB | 16GB | Medium | Excellent |
+#### General Purpose Models
 
-Use smaller models for faster responses, larger for better quality.
+| Model | Size | RAM | Speed | Quality | Notes |
+|-------|------|-----|-------|---------|-------|
+| qwen2.5:3b | ~2GB | 4GB | ⚡⚡⚡ Fast | ⭐⭐⭐ Good | Excellent multilingual, great storytelling |
+| gemma2:9b | ~5GB | 8GB | ⚡⚡ Medium | ⭐⭐⭐⭐ Great | Efficient, good creative writing |
+| llama3.3:70b | ~40GB | 64GB+ | ⚡ Slow | ⭐⭐⭐⭐⭐ Excellent | State-of-the-art (requires powerful hardware) |
+
+#### Specialized Role-Playing Models
+
+| Model | Size | RAM | Speed | Quality | Notes |
+|-------|------|-----|-------|---------|-------|
+| nous-hermes:13b | ~7GB | 12GB | ⚡⚡ Medium | ⭐⭐⭐⭐ Great | Purpose-built for roleplay & NPCs |
+| mythomax-l2:13b | ~7GB | 12GB | ⚡⚡ Medium | ⭐⭐⭐⭐ Great | Excellent for creative storytelling |
+
+**Installation:**
+```bash
+# Lightweight option (recommended for testing)
+ollama pull qwen2.5:3b
+
+# Balanced option (recommended for production)
+ollama pull gemma2:9b
+
+# Specialized for roleplay
+ollama pull nous-hermes:13b
+```
+
+**Recommendations:**
+- **Getting started**: Use `qwen2.5:3b` for fast responses and low resource usage
+- **Best balance**: Use `gemma2:9b` for good quality with reasonable resource requirements
+- **Best roleplay**: Use `nous-hermes:13b` or `mythomax-l2:13b` for the most engaging NPC conversations
+- **Maximum quality**: Use `llama3.3:70b` if you have powerful hardware (32GB+ VRAM)
 
 ## Troubleshooting
 
@@ -263,13 +288,13 @@ Use smaller models for faster responses, larger for better quality.
 
 ### "NPCs not responding"
 
-- Ensure you've pulled a model: `ollama pull phi3:mini`
+- Ensure you've pulled a model: `ollama pull qwen2.5:3b`
 - Check backend logs for errors
 - Verify ollama is using the correct model in `.env`
 
 ### Slow responses
 
-- Use a smaller model (phi3:mini)
+- Use a smaller model (qwen2.5:3b)
 - Reduce `MAX_RESPONSE_TOKENS` in `.env`
 - Check GPU is being used (watch nvidia-smi)
 

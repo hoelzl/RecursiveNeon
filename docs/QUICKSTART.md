@@ -46,10 +46,10 @@ This will:
 
 ```bash
 # Pull the recommended lightweight model
-ollama pull phi3:mini
+ollama pull qwen2.5:3b
 ```
 
-**Note**: This downloads ~2.3GB. For other options, see [Model Selection](#model-selection).
+**Note**: This downloads ~2GB. For other options, see [Model Selection](#model-selection).
 
 ## Step 3: Run the Game
 
@@ -118,7 +118,7 @@ lsof -i :11434  # Ollama
 ollama list
 
 # If empty, pull a model
-ollama pull phi3:mini
+ollama pull qwen2.5:3b
 ```
 
 ### Out of memory
@@ -126,25 +126,34 @@ ollama pull phi3:mini
 Use a smaller model:
 
 ```bash
-ollama pull phi3:mini  # 2.3GB RAM
-# Instead of:
-# ollama pull mistral:7b  # 7.1GB RAM
+ollama pull qwen2.5:3b  # ~2GB RAM
+# Instead of larger models like:
+# ollama pull gemma2:9b  # ~5GB RAM
 ```
 
 ## Model Selection
 
-| Model | Size | RAM Needed | Speed | Quality |
-|-------|------|------------|-------|---------|
-| phi3:mini | 2.3GB | 4GB | ⚡⚡⚡ | ⭐⭐⭐ |
-| mistral:7b | 4.1GB | 8GB | ⚡⚡ | ⭐⭐⭐⭐ |
-| llama3:8b | 4.7GB | 8GB | ⚡⚡ | ⭐⭐⭐⭐⭐ |
+### General Purpose Models
 
-**Recommendation**: Start with `phi3:mini` for testing, upgrade later if needed.
+| Model | Size | RAM Needed | Speed | Quality | Notes |
+|-------|------|------------|-------|---------|-------|
+| qwen2.5:3b | ~2GB | 4GB | ⚡⚡⚡ | ⭐⭐⭐ | Great storytelling |
+| gemma2:9b | ~5GB | 8GB | ⚡⚡ | ⭐⭐⭐⭐ | Balanced performance |
+| llama3.3:70b | ~40GB | 64GB+ | ⚡ | ⭐⭐⭐⭐⭐ | Requires powerful hardware |
+
+### Specialized Role-Playing Models
+
+| Model | Size | RAM Needed | Speed | Quality | Notes |
+|-------|------|------------|-------|---------|-------|
+| nous-hermes:13b | ~7GB | 12GB | ⚡⚡ | ⭐⭐⭐⭐ | Purpose-built for NPCs |
+| mythomax-l2:13b | ~7GB | 12GB | ⚡⚡ | ⭐⭐⭐⭐ | Excellent storytelling |
+
+**Recommendation**: Start with `qwen2.5:3b` for testing, upgrade to `nous-hermes:13b` for better roleplay quality.
 
 ## Next Steps
 
 - Read the full [README.md](../README.md)
-- Check out [ASSESSMENT.md](../ASSESSMENT.md) for technical details
+- Check out [ARCHITECTURE.md](ARCHITECTURE.md) for technical details
 - Explore the code in `backend/` and `frontend/`
 - Add your own NPCs (see README for examples)
 
