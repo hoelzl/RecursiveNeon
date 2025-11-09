@@ -81,7 +81,7 @@ export function TextEditorApp() {
       <div className="text-editor-sidebar">
         <div className="text-editor-header">
           <h3>Files</h3>
-          <button onClick={handleNew}>+ New</button>
+          <button onClick={handleNew}>+</button>
         </div>
         <div className="text-editor-list">
           {files.map((file) => (
