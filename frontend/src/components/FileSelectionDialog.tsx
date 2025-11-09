@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileNode } from '../types';
 import { AppAPI } from '../utils/appApi';
+import { useWebSocket } from '../contexts/WebSocketContext';
 
 export type FileSelectionMode = 'open' | 'save';
 
@@ -19,8 +20,6 @@ interface FileSelectionDialogProps {
   title?: string;
   /** Initial filename for save mode */
   initialFilename?: string;
-  /** AppAPI instance for file operations */
-  api: AppAPI;
 }
 
 export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
@@ -31,8 +30,10 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
   fileFilter,
   title,
   initialFilename = '',
-  api,
 }) => {
+  // Create our own API instance instead of receiving it as a prop
+  const wsClient = useWebSocket();
+  const api = new AppAPI(wsClient);
   // Store path as array of directory nodes instead of just names
   const [pathNodes, setPathNodes] = useState<FileNode[]>([]);
   const [contents, setContents] = useState<FileNode[]>([]);

@@ -246,7 +246,6 @@ export function TextEditorApp({ fileId }: TextEditorAppProps = {}) {
           onSelect={handleFileSelect}
           mode="open"
           title="Open File"
-          api={api}
           fileFilter={(file) => {
             // Allow text files and common code files
             if (file.mime_type === 'text/plain') return true;
@@ -264,7 +263,6 @@ export function TextEditorApp({ fileId }: TextEditorAppProps = {}) {
           mode="save"
           title="Save File As"
           initialFilename={selectedFile?.name || 'untitled.txt'}
-          api={api}
         />
       )}
     </div>
