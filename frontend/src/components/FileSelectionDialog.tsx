@@ -65,6 +65,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
     setLoading(true);
     try {
       const dirContents = await api.listDirectory(dirId);
+      console.log('Loaded directory contents:', dirContents);
       setContents(dirContents);
     } catch (error) {
       console.error('Failed to load directory:', error);
@@ -145,6 +146,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
     return true;
   });
 
+  console.log('Contents:', contents.length, 'Filtered:', filteredContents.length, 'Mode:', mode);
+
   const canConfirm = mode === 'open' ? selectedFile !== null : filename.trim() !== '';
 
   if (!isOpen) return null;
@@ -158,7 +161,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(10, 14, 39, 0.85)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -168,9 +171,10 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
       <div
         className="bg-white rounded-lg shadow-xl w-[600px] max-h-[80vh] flex flex-col"
         style={{
-          backgroundColor: 'white',
+          backgroundColor: '#1a1f3a',
           borderRadius: '8px',
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+          boxShadow: '0 0 20px rgba(0, 255, 255, 0.3), 0 10px 40px rgba(0, 0, 0, 0.5)',
+          border: '1px solid #3a3f5a',
           width: '600px',
           maxWidth: '90vw',
           maxHeight: '80vh',
@@ -183,7 +187,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
           className="px-4 py-3 border-b border-gray-200"
           style={{
             padding: '12px 16px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid #3a3f5a',
+            background: 'linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%)',
           }}
         >
           <h2
@@ -191,7 +196,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             style={{
               fontSize: '18px',
               fontWeight: 600,
-              color: '#1f2937',
+              color: '#ffffff',
               margin: 0,
             }}
           >
@@ -204,8 +209,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
           className="px-4 py-2 border-b border-gray-200 bg-gray-50"
           style={{
             padding: '8px 16px',
-            borderBottom: '1px solid #e5e7eb',
-            backgroundColor: '#f9fafb',
+            borderBottom: '1px solid #3a3f5a',
+            backgroundColor: '#0a0e27',
           }}
         >
           <div
@@ -223,11 +228,22 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
               style={{
                 padding: '4px 8px',
                 fontSize: '14px',
-                backgroundColor: 'white',
-                border: '1px solid #d1d5db',
+                backgroundColor: '#2a2f4a',
+                color: '#ffffff',
+                border: '1px solid #3a3f5a',
                 borderRadius: '4px',
                 cursor: pathNodes.length <= 1 || loading ? 'not-allowed' : 'pointer',
                 opacity: pathNodes.length <= 1 || loading ? 0.5 : 1,
+              }}
+              onMouseEnter={(e) => {
+                if (pathNodes.length > 1 && !loading) {
+                  e.currentTarget.style.backgroundColor = '#4a9eff';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (pathNodes.length > 1 && !loading) {
+                  e.currentTarget.style.backgroundColor = '#2a2f4a';
+                }
               }}
             >
               ⬆ Up
@@ -237,8 +253,9 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
               style={{
                 flex: 1,
                 padding: '4px 12px',
-                backgroundColor: 'white',
-                border: '1px solid #d1d5db',
+                backgroundColor: '#0a0e27',
+                color: '#00ffff',
+                border: '1px solid #3a3f5a',
                 borderRadius: '4px',
                 fontSize: '14px',
                 fontFamily: 'monospace',
@@ -257,6 +274,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             overflowY: 'auto',
             padding: '16px',
             minHeight: '300px',
+            backgroundColor: '#1a1f3a',
           }}
         >
           {loading ? (
@@ -267,7 +285,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
-                color: '#6b7280',
+                color: '#b0b0b0',
               }}
             >
               Loading...
@@ -280,7 +298,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
-                color: '#6b7280',
+                color: '#b0b0b0',
               }}
             >
               No files found
@@ -304,17 +322,20 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    backgroundColor: selectedFile?.id === item.id ? '#dbeafe' : 'transparent',
-                    border: selectedFile?.id === item.id ? '1px solid #93c5fd' : '1px solid transparent',
+                    backgroundColor: selectedFile?.id === item.id ? '#2a2f4a' : 'transparent',
+                    border: selectedFile?.id === item.id ? '1px solid #00ffff' : '1px solid transparent',
+                    boxShadow: selectedFile?.id === item.id ? '0 0 10px rgba(0, 255, 255, 0.3)' : 'none',
                   }}
                   onMouseEnter={(e) => {
                     if (selectedFile?.id !== item.id) {
-                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      e.currentTarget.style.backgroundColor = '#2a2f4a';
+                      e.currentTarget.style.border = '1px solid #3a3f5a';
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (selectedFile?.id !== item.id) {
                       e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.border = '1px solid transparent';
                     }
                   }}
                 >
@@ -323,12 +344,12 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                   </span>
                   <span
                     className="flex-1 text-sm text-gray-800"
-                    style={{ flex: 1, fontSize: '14px', color: '#1f2937' }}
+                    style={{ flex: 1, fontSize: '14px', color: '#ffffff' }}
                   >
                     {item.name}
                   </span>
                   {item.type === 'directory' && (
-                    <span className="text-gray-400" style={{ color: '#9ca3af' }}>→</span>
+                    <span className="text-gray-400" style={{ color: '#4a9eff' }}>→</span>
                   )}
                 </div>
               ))}
@@ -342,7 +363,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             className="px-4 py-3 border-t border-gray-200"
             style={{
               padding: '12px 16px',
-              borderTop: '1px solid #e5e7eb',
+              borderTop: '1px solid #3a3f5a',
+              backgroundColor: '#1a1f3a',
             }}
           >
             <label
@@ -351,7 +373,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                 display: 'block',
                 fontSize: '14px',
                 fontWeight: 500,
-                color: '#374151',
+                color: '#b0b0b0',
                 marginBottom: '8px',
               }}
             >
@@ -370,9 +392,20 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: '1px solid #d1d5db',
+                backgroundColor: '#0a0e27',
+                color: '#ffffff',
+                border: '1px solid #3a3f5a',
                 borderRadius: '4px',
                 fontSize: '14px',
+                outline: 'none',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.border = '1px solid #00ffff';
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 255, 255, 0.3)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.border = '1px solid #3a3f5a';
+                e.currentTarget.style.boxShadow = 'none';
               }}
               placeholder="Enter filename"
               autoFocus
@@ -385,7 +418,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
           className="px-4 py-3 border-t border-gray-200 flex justify-end space-x-2"
           style={{
             padding: '12px 16px',
-            borderTop: '1px solid #e5e7eb',
+            borderTop: '1px solid #3a3f5a',
+            backgroundColor: '#1a1f3a',
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '8px',
@@ -397,17 +431,17 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             style={{
               padding: '8px 16px',
               fontSize: '14px',
-              backgroundColor: '#e5e7eb',
-              color: '#1f2937',
-              border: 'none',
+              backgroundColor: '#2a2f4a',
+              color: '#ffffff',
+              border: '1px solid #3a3f5a',
               borderRadius: '4px',
               cursor: 'pointer',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#d1d5db';
+              e.currentTarget.style.backgroundColor = '#3a3f5a';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#e5e7eb';
+              e.currentTarget.style.backgroundColor = '#2a2f4a';
             }}
           >
             Cancel
@@ -419,21 +453,26 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             style={{
               padding: '8px 16px',
               fontSize: '14px',
-              backgroundColor: canConfirm ? '#2563eb' : '#93c5fd',
-              color: 'white',
-              border: 'none',
+              backgroundColor: canConfirm ? '#4a9eff' : '#2a2f4a',
+              color: '#ffffff',
+              border: canConfirm ? '1px solid #00ffff' : '1px solid #3a3f5a',
               borderRadius: '4px',
               cursor: canConfirm ? 'pointer' : 'not-allowed',
               opacity: canConfirm ? 1 : 0.5,
+              boxShadow: canConfirm ? '0 0 10px rgba(0, 255, 255, 0.3)' : 'none',
             }}
             onMouseEnter={(e) => {
               if (canConfirm) {
-                e.currentTarget.style.backgroundColor = '#1d4ed8';
+                e.currentTarget.style.backgroundColor = '#00ffff';
+                e.currentTarget.style.color = '#0a0e27';
+                e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 255, 255, 0.5)';
               }
             }}
             onMouseLeave={(e) => {
               if (canConfirm) {
-                e.currentTarget.style.backgroundColor = '#2563eb';
+                e.currentTarget.style.backgroundColor = '#4a9eff';
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 255, 255, 0.3)';
               }
             }}
           >
