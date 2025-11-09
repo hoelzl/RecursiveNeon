@@ -7,32 +7,44 @@ import { WebSocketClient } from '../services/websocket';
 import { Note, Task, TaskList, FileNode, BrowserPage } from '../types';
 
 export class AppAPI {
+  private requestQueue: Promise<any> = Promise.resolve();
+
   constructor(private ws: WebSocketClient) {}
 
   private async send(operation: string, payload: any = {}): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const handleResponse = (msg: any) => {
-        if (msg.type === 'app_response') {
+    // Queue requests to prevent race conditions with WebSocket event handlers
+    // Each request waits for the previous one to complete
+    const request = async () => {
+      return new Promise((resolve, reject) => {
+        const handleResponse = (msg: any) => {
+          if (msg.type === 'app_response') {
+            this.ws.off('app_response', handleResponse);
+            this.ws.off('error', handleResponse);
+            resolve(msg.data);
+          } else if (msg.type === 'error') {
+            this.ws.off('app_response', handleResponse);
+            this.ws.off('error', handleResponse);
+            reject(new Error(msg.data.message));
+          }
+        };
+
+        this.ws.on('app_response', handleResponse);
+        this.ws.on('error', handleResponse);
+
+        this.ws.send('app', { operation, payload });
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
           this.ws.off('app_response', handleResponse);
-          resolve(msg.data);
-        } else if (msg.type === 'error') {
           this.ws.off('error', handleResponse);
-          reject(new Error(msg.data.message));
-        }
-      };
+          reject(new Error('Request timeout'));
+        }, 10000);
+      });
+    };
 
-      this.ws.on('app_response', handleResponse);
-      this.ws.on('error', handleResponse);
-
-      this.ws.send('app', { operation, payload });
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        this.ws.off('app_response', handleResponse);
-        this.ws.off('error', handleResponse);
-        reject(new Error('Request timeout'));
-      }, 10000);
-    });
+    // Chain this request after the previous one
+    this.requestQueue = this.requestQueue.then(request, request);
+    return this.requestQueue;
   }
 
   // Notes API
