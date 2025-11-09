@@ -174,6 +174,31 @@ RecursiveNeon/
 └── docs/                  # Documentation
 ```
 
+### Running Tests
+
+The backend includes a comprehensive test suite using pytest.
+
+**Basic testing (without coverage):**
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+**With coverage reporting:**
+```bash
+pytest --cov=. --cov-report=term-missing --cov-report=html
+```
+
+This generates:
+- Terminal output showing coverage percentages
+- HTML report in `backend/htmlcov/` directory
+
+**Test categories:**
+- `pytest -m unit` - Run only unit tests (fast)
+- `pytest -m integration` - Run integration tests
+- `pytest -m "not slow"` - Skip slow tests
+
 ### Adding New NPCs
 
 Edit `backend/services/npc_manager.py` and add to the `create_default_npcs()` method:
