@@ -11,7 +11,8 @@ interface ContextMenu {
   x: number;
   y: number;
   node?: FileNode;
-  type: 'file' | 'background' | 'sidebar' | 'sidebar-tree';
+  type: 'file' | 'background' | 'sidebar' | 'sidebar-tree' | 'pinned-folder';
+  pinnedFolderId?: string;
 }
 
 interface DialogState {
@@ -26,7 +27,12 @@ interface Clipboard {
 
 interface DragState {
   node: FileNode;
-  operation: 'copy' | 'move';
+}
+
+interface PinnedFolder {
+  id: string;
+  name: string;
+  node: FileNode;
 }
 
 export function FileBrowserApp() {
@@ -42,6 +48,8 @@ export function FileBrowserApp() {
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [pinnedFolders, setPinnedFolders] = useState<PinnedFolder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     init();
@@ -54,8 +62,36 @@ export function FileBrowserApp() {
     return () => document.removeEventListener('click', handleClick);
   }, []);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle shortcuts when no dialog is open
+      if (dialog.type) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'c' && selectedNode) {
+          e.preventDefault();
+          handleCopy(selectedNode);
+        } else if (e.key === 'x' && selectedNode) {
+          e.preventDefault();
+          handleCut(selectedNode);
+        } else if (e.key === 'v' && clipboard && currentDir) {
+          e.preventDefault();
+          handlePaste();
+        }
+      } else if (e.key === 'Delete' && selectedNode) {
+        e.preventDefault();
+        handleDelete(selectedNode);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNode, clipboard, currentDir, dialog.type]);
+
   const init = async () => {
     try {
+      setIsLoading(true);
       const root = await api.initFilesystem();
       setCurrentDir(root);
       setPath([root]);
@@ -63,6 +99,8 @@ export function FileBrowserApp() {
       await loadDirectory(root.id);
     } catch (error) {
       console.error('Failed to initialize filesystem:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -110,7 +148,7 @@ export function FileBrowserApp() {
     setSelectedNode(null);
   };
 
-  const handleContextMenu = (e: React.MouseEvent, type: 'file' | 'background' | 'sidebar' | 'sidebar-tree', node?: FileNode) => {
+  const handleContextMenu = (e: React.MouseEvent, type: 'file' | 'background' | 'sidebar' | 'sidebar-tree' | 'pinned-folder', node?: FileNode, pinnedFolderId?: string) => {
     e.preventDefault();
     e.stopPropagation();
     // Calculate position relative to the app container
@@ -121,7 +159,8 @@ export function FileBrowserApp() {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
         type,
-        node
+        node,
+        pinnedFolderId
       });
     }
   };
@@ -236,10 +275,9 @@ export function FileBrowserApp() {
 
   const handleDragStart = (e: React.DragEvent, node: FileNode) => {
     e.stopPropagation();
-    // Determine operation based on modifier keys: Shift = copy, default = move
-    const operation = e.shiftKey ? 'copy' : 'move';
-    setDragState({ node, operation });
-    e.dataTransfer.effectAllowed = operation;
+    setDragState({ node });
+    // Allow both copy and move operations
+    e.dataTransfer.effectAllowed = 'copyMove';
     e.dataTransfer.setData('text/plain', node.name);
   };
 
@@ -247,7 +285,8 @@ export function FileBrowserApp() {
     e.preventDefault();
     e.stopPropagation();
     if (dragState) {
-      e.dataTransfer.dropEffect = dragState.operation;
+      // Determine operation based on modifier keys during drag
+      e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
       setDropTarget(targetId || 'background');
     }
   };
@@ -265,6 +304,9 @@ export function FileBrowserApp() {
 
     if (!dragState || !currentDir) return;
 
+    // Determine operation based on modifier keys at drop time
+    const operation = e.shiftKey ? 'copy' : 'move';
+
     try {
       // Determine target directory
       let targetDirId: string;
@@ -281,7 +323,7 @@ export function FileBrowserApp() {
       }
 
       // Perform the operation
-      if (dragState.operation === 'copy') {
+      if (operation === 'copy') {
         await api.copyFile(dragState.node.id, targetDirId);
       } else {
         await api.moveFile(dragState.node.id, targetDirId);
@@ -293,6 +335,26 @@ export function FileBrowserApp() {
     }
 
     setDragState(null);
+  };
+
+  const handlePinFolder = (folder: FileNode) => {
+    if (folder.type !== 'directory') return;
+    // Don't pin if already pinned
+    if (pinnedFolders.some(p => p.id === folder.id)) return;
+    setPinnedFolders([...pinnedFolders, { id: folder.id, name: folder.name, node: folder }]);
+  };
+
+  const handleUnpinFolder = (folderId: string) => {
+    setPinnedFolders(pinnedFolders.filter(p => p.id !== folderId));
+  };
+
+  const navigateToFolder = (folder: FileNode) => {
+    setCurrentDir(folder);
+    // Build path from root - for now just use the folder as single path
+    // In a real app, you'd need to fetch the full path from the API
+    setPath([path[0], folder]);
+    loadDirectory(folder.id);
+    setSelectedNode(null);
   };
 
   const getFileIcon = (node: FileNode) => {
@@ -341,6 +403,47 @@ export function FileBrowserApp() {
               <span className="file-browser-sidebar-icon">🏠</span>
               <span>Home</span>
             </div>
+            {pinnedFolders.map((pinned) => (
+              <div
+                key={pinned.id}
+                className={`file-browser-sidebar-item ${
+                  currentDir?.id === pinned.id ? 'active' : ''
+                }`}
+                onClick={() => navigateToFolder(pinned.node)}
+                onContextMenu={(e) => handleContextMenu(e, 'pinned-folder', pinned.node, pinned.id)}
+                onDragOver={(e) => handleDragOver(e, pinned.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, pinned.node)}
+              >
+                <span className="file-browser-sidebar-icon">📌</span>
+                <span>{pinned.name}</span>
+              </div>
+            ))}
+            {dragState && dragState.node.type === 'directory' && (
+              <div
+                className={`file-browser-sidebar-item file-browser-pin-drop-zone ${
+                  dropTarget === 'pin-zone' ? 'drop-target' : ''
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropTarget('pin-zone');
+                }}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropTarget(null);
+                  if (dragState && dragState.node.type === 'directory') {
+                    handlePinFolder(dragState.node);
+                  }
+                  setDragState(null);
+                }}
+              >
+                <span className="file-browser-sidebar-icon">📍</span>
+                <span style={{ fontStyle: 'italic', opacity: 0.7 }}>Drop to pin here</span>
+              </div>
+            )}
           </div>
 
           {/* Simple folder tree showing current path */}
@@ -352,7 +455,7 @@ export function FileBrowserApp() {
                   key={node.id}
                   className={`file-browser-tree-item ${
                     currentDir?.id === node.id ? 'selected' : ''
-                  }`}
+                  } ${dropTarget === node.id ? 'drop-target' : ''}`}
                   style={{ paddingLeft: `${index * 12}px` }}
                   onClick={() => {
                     const newPath = path.slice(0, index + 1);
@@ -362,6 +465,9 @@ export function FileBrowserApp() {
                     setSelectedNode(null);
                   }}
                   onContextMenu={(e) => handleContextMenu(e, 'sidebar-tree', node)}
+                  onDragOver={(e) => handleDragOver(e, node.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, node)}
                 >
                   <span>{index === 0 ? '🏠' : '📁'}</span>
                   <span>{node.name}</span>
@@ -379,7 +485,9 @@ export function FileBrowserApp() {
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e)}
         >
-          {contents.length === 0 ? (
+          {isLoading ? (
+            <div className="file-browser-empty">Loading...</div>
+          ) : contents.length === 0 ? (
             <div className="file-browser-empty">This folder is empty</div>
           ) : (
             <div className="file-browser-grid">
@@ -528,6 +636,30 @@ export function FileBrowserApp() {
                 }}
               >
                 🏠 Go to Home
+              </div>
+            </>
+          )}
+
+          {contextMenu.type === 'pinned-folder' && contextMenu.node && contextMenu.pinnedFolderId && (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  navigateToFolder(contextMenu.node!);
+                }}
+              >
+                📂 Open
+              </div>
+              <div className="context-menu-separator"></div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  handleUnpinFolder(contextMenu.pinnedFolderId!);
+                }}
+              >
+                📌 Unpin
               </div>
             </>
           )}
