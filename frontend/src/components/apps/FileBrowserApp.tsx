@@ -1,10 +1,22 @@
 /**
- * File Browser App - Navigate virtual filesystem
+ * File Browser App - Windows Explorer-style file browser with sidebar navigation
  */
 import { useState, useEffect } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { FileNode } from '../../types';
+import { Dialog } from '../Dialog';
+
+interface ContextMenu {
+  x: number;
+  y: number;
+  node: FileNode;
+}
+
+interface DialogState {
+  type: 'new-folder' | 'rename' | 'delete' | null;
+  node?: FileNode;
+}
 
 export function FileBrowserApp() {
   const wsClient = useWebSocket();
@@ -13,9 +25,19 @@ export function FileBrowserApp() {
   const [currentDir, setCurrentDir] = useState<FileNode | null>(null);
   const [contents, setContents] = useState<FileNode[]>([]);
   const [path, setPath] = useState<FileNode[]>([]);
+  const [selectedNode, setSelectedNode] = useState<FileNode | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [dialog, setDialog] = useState<DialogState>({ type: null });
 
   useEffect(() => {
     init();
+  }, []);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
   }, []);
 
   const init = async () => {
@@ -32,7 +54,14 @@ export function FileBrowserApp() {
   const loadDirectory = async (dirId: string) => {
     try {
       const nodes = await api.listDirectory(dirId);
-      setContents(nodes);
+      // Sort: directories first, then files, both alphabetically
+      const sorted = nodes.sort((a, b) => {
+        if (a.type === b.type) {
+          return a.name.localeCompare(b.name);
+        }
+        return a.type === 'directory' ? -1 : 1;
+      });
+      setContents(sorted);
     } catch (error) {
       console.error('Failed to load directory:', error);
     }
@@ -43,6 +72,7 @@ export function FileBrowserApp() {
       setCurrentDir(node);
       setPath([...path, node]);
       loadDirectory(node.id);
+      setSelectedNode(null);
     }
   };
 
@@ -53,22 +83,101 @@ export function FileBrowserApp() {
     setPath(newPath);
     setCurrentDir(parent);
     loadDirectory(parent.id);
+    setSelectedNode(null);
   };
 
-  const handleNewFolder = async () => {
-    if (!currentDir) return;
-    const name = prompt('Enter folder name:');
-    if (!name) return;
+  const navigateToRoot = () => {
+    if (path.length === 0) return;
+    const root = path[0];
+    setPath([root]);
+    setCurrentDir(root);
+    loadDirectory(root.id);
+    setSelectedNode(null);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
+  };
+
+  const handleNewFolder = () => {
+    setDialog({ type: 'new-folder' });
+  };
+
+  const handleRename = (node: FileNode) => {
+    setContextMenu(null);
+    setDialog({ type: 'rename', node });
+  };
+
+  const handleDelete = (node: FileNode) => {
+    setContextMenu(null);
+    setDialog({ type: 'delete', node });
+  };
+
+  const confirmNewFolder = async (name?: string) => {
+    if (!currentDir || !name || !name.trim()) {
+      setDialog({ type: null });
+      return;
+    }
     try {
-      await api.createDirectory(name, currentDir.id);
+      await api.createDirectory(name.trim(), currentDir.id);
       await loadDirectory(currentDir.id);
     } catch (error) {
       console.error('Failed to create folder:', error);
     }
+    setDialog({ type: null });
+  };
+
+  const confirmRename = async (newName?: string) => {
+    if (!dialog.node || !newName || !newName.trim()) {
+      setDialog({ type: null });
+      return;
+    }
+    try {
+      await api.updateFile(dialog.node.id, { name: newName.trim() });
+      if (currentDir) {
+        await loadDirectory(currentDir.id);
+      }
+    } catch (error) {
+      console.error('Failed to rename:', error);
+    }
+    setDialog({ type: null });
+  };
+
+  const confirmDelete = async () => {
+    if (!dialog.node || !currentDir) {
+      setDialog({ type: null });
+      return;
+    }
+    try {
+      await api.deleteFile(dialog.node.id);
+      await loadDirectory(currentDir.id);
+      if (selectedNode?.id === dialog.node.id) {
+        setSelectedNode(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete:', error);
+    }
+    setDialog({ type: null });
+  };
+
+  const getFileIcon = (node: FileNode) => {
+    if (node.type === 'directory') return '📁';
+
+    const mime = node.mime_type || '';
+    if (mime.startsWith('image/')) return '🖼️';
+    if (mime.startsWith('text/')) return '📄';
+    if (mime.startsWith('audio/')) return '🎵';
+    if (mime.startsWith('video/')) return '🎬';
+    if (mime === 'application/pdf') return '📕';
+
+    return '📄';
   };
 
   return (
     <div className="file-browser-app">
+      {/* Toolbar */}
       <div className="file-browser-toolbar">
         <button onClick={handleBack} disabled={path.length <= 1}>
           ← Back
@@ -79,26 +188,127 @@ export function FileBrowserApp() {
         <button onClick={handleNewFolder}>+ New Folder</button>
       </div>
 
-      <div className="file-browser-content">
-        {contents.length === 0 ? (
-          <div className="file-browser-empty">This folder is empty</div>
-        ) : (
-          <div className="file-browser-grid">
-            {contents.map((node) => (
-              <div
-                key={node.id}
-                className="file-browser-item"
-                onDoubleClick={() => handleOpen(node)}
-              >
-                <div className="file-browser-icon">
-                  {node.type === 'directory' ? '📁' : '📄'}
-                </div>
-                <div className="file-browser-name">{node.name}</div>
-              </div>
-            ))}
+      {/* Body with sidebar and content */}
+      <div className="file-browser-body">
+        {/* Left Sidebar */}
+        <div className="file-browser-sidebar">
+          <div className="file-browser-sidebar-section">
+            <div className="file-browser-sidebar-title">Quick Access</div>
+            <div
+              className="file-browser-sidebar-item active"
+              onClick={navigateToRoot}
+            >
+              <span className="file-browser-sidebar-icon">🏠</span>
+              <span>Home</span>
+            </div>
           </div>
-        )}
+
+          {/* Simple folder tree showing current path */}
+          <div className="file-browser-sidebar-section">
+            <div className="file-browser-sidebar-title">Folders</div>
+            <div className="file-browser-tree">
+              {path.map((node, index) => (
+                <div
+                  key={node.id}
+                  className={`file-browser-tree-item ${
+                    currentDir?.id === node.id ? 'selected' : ''
+                  }`}
+                  style={{ paddingLeft: `${index * 12}px` }}
+                  onClick={() => {
+                    const newPath = path.slice(0, index + 1);
+                    setPath(newPath);
+                    setCurrentDir(node);
+                    loadDirectory(node.id);
+                    setSelectedNode(null);
+                  }}
+                >
+                  <span>{index === 0 ? '🏠' : '📁'}</span>
+                  <span>{node.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Content Area */}
+        <div className="file-browser-content">
+          {contents.length === 0 ? (
+            <div className="file-browser-empty">This folder is empty</div>
+          ) : (
+            <div className="file-browser-grid">
+              {contents.map((node) => (
+                <div
+                  key={node.id}
+                  className={`file-browser-item ${
+                    selectedNode?.id === node.id ? 'selected' : ''
+                  }`}
+                  onClick={() => setSelectedNode(node)}
+                  onDoubleClick={() => handleOpen(node)}
+                  onContextMenu={(e) => handleContextMenu(e, node)}
+                >
+                  <div className="file-browser-icon">{getFileIcon(node)}</div>
+                  <div className="file-browser-name">{node.name}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="context-menu-item"
+            onClick={() => handleRename(contextMenu.node)}
+          >
+            ✏️ Rename
+          </div>
+          <div
+            className="context-menu-item"
+            onClick={() => handleDelete(contextMenu.node)}
+          >
+            🗑️ Delete
+          </div>
+        </div>
+      )}
+
+      {/* Dialogs */}
+      {dialog.type === 'new-folder' && (
+        <Dialog
+          title="Create New Folder"
+          message="Enter the name for the new folder:"
+          defaultValue=""
+          onConfirm={confirmNewFolder}
+          onCancel={() => setDialog({ type: null })}
+          showInput={true}
+        />
+      )}
+
+      {dialog.type === 'rename' && dialog.node && (
+        <Dialog
+          title="Rename"
+          message={`Enter a new name for "${dialog.node.name}":`}
+          defaultValue={dialog.node.name}
+          onConfirm={confirmRename}
+          onCancel={() => setDialog({ type: null })}
+          showInput={true}
+        />
+      )}
+
+      {dialog.type === 'delete' && dialog.node && (
+        <Dialog
+          title="Confirm Delete"
+          message={`Are you sure you want to delete "${dialog.node.name}"?`}
+          onConfirm={confirmDelete}
+          onCancel={() => setDialog({ type: null })}
+          showInput={false}
+        />
+      )}
     </div>
   );
 }
