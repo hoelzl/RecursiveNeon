@@ -266,7 +266,7 @@ code {
 /* Chat App */
 .chat-app {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
 }
 
