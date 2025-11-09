@@ -52,6 +52,9 @@ data/
 *.db
 *.sqlite
 
+# Game data (in-game filesystem state)
+backend/game_data/
+
 # Ollama binaries (large files)
 services/ollama/ollama
 services/ollama/ollama.exe

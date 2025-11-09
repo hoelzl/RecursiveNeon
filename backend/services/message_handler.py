@@ -275,6 +275,16 @@ class MessageHandler:
             elif operation == "fs.delete":
                 self.app_service.delete_file(payload["id"])
                 return {"type": "app_response", "data": {"success": True}}
+            elif operation == "fs.copy":
+                copy = self.app_service.copy_file(
+                    payload["id"],
+                    payload["target_parent_id"],
+                    payload.get("new_name")
+                )
+                return {"type": "app_response", "data": {"node": copy.model_dump()}}
+            elif operation == "fs.move":
+                node = self.app_service.move_file(payload["id"], payload["target_parent_id"])
+                return {"type": "app_response", "data": {"node": node.model_dump()}}
 
             # Browser operations
             elif operation == "browser.pages":

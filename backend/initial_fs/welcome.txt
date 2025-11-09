@@ -1,0 +1,11 @@
+Welcome to Recursive://Neon!
+
+This is your in-game file system. You can:
+- Create, edit, and delete files and folders
+- Open text files in the Text Editor
+- View images in the Image Viewer
+- Organize your files just like a real computer
+
+Try creating a new file or folder to get started!
+
+All changes are saved automatically when you exit the game.

@@ -129,6 +129,20 @@ export class AppAPI {
     await this.send('fs.delete', { id });
   }
 
+  async copyFile(id: string, targetParentId: string, newName?: string): Promise<FileNode> {
+    const data = await this.send('fs.copy', {
+      id,
+      target_parent_id: targetParentId,
+      new_name: newName,
+    });
+    return data.node;
+  }
+
+  async moveFile(id: string, targetParentId: string): Promise<FileNode> {
+    const data = await this.send('fs.move', { id, target_parent_id: targetParentId });
+    return data.node;
+  }
+
   // Browser API
   async getBrowserPages(): Promise<BrowserPage[]> {
     const data = await this.send('browser.pages');
