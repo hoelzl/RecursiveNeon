@@ -66,6 +66,15 @@ export class AppAPI {
     return data.list;
   }
 
+  async updateTaskList(id: string, name: string): Promise<TaskList> {
+    const data = await this.send('tasks.list.update', { id, name });
+    return data.list;
+  }
+
+  async deleteTaskList(id: string): Promise<void> {
+    await this.send('tasks.list.delete', { id });
+  }
+
   async createTask(listId: string, task: Partial<Task>): Promise<Task> {
     const data = await this.send('tasks.create', { list_id: listId, ...task });
     return data.task;

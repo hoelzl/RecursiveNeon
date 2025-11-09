@@ -1,7 +1,7 @@
 /**
  * Notes App - Note-taking with title list and content editor
  */
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { Note } from '../../types';
@@ -15,10 +15,20 @@ export function NotesApp() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
+  const contentInputRef = React.useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     loadNotes();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    if (contextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [contextMenu]);
 
   const loadNotes = async () => {
     try {
@@ -34,7 +44,17 @@ export function NotesApp() {
     }
   };
 
-  const selectNote = (note: Note) => {
+  const selectNote = async (note: Note) => {
+    // Auto-save current note before switching
+    if (selectedNote && (title !== selectedNote.title || content !== selectedNote.content)) {
+      try {
+        const updated = await api.updateNote(selectedNote.id, { title, content });
+        setNotes(notes.map((n) => (n.id === updated.id ? updated : n)));
+      } catch (error) {
+        console.error('Failed to auto-save note:', error);
+      }
+    }
+
     setSelectedNote(note);
     setTitle(note.title);
     setContent(note.content);
@@ -61,22 +81,43 @@ export function NotesApp() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!selectedNote) return;
+  const handleDelete = async (noteId?: string) => {
+    const idToDelete = noteId ?? selectedNote?.id;
+    if (!idToDelete) return;
+
     try {
-      await api.deleteNote(selectedNote.id);
-      const remaining = notes.filter((n) => n.id !== selectedNote.id);
+      await api.deleteNote(idToDelete);
+      const remaining = notes.filter((n) => n.id !== idToDelete);
       setNotes(remaining);
-      if (remaining.length > 0) {
-        selectNote(remaining[0]);
-      } else {
-        setSelectedNote(null);
-        setTitle('');
-        setContent('');
+
+      // If we deleted the selected note, select another one
+      if (selectedNote?.id === idToDelete) {
+        if (remaining.length > 0) {
+          selectNote(remaining[0]);
+        } else {
+          setSelectedNote(null);
+          setTitle('');
+          setContent('');
+        }
       }
+
+      setContextMenu(null);
     } catch (error) {
       console.error('Failed to delete note:', error);
     }
+  };
+
+  const handleTitleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      await handleSave();
+      contentInputRef.current?.focus();
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, noteId: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, noteId });
   };
 
   if (loading) return <div className="notes-loading">Loading notes...</div>;
@@ -94,6 +135,7 @@ export function NotesApp() {
               key={note.id}
               className={`notes-item ${selectedNote?.id === note.id ? 'active' : ''}`}
               onClick={() => selectNote(note)}
+              onContextMenu={(e) => handleContextMenu(e, note.id)}
             >
               <div className="notes-item-title">{note.title}</div>
               <div className="notes-item-date">
@@ -113,14 +155,16 @@ export function NotesApp() {
                 className="notes-title-input"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={handleTitleKeyDown}
                 placeholder="Note title..."
               />
               <div className="notes-actions">
                 <button onClick={handleSave}>Save</button>
-                <button onClick={handleDelete}>Delete</button>
+                <button onClick={() => handleDelete()}>Delete</button>
               </div>
             </div>
             <textarea
+              ref={contentInputRef}
               className="notes-content-input"
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -134,6 +178,20 @@ export function NotesApp() {
           </div>
         )}
       </div>
+
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <div
+            className="context-menu-item"
+            onClick={() => handleDelete(contextMenu.noteId)}
+          >
+            Delete Note
+          </div>
+        </div>
+      )}
     </div>
   );
 }
