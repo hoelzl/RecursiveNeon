@@ -429,6 +429,438 @@ code {
   opacity: 0.5;
 }
 
+/* Notes App */
+.notes-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.notes-sidebar {
+  width: 250px;
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notes-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notes-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.notes-header button {
+  width: 32px;
+  height: 32px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notes-header button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.notes-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.notes-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notes-item:hover {
+  background: var(--bg-primary);
+}
+
+.notes-item.active {
+  background: var(--bg-primary);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.notes-item-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notes-item-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.notes-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notes-toolbar {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.notes-title-input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  outline: none;
+}
+
+.notes-title-input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 255, 255, 0.1);
+}
+
+.notes-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notes-actions button {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notes-actions button:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-cyan);
+}
+
+.notes-actions button:first-child {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+.notes-actions button:first-child:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.notes-content-input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: none;
+  padding: 16px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+.notes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 32px;
+  gap: 16px;
+}
+
+.notes-empty button {
+  padding: 10px 20px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notes-empty button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.notes-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* Task List App */
+.task-list-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.task-list-sidebar {
+  width: 250px;
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-list-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-list-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-list-header button {
+  width: 32px;
+  height: 32px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-list-header button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.task-list-lists {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.task-list-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.task-list-item:hover {
+  background: var(--bg-primary);
+}
+
+.task-list-item.active {
+  background: var(--bg-primary);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.task-list-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-list-title {
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.task-list-title h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-list-add {
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+}
+
+.task-list-add input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.task-list-add input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 255, 255, 0.1);
+}
+
+.task-list-add button {
+  padding: 8px 16px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.task-list-add button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.task-list-tasks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.task-list-task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.task-list-task:hover {
+  border-color: var(--accent-cyan);
+}
+
+.task-list-task input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent-cyan);
+}
+
+.task-list-task span {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.task-list-task span.task-completed {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.task-list-task button {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-list-task button:hover {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+}
+
+.task-list-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 32px;
+  font-size: 14px;
+}
+
+.task-list-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 32px;
+  gap: 16px;
+}
+
+.task-list-placeholder button {
+  padding: 10px 20px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.task-list-placeholder button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
