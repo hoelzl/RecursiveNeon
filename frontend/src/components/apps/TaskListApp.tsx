@@ -165,8 +165,18 @@ export function TaskListApp() {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    // Use pageX/pageY for absolute positioning relative to the document
-    setContextMenu({ x: e.pageX, y: e.pageY, type, listId, taskId });
+    // Calculate position relative to the app container
+    const appElement = (e.currentTarget as HTMLElement).closest('.task-list-app');
+    if (appElement) {
+      const rect = appElement.getBoundingClientRect();
+      setContextMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        type,
+        listId,
+        taskId
+      });
+    }
   };
 
   const handleEditList = (listId: string) => {
