@@ -14,13 +14,16 @@ interface Message {
 }
 
 export function ChatApp() {
-  const { npcs, updateNPC } = useGameStore();
-  const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
+  const { npcs, updateNPC, getNPC } = useGameStore();
+  const [selectedNPCId, setSelectedNPCId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Get the current NPC from store (always fresh)
+  const selectedNPC = selectedNPCId ? getNPC(selectedNPCId) : null;
 
   useEffect(() => {
     // Listen for chat responses
@@ -50,6 +53,11 @@ export function ChatApp() {
           },
         });
       }
+
+      // Restore focus to input field after response
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     };
 
     const handleChatThinking = () => {
@@ -63,7 +71,7 @@ export function ChatApp() {
       wsClient.off('chat_response', handleChatResponse);
       wsClient.off('chat_thinking', handleChatThinking);
     };
-  }, [selectedNPC, updateNPC]);
+  }, [selectedNPC, updateNPC, inputRef]);
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -82,7 +90,7 @@ export function ChatApp() {
     } else {
       setMessages([]);
     }
-  }, [selectedNPC?.id]);
+  }, [selectedNPCId, npcs]);
 
   const handleSend = () => {
     if (!input.trim() || !selectedNPC || sending) return;
@@ -121,11 +129,6 @@ export function ChatApp() {
 
     setInput('');
     setSending(true);
-
-    // Restore focus to input field
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -142,8 +145,8 @@ export function ChatApp() {
         {npcs.map((npc) => (
           <div
             key={npc.id}
-            className={`chat-npc-item ${selectedNPC?.id === npc.id ? 'active' : ''}`}
-            onClick={() => setSelectedNPC(npc)}
+            className={`chat-npc-item ${selectedNPCId === npc.id ? 'active' : ''}`}
+            onClick={() => setSelectedNPCId(npc.id)}
           >
             <div className="chat-npc-avatar">{npc.avatar}</div>
             <div className="chat-npc-name">{npc.name}</div>
