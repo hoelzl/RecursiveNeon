@@ -117,7 +117,8 @@ export function NotesApp() {
 
   const handleContextMenu = (e: React.MouseEvent, noteId: string) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, noteId });
+    // Use pageX/pageY for absolute positioning relative to the document
+    setContextMenu({ x: e.pageX, y: e.pageY, noteId });
   };
 
   if (loading) return <div className="notes-loading">Loading notes...</div>;

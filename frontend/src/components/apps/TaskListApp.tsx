@@ -165,7 +165,8 @@ export function TaskListApp() {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, type, listId, taskId });
+    // Use pageX/pageY for absolute positioning relative to the document
+    setContextMenu({ x: e.pageX, y: e.pageY, type, listId, taskId });
   };
 
   const handleEditList = (listId: string) => {
