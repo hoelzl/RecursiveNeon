@@ -14,12 +14,13 @@ interface Message {
 }
 
 export function ChatApp() {
-  const { npcs } = useGameStore();
+  const { npcs, updateNPC } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Listen for chat responses
@@ -34,6 +35,21 @@ export function ChatApp() {
         },
       ]);
       setSending(false);
+
+      // Update NPC's conversation history in the store
+      if (selectedNPC && data.npc_id === selectedNPC.id) {
+        const newMessage = {
+          role: 'assistant' as const,
+          content: data.message,
+          timestamp: data.timestamp,
+        };
+        updateNPC(selectedNPC.id, {
+          memory: {
+            ...selectedNPC.memory,
+            conversation_history: [...selectedNPC.memory.conversation_history, newMessage],
+          },
+        });
+      }
     };
 
     const handleChatThinking = () => {
@@ -47,7 +63,7 @@ export function ChatApp() {
       wsClient.off('chat_response', handleChatResponse);
       wsClient.off('chat_thinking', handleChatThinking);
     };
-  }, []);
+  }, [selectedNPC, updateNPC]);
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -82,6 +98,20 @@ export function ChatApp() {
       },
     ]);
 
+    // Update NPC's conversation history in the store
+    const timestamp = new Date().toISOString();
+    const newMessage = {
+      role: 'user' as const,
+      content: userMessage,
+      timestamp,
+    };
+    updateNPC(selectedNPC.id, {
+      memory: {
+        ...selectedNPC.memory,
+        conversation_history: [...selectedNPC.memory.conversation_history, newMessage],
+      },
+    });
+
     // Send to backend
     wsClient.send('chat', {
       npc_id: selectedNPC.id,
@@ -91,6 +121,11 @@ export function ChatApp() {
 
     setInput('');
     setSending(true);
+
+    // Restore focus to input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -143,6 +178,7 @@ export function ChatApp() {
 
             <div className="chat-input-container">
               <input
+                ref={inputRef}
                 type="text"
                 className="chat-input"
                 placeholder={`Message ${selectedNPC.name}...`}
