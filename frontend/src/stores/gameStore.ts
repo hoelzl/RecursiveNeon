@@ -10,6 +10,7 @@ interface GameStore {
   npcs: NPC[];
   setNPCs: (npcs: NPC[]) => void;
   getNPC: (id: string) => NPC | undefined;
+  updateNPC: (id: string, updates: Partial<NPC>) => void;
 
   // Windows
   windows: WindowState[];
@@ -35,6 +36,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   npcs: [],
   setNPCs: (npcs) => set({ npcs }),
   getNPC: (id) => get().npcs.find((npc) => npc.id === id),
+  updateNPC: (id, updates) => {
+    set((state) => ({
+      npcs: state.npcs.map((npc) =>
+        npc.id === id ? { ...npc, ...updates } : npc
+      ),
+    }));
+  },
 
   // Windows
   windows: [],
