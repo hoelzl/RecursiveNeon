@@ -19,16 +19,17 @@ class TestNPCManagerWithDependencyInjection:
     @pytest.fixture
     def mock_llm(self):
         """
-        Create a mock LLM that implements the LangChain interface.
+        Create a mock LLM compatible with LangChain.
 
-        This mock replaces the real ChatOllama instance, allowing us to test
-        NPCManager without requiring a running Ollama server.
+        This mock replaces the real ChatOllama instance, using BaseChatModel
+        to satisfy LangChain's Runnable validation.
         """
-        mock = Mock()
-        # Mock the synchronous predict method (used by ConversationChain)
-        mock.predict = Mock(return_value="Hello! I'm happy to help you.")
-        # Mock async methods if needed in the future
+        from langchain_core.language_models import BaseChatModel
+
+        mock = Mock(spec=BaseChatModel)
+        mock.invoke = Mock(return_value="Hello! I'm happy to help you.")
         mock.ainvoke = AsyncMock(return_value="Async response")
+        mock._is_runnable = True
         return mock
 
     @pytest.fixture
@@ -111,7 +112,9 @@ class TestNPCManagerWithDependencyInjection:
             role=NPCRole.MERCHANT,
             background="Another test NPC",
             occupation="Trader",
-            location="Test Market"
+            location="Test Market",
+            greeting="Greetings, customer.",
+            conversation_style="professional and businesslike"
         )
 
         npc_manager.register_npc(sample_npc)

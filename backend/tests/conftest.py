@@ -14,12 +14,24 @@ from backend.models.npc import NPC
 @pytest.fixture
 def mock_llm():
     """
-    Fixture providing a mock LLM instance.
+    Fixture providing a mock LLM instance compatible with LangChain.
 
-    Returns a mock object that implements the LLM interface with ainvoke method.
+    Returns a mock object that satisfies LangChain's Runnable interface requirements.
+    The mock is configured with spec to avoid strict type checking while maintaining
+    the necessary methods for ConversationChain.
     """
-    mock = AsyncMock()
-    mock.ainvoke = AsyncMock(return_value="Mock response from LLM")
+    from langchain_core.runnables import Runnable
+    from langchain_core.language_models import BaseChatModel
+
+    # Create a more sophisticated mock that inherits from a base class
+    # This avoids Pydantic validation issues with ConversationChain
+    mock = Mock(spec=BaseChatModel)
+    mock.invoke = Mock(return_value="Mock response from LLM")
+    mock.ainvoke = AsyncMock(return_value="Mock async response from LLM")
+
+    # Add necessary attributes for LangChain compatibility
+    mock._is_runnable = True
+
     return mock
 
 
@@ -28,16 +40,20 @@ def sample_npc():
     """
     Fixture providing a sample NPC for testing.
 
-    Returns a basic NPC instance with default values.
+    Returns a fully configured NPC instance with all required fields.
     """
+    from backend.models.npc import NPCPersonality, NPCRole
+
     return NPC(
         id="test_npc_1",
         name="Test NPC",
-        description="A test NPC for unit testing",
-        personality="Friendly and helpful",
-        knowledge_base="General knowledge",
-        initial_message="Hello! I'm a test NPC.",
-        model_name="llama3.2:3b"
+        personality=NPCPersonality.FRIENDLY,
+        role=NPCRole.INFORMANT,
+        background="A test NPC created for unit testing purposes",
+        occupation="Tester",
+        location="Test Suite",
+        greeting="Hello! I'm a test NPC.",
+        conversation_style="friendly and helpful"
     )
 
 
@@ -48,14 +64,18 @@ def multiple_npcs(sample_npc):
 
     Returns a list of NPC instances.
     """
+    from backend.models.npc import NPCPersonality, NPCRole
+
     npc2 = NPC(
         id="test_npc_2",
         name="Second NPC",
-        description="Another test NPC",
-        personality="Professional and concise",
-        knowledge_base="Technical knowledge",
-        initial_message="Greetings.",
-        model_name="llama3.2:3b"
+        personality=NPCPersonality.PROFESSIONAL,
+        role=NPCRole.MERCHANT,
+        background="Another test NPC for testing purposes",
+        occupation="Professional Tester",
+        location="Test Lab",
+        greeting="Greetings.",
+        conversation_style="professional and concise"
     )
     return [sample_npc, npc2]
 

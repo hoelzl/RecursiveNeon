@@ -5,7 +5,7 @@ These tests demonstrate how extracting business logic from WebSocket handlers
 into a service layer makes it testable without WebSocket connections.
 """
 import pytest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
 
 from backend.services.message_handler import MessageHandler
@@ -65,13 +65,23 @@ class TestMessageHandler:
             id="npc1",
             name="Test NPC 1",
             personality=NPCPersonality.FRIENDLY,
-            role=NPCRole.INFORMANT
+            role=NPCRole.INFORMANT,
+            background="Test background",
+            occupation="Test occupation",
+            location="Test location",
+            greeting="Hello!",
+            conversation_style="friendly"
         )
         npc2 = NPC(
             id="npc2",
             name="Test NPC 2",
             personality=NPCPersonality.PROFESSIONAL,
-            role=NPCRole.MERCHANT
+            role=NPCRole.MERCHANT,
+            background="Professional background",
+            occupation="Merchant",
+            location="Market",
+            greeting="Welcome!",
+            conversation_style="professional"
         )
         mock_npc_manager.list_npcs.return_value = [npc1, npc2]
 
@@ -159,7 +169,7 @@ class TestMessageHandler:
         message_handler.start_time = datetime(2024, 1, 1, 12, 0, 0)
 
         # Mock current time to calculate uptime
-        with pytest.mock.patch('backend.services.message_handler.datetime') as mock_datetime:
+        with patch('backend.services.message_handler.datetime') as mock_datetime:
             mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5, 30)
 
             response = await message_handler.handle_message("get_status", {})
@@ -240,7 +250,12 @@ class TestMessageHandlerIntegration:
             id="guide",
             name="Luna",
             personality=NPCPersonality.FRIENDLY,
-            role=NPCRole.COMPANION
+            role=NPCRole.COMPANION,
+            background="A helpful AI guide",
+            occupation="Digital Guide",
+            location="Tutorial Zone",
+            greeting="Hi! I'm Luna, your guide.",
+            conversation_style="friendly and patient"
         )
         mock_npc_manager.list_npcs.return_value = [test_npc]
         mock_npc_manager.chat.return_value = ChatResponse(
