@@ -1,7 +1,7 @@
 /**
  * File Browser App - Windows Explorer-style file browser with sidebar navigation
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { FileNode } from '../../types';
@@ -50,9 +50,18 @@ export function FileBrowserApp() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [pinnedFolders, setPinnedFolders] = useState<PinnedFolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const initialized = useRef(false);
 
   useEffect(() => {
-    init();
+    console.log('[FileBrowser] Component mounted');
+    if (!initialized.current) {
+      console.log('[FileBrowser] useEffect running, calling init');
+      initialized.current = true;
+      init();
+    }
+    return () => {
+      console.log('[FileBrowser] Component unmounting');
+    };
   }, []);
 
   // Close context menu on click outside
@@ -91,14 +100,17 @@ export function FileBrowserApp() {
 
   const init = async () => {
     try {
+      console.log('[FileBrowser] Starting initialization...');
       setIsLoading(true);
       const root = await api.initFilesystem();
+      console.log('[FileBrowser] Got root:', root);
       setCurrentDir(root);
       setPath([root]);
       // Load the root directory contents immediately
       await loadDirectory(root.id);
+      console.log('[FileBrowser] Initialization complete');
     } catch (error) {
-      console.error('Failed to initialize filesystem:', error);
+      console.error('[FileBrowser] Failed to initialize filesystem:', error);
     } finally {
       setIsLoading(false);
     }
@@ -106,7 +118,9 @@ export function FileBrowserApp() {
 
   const loadDirectory = async (dirId: string) => {
     try {
+      console.log('[FileBrowser] Loading directory:', dirId);
       const nodes = await api.listDirectory(dirId);
+      console.log('[FileBrowser] Got nodes:', nodes.length, 'items');
       // Sort: directories first, then files, both alphabetically
       const sorted = nodes.sort((a, b) => {
         if (a.type === b.type) {
@@ -115,8 +129,9 @@ export function FileBrowserApp() {
         return a.type === 'directory' ? -1 : 1;
       });
       setContents(sorted);
+      console.log('[FileBrowser] Contents set:', sorted.length, 'items');
     } catch (error) {
-      console.error('Failed to load directory:', error);
+      console.error('[FileBrowser] Failed to load directory:', error);
     }
   };
 
@@ -369,6 +384,8 @@ export function FileBrowserApp() {
 
     return '📄';
   };
+
+  console.log('[FileBrowser] Rendering - isLoading:', isLoading, 'contents:', contents.length, 'currentDir:', currentDir?.name);
 
   return (
     <div className="file-browser-app">
