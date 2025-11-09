@@ -3,7 +3,7 @@ Tests for desktop app data models
 """
 import pytest
 from datetime import datetime
-from models.app_models import (
+from backend.models.app_models import (
     Note,
     NotesState,
     Task,
