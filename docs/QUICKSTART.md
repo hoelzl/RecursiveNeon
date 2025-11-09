@@ -58,9 +58,11 @@ Open **two terminal windows**:
 ### Terminal 1 - Backend:
 
 ```bash
-cd backend
-source venv/bin/activate  # Windows: venv\Scripts\activate
-python main.py
+# Activate virtual environment (from project root)
+source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
+
+# Run backend (must be from project root)
+python -m backend.main
 ```
 
 Wait for: `Recursive://Neon Backend Ready!`
@@ -86,10 +88,15 @@ Open browser to: `http://localhost:5173`
 ### Backend won't start
 
 ```bash
-# Make sure you're in the backend directory and venv is activated
-cd backend
-source venv/bin/activate  # Windows: venv\Scripts\activate
-python main.py
+# IMPORTANT: Run from project root, not from backend/ directory
+# Make sure you're in RecursiveNeon/ directory
+pwd  # Should show .../RecursiveNeon
+
+# Activate venv
+source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
+
+# Run backend
+python -m backend.main
 
 # If still issues, check if ports are free
 lsof -i :8000   # Backend (Mac/Linux)

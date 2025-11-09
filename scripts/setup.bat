@@ -72,8 +72,8 @@ echo ==========================================
 echo Setup Complete!
 echo ==========================================
 echo.
-echo To run the game:
-echo   1. Start backend:  cd backend ^&^& venv\Scripts\activate ^&^& python main.py
+echo To run the game (from project root):
+echo   1. Start backend:  backend\venv\Scripts\activate ^&^& python -m backend.main
 echo   2. Start frontend: cd frontend ^&^& npm run dev
 echo   3. Open browser:   http://localhost:5173
 echo.

@@ -100,13 +100,17 @@ ollama pull phi3:mini
 
 ### Running the Game
 
+**IMPORTANT**: All commands must be run from the project root directory (`RecursiveNeon/`), not from subdirectories.
+
 You need two terminal windows:
 
 **Terminal 1 - Backend:**
 ```bash
-cd backend
-source venv/bin/activate  # Windows: venv\Scripts\activate
-python main.py
+# Activate virtual environment (from project root)
+source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
+
+# Run backend (from project root)
+python -m backend.main
 ```
 
 **Terminal 2 - Frontend:**
@@ -247,7 +251,7 @@ Use smaller models for faster responses, larger for better quality.
 
 ### "Failed to connect to server"
 
-- Ensure backend is running: `cd backend && python main.py`
+- Ensure backend is running: `python -m backend.main` (from project root)
 - Check if port 8000 is free: `lsof -i :8000` (Mac/Linux)
 - Check ollama is running in backend logs
 
