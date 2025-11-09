@@ -29,30 +29,39 @@ export function ChatApp() {
     // Listen for chat responses
     const handleChatResponse = (msg: any) => {
       const data: ChatMessageType = msg.data;
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'npc',
-          content: data.message,
-          npcName: data.npc_name,
-        },
-      ]);
-      setSending(false);
 
-      // Update NPC's conversation history in the store
-      if (selectedNPC && data.npc_id === selectedNPC.id) {
+      // Get the NPC that sent this message (not the currently selected one)
+      const messageNPC = getNPC(data.npc_id);
+
+      if (messageNPC) {
+        // Always save the message to the correct NPC's conversation history
         const newMessage = {
           role: 'assistant' as const,
           content: data.message,
           timestamp: data.timestamp,
         };
-        updateNPC(selectedNPC.id, {
+        updateNPC(messageNPC.id, {
           memory: {
-            ...selectedNPC.memory,
-            conversation_history: [...selectedNPC.memory.conversation_history, newMessage],
+            ...messageNPC.memory,
+            conversation_history: [...messageNPC.memory.conversation_history, newMessage],
           },
         });
+
+        // Only add to UI if this message is for the currently selected NPC
+        if (selectedNPCId === data.npc_id) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              sender: 'npc',
+              content: data.message,
+              npcName: data.npc_name,
+            },
+          ]);
+        }
       }
+
+      // Always clear sending state when any response is received
+      setSending(false);
 
       // Restore focus to input field after response
       setTimeout(() => {
@@ -71,7 +80,7 @@ export function ChatApp() {
       wsClient.off('chat_response', handleChatResponse);
       wsClient.off('chat_thinking', handleChatThinking);
     };
-  }, [selectedNPC, updateNPC, inputRef]);
+  }, [selectedNPCId, getNPC, updateNPC, inputRef]);
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -90,6 +99,8 @@ export function ChatApp() {
     } else {
       setMessages([]);
     }
+    // Clear sending state when switching NPCs to prevent "Thinking..." from showing in wrong chat
+    setSending(false);
   }, [selectedNPCId, npcs]);
 
   const handleSend = () => {
