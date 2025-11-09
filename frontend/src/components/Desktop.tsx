@@ -29,6 +29,7 @@ export function Desktop() {
           content: <ChatApp />,
           position: { x: 100, y: 100 },
           size: { width: 800, height: 600 },
+          minimized: false,
         });
       },
     },
@@ -73,6 +74,7 @@ export function Desktop() {
           ),
           position: { x: 150, y: 150 },
           size: { width: 600, height: 500 },
+          minimized: false,
         });
       },
     },
@@ -109,6 +111,7 @@ export function Desktop() {
           ),
           position: { x: 200, y: 200 },
           size: { width: 600, height: 400 },
+          minimized: false,
         });
       },
     },
