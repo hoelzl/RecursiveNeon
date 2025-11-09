@@ -23,7 +23,8 @@ from .services.npc_manager import NPCManager
 from .services.ollama_client import OllamaClient
 from .services.process_manager import OllamaProcessManager
 from .services.message_handler import MessageHandler
-from .models.game_state import SystemState
+from .services.app_service import AppService
+from .models.game_state import SystemState, GameState
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,8 @@ class ServiceContainer:
         npc_manager: Manages NPCs and conversations
         message_handler: Handles WebSocket message business logic
         system_state: System state tracking
+        game_state: Game state (player data, inventory, app data)
+        app_service: Desktop app service
         start_time: Application start time
     """
     process_manager: IProcessManager
@@ -50,6 +53,8 @@ class ServiceContainer:
     npc_manager: INPCManager
     message_handler: MessageHandler
     system_state: SystemState
+    game_state: GameState
+    app_service: AppService
     start_time: datetime
 
     def __repr__(self) -> str:
@@ -164,16 +169,21 @@ class ServiceFactory:
         ollama_client = cls.create_ollama_client()
         npc_manager = cls.create_npc_manager()
 
-        # Create system state and track start time
+        # Create system state and game state
         system_state = SystemState()
+        game_state = GameState()
         start_time = datetime.now()
+
+        # Create app service for desktop apps
+        app_service = AppService(game_state)
 
         # Create message handler with dependencies
         message_handler = MessageHandler(
             npc_manager=npc_manager,
             ollama_client=ollama_client,
             system_state=system_state,
-            start_time=start_time
+            start_time=start_time,
+            app_service=app_service
         )
 
         container = ServiceContainer(
@@ -182,6 +192,8 @@ class ServiceFactory:
             npc_manager=npc_manager,
             message_handler=message_handler,
             system_state=system_state,
+            game_state=game_state,
+            app_service=app_service,
             start_time=start_time
         )
 

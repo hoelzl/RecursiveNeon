@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 from datetime import datetime
 from enum import Enum
+from .app_models import NotesState, TasksState, FileSystemState, BrowserState
 
 
 class SystemStatus(str, Enum):
@@ -24,6 +25,12 @@ class GameState(BaseModel):
     completed_quests: list = Field(default_factory=list)
     inventory: Dict[str, int] = Field(default_factory=dict)
     stats: Dict[str, Any] = Field(default_factory=dict)
+
+    # Desktop app states
+    notes: NotesState = Field(default_factory=NotesState)
+    tasks: TasksState = Field(default_factory=TasksState)
+    filesystem: FileSystemState = Field(default_factory=FileSystemState)
+    browser: BrowserState = Field(default_factory=BrowserState)
 
 
 class SystemState(BaseModel):

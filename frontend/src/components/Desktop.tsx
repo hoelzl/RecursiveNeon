@@ -6,6 +6,12 @@ import { useGameStore } from '../stores/gameStore';
 import { Window } from './Window';
 import { Taskbar } from './Taskbar';
 import { ChatApp } from './apps/ChatApp';
+import { NotesApp } from './apps/NotesApp';
+import { TaskListApp } from './apps/TaskListApp';
+import { FileBrowserApp } from './apps/FileBrowserApp';
+import { TextEditorApp } from './apps/TextEditorApp';
+import { ImageViewerApp } from './apps/ImageViewerApp';
+import { WebBrowserApp } from './apps/WebBrowserApp';
 
 interface DesktopIcon {
   id: string;
@@ -111,6 +117,96 @@ export function Desktop() {
           ),
           position: { x: 200, y: 200 },
           size: { width: 600, height: 400 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'notes',
+      label: 'Notes',
+      emoji: '📝',
+      action: () => {
+        openWindow({
+          title: 'Notes',
+          type: 'notes',
+          content: <NotesApp />,
+          position: { x: 120, y: 120 },
+          size: { width: 900, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'tasks',
+      label: 'Tasks',
+      emoji: '✅',
+      action: () => {
+        openWindow({
+          title: 'Task Lists',
+          type: 'tasks',
+          content: <TaskListApp />,
+          position: { x: 140, y: 140 },
+          size: { width: 800, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'files',
+      label: 'Files',
+      emoji: '📁',
+      action: () => {
+        openWindow({
+          title: 'File Browser',
+          type: 'files',
+          content: <FileBrowserApp />,
+          position: { x: 160, y: 160 },
+          size: { width: 800, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'editor',
+      label: 'Text Editor',
+      emoji: '📄',
+      action: () => {
+        openWindow({
+          title: 'Text Editor',
+          type: 'editor',
+          content: <TextEditorApp />,
+          position: { x: 180, y: 180 },
+          size: { width: 900, height: 700 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'images',
+      label: 'Images',
+      emoji: '🖼️',
+      action: () => {
+        openWindow({
+          title: 'Image Viewer',
+          type: 'images',
+          content: <ImageViewerApp />,
+          position: { x: 200, y: 200 },
+          size: { width: 800, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'browser',
+      label: 'Browser',
+      emoji: '🌐',
+      action: () => {
+        openWindow({
+          title: 'Web Browser',
+          type: 'browser',
+          content: <WebBrowserApp />,
+          position: { x: 220, y: 220 },
+          size: { width: 1000, height: 700 },
           minimized: false,
         });
       },
