@@ -4,8 +4,12 @@ Desktop App Service
 Manages state for desktop applications (notes, tasks, filesystem, browser).
 """
 import uuid
+import json
+import os
+import base64
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from ..models.game_state import GameState
 from ..models.app_models import (
     Note,
@@ -13,6 +17,7 @@ from ..models.app_models import (
     TaskList,
     FileNode,
     BrowserPage,
+    FileSystemState,
 )
 
 
@@ -284,10 +289,96 @@ class AppService:
         raise ValueError(f"File not found: {file_id}")
 
     def delete_file(self, file_id: str) -> None:
-        """Delete a file or directory"""
+        """Delete a file or directory (with cascade for directories)"""
+        node = self.get_file(file_id)
+
+        # If it's a directory, recursively delete all children
+        if node.type == "directory":
+            children = self.list_directory(file_id)
+            for child in children:
+                self.delete_file(child.id)
+
+        # Delete the node itself
         self.game_state.filesystem.nodes = [
-            node for node in self.game_state.filesystem.nodes if node.id != file_id
+            n for n in self.game_state.filesystem.nodes if n.id != file_id
         ]
+
+    def copy_file(self, file_id: str, target_parent_id: str, new_name: Optional[str] = None) -> FileNode:
+        """
+        Copy a file or directory to a new location.
+
+        Args:
+            file_id: ID of the file/directory to copy
+            target_parent_id: ID of the destination parent directory
+            new_name: Optional new name for the copy
+
+        Returns:
+            The newly created copy
+        """
+        source = self.get_file(file_id)
+        timestamp = datetime.now().isoformat()
+
+        # Create the copy with a new ID
+        copy = FileNode(
+            id=str(uuid.uuid4()),
+            name=new_name if new_name else source.name,
+            type=source.type,
+            parent_id=target_parent_id,
+            content=source.content,
+            mime_type=source.mime_type,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self.game_state.filesystem.nodes.append(copy)
+
+        # If it's a directory, recursively copy children
+        if source.type == "directory":
+            children = self.list_directory(file_id)
+            for child in children:
+                self.copy_file(child.id, copy.id)
+
+        return copy
+
+    def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
+        """
+        Move a file or directory to a new location.
+
+        Args:
+            file_id: ID of the file/directory to move
+            target_parent_id: ID of the destination parent directory
+
+        Returns:
+            The updated file node
+        """
+        file = self.get_file(file_id)
+        timestamp = datetime.now().isoformat()
+
+        # Prevent moving a directory into itself or its descendants
+        if file.type == "directory":
+            current = target_parent_id
+            while current:
+                if current == file_id:
+                    raise ValueError("Cannot move a directory into itself or its descendants")
+                parent = self.get_file(current)
+                current = parent.parent_id
+
+        # Update the parent_id
+        for i, node in enumerate(self.game_state.filesystem.nodes):
+            if node.id == file_id:
+                updated = FileNode(
+                    id=file.id,
+                    name=file.name,
+                    type=file.type,
+                    parent_id=target_parent_id,
+                    content=file.content,
+                    mime_type=file.mime_type,
+                    created_at=file.created_at,
+                    updated_at=timestamp,
+                )
+                self.game_state.filesystem.nodes[i] = updated
+                return updated
+
+        raise ValueError(f"File not found: {file_id}")
 
     def list_directory(self, dir_id: str) -> List[FileNode]:
         """List contents of a directory"""
@@ -300,6 +391,190 @@ class AppService:
             for node in self.game_state.filesystem.nodes
             if node.parent_id == dir_id
         ]
+
+    def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """
+        Save the entire filesystem state to disk.
+
+        Args:
+            data_dir: Directory to save the filesystem state (default: backend/game_data)
+
+        This saves to a single JSON file, ensuring complete isolation from the user's
+        real file system.
+        """
+        # Create the data directory if it doesn't exist
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+
+        # Save filesystem state to JSON
+        filepath = Path(data_dir) / "filesystem.json"
+        filesystem_dict = {
+            "nodes": [node.model_dump() for node in self.game_state.filesystem.nodes],
+            "root_id": self.game_state.filesystem.root_id,
+        }
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(filesystem_dict, f, indent=2, ensure_ascii=False)
+
+    def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """
+        Load the filesystem state from disk.
+
+        Args:
+            data_dir: Directory to load the filesystem state from
+
+        Returns:
+            True if loaded successfully, False if file doesn't exist
+
+        This only reads from the controlled game_data directory.
+        """
+        filepath = Path(data_dir) / "filesystem.json"
+
+        if not filepath.exists():
+            return False
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            filesystem_dict = json.load(f)
+
+        # Replace the current filesystem state
+        self.game_state.filesystem = FileSystemState(
+            nodes=[FileNode(**node) for node in filesystem_dict["nodes"]],
+            root_id=filesystem_dict.get("root_id"),
+        )
+
+        return True
+
+    def load_initial_filesystem(self, initial_fs_dir: str = "backend/initial_fs") -> None:
+        """
+        Load initial filesystem state from a directory structure.
+
+        Args:
+            initial_fs_dir: Directory containing the initial file structure
+
+        This reads files from the source code directory and populates the in-game
+        filesystem. This is a one-way read operation - the source directory is never
+        modified by the game.
+        """
+        initial_path = Path(initial_fs_dir)
+
+        if not initial_path.exists():
+            # No initial filesystem provided, just create empty root
+            self.init_filesystem()
+            return
+
+        # Clear existing filesystem
+        self.game_state.filesystem.nodes.clear()
+        self.game_state.filesystem.root_id = None
+
+        # Create root directory
+        root = self.init_filesystem()
+
+        # Recursively load directory structure
+        self._load_directory_recursive(initial_path, root.id)
+
+    def _load_directory_recursive(self, source_path: Path, parent_id: str) -> None:
+        """
+        Recursively load files and directories from a real directory into the virtual filesystem.
+
+        Args:
+            source_path: Path to the real directory to load from
+            parent_id: ID of the parent node in the virtual filesystem
+        """
+        if not source_path.exists() or not source_path.is_dir():
+            return
+
+        # Process all items in the directory
+        for item in sorted(source_path.iterdir()):
+            # Skip hidden files and system files
+            if item.name.startswith('.'):
+                continue
+
+            timestamp = datetime.now().isoformat()
+
+            if item.is_dir():
+                # Create directory node
+                dir_node = FileNode(
+                    id=str(uuid.uuid4()),
+                    name=item.name,
+                    type="directory",
+                    parent_id=parent_id,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                self.game_state.filesystem.nodes.append(dir_node)
+
+                # Recursively load subdirectory
+                self._load_directory_recursive(item, dir_node.id)
+
+            elif item.is_file():
+                # Determine MIME type based on extension
+                mime_type = self._get_mime_type(item.suffix)
+
+                # Read file content
+                content = self._read_file_content(item, mime_type)
+
+                # Create file node
+                file_node = FileNode(
+                    id=str(uuid.uuid4()),
+                    name=item.name,
+                    type="file",
+                    parent_id=parent_id,
+                    content=content,
+                    mime_type=mime_type,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                self.game_state.filesystem.nodes.append(file_node)
+
+    def _get_mime_type(self, extension: str) -> str:
+        """
+        Determine MIME type from file extension.
+
+        Args:
+            extension: File extension (including the dot)
+
+        Returns:
+            MIME type string
+        """
+        mime_types = {
+            '.txt': 'text/plain',
+            '.md': 'text/plain',
+            '.json': 'application/json',
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'text/javascript',
+            '.py': 'text/x-python',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.pdf': 'application/pdf',
+        }
+        return mime_types.get(extension.lower(), 'application/octet-stream')
+
+    def _read_file_content(self, file_path: Path, mime_type: str) -> str:
+        """
+        Read file content, encoding binary files as base64.
+
+        Args:
+            file_path: Path to the file to read
+            mime_type: MIME type of the file
+
+        Returns:
+            File content (text or base64 encoded)
+        """
+        # Text MIME types
+        if mime_type.startswith('text/') or mime_type in ['application/json']:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except UnicodeDecodeError:
+                # Fall back to binary if can't decode as text
+                pass
+
+        # Binary files - encode as base64
+        with open(file_path, 'rb') as f:
+            return base64.b64encode(f.read()).decode('ascii')
 
     # ============================================================================
     # Browser Service

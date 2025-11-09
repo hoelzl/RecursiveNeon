@@ -14,8 +14,13 @@ interface ContextMenu {
 }
 
 interface DialogState {
-  type: 'new-folder' | 'rename' | 'delete' | null;
+  type: 'new-folder' | 'new-file' | 'rename' | 'delete' | null;
   node?: FileNode;
+}
+
+interface Clipboard {
+  operation: 'copy' | 'cut';
+  node: FileNode;
 }
 
 export function FileBrowserApp() {
@@ -28,6 +33,7 @@ export function FileBrowserApp() {
   const [selectedNode, setSelectedNode] = useState<FileNode | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ type: null });
+  const [clipboard, setClipboard] = useState<Clipboard | null>(null);
 
   useEffect(() => {
     init();
@@ -98,11 +104,24 @@ export function FileBrowserApp() {
   const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, node });
+    // Calculate position relative to the app container
+    const appElement = (e.currentTarget as HTMLElement).closest('.file-browser-app');
+    if (appElement) {
+      const rect = appElement.getBoundingClientRect();
+      setContextMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        node
+      });
+    }
   };
 
   const handleNewFolder = () => {
     setDialog({ type: 'new-folder' });
+  };
+
+  const handleNewFile = () => {
+    setDialog({ type: 'new-file' });
   };
 
   const handleRename = (node: FileNode) => {
@@ -115,6 +134,33 @@ export function FileBrowserApp() {
     setDialog({ type: 'delete', node });
   };
 
+  const handleCopy = (node: FileNode) => {
+    setContextMenu(null);
+    setClipboard({ operation: 'copy', node });
+  };
+
+  const handleCut = (node: FileNode) => {
+    setContextMenu(null);
+    setClipboard({ operation: 'cut', node });
+  };
+
+  const handlePaste = async () => {
+    setContextMenu(null);
+    if (!clipboard || !currentDir) return;
+
+    try {
+      if (clipboard.operation === 'copy') {
+        await api.copyFile(clipboard.node.id, currentDir.id);
+      } else {
+        await api.moveFile(clipboard.node.id, currentDir.id);
+        setClipboard(null); // Clear clipboard after cut
+      }
+      await loadDirectory(currentDir.id);
+    } catch (error) {
+      console.error('Failed to paste:', error);
+    }
+  };
+
   const confirmNewFolder = async (name?: string) => {
     if (!currentDir || !name || !name.trim()) {
       setDialog({ type: null });
@@ -125,6 +171,22 @@ export function FileBrowserApp() {
       await loadDirectory(currentDir.id);
     } catch (error) {
       console.error('Failed to create folder:', error);
+    }
+    setDialog({ type: null });
+  };
+
+  const confirmNewFile = async (name?: string) => {
+    if (!currentDir || !name || !name.trim()) {
+      setDialog({ type: null });
+      return;
+    }
+    try {
+      // Create an empty text file
+      const fileName = name.trim().endsWith('.txt') ? name.trim() : `${name.trim()}.txt`;
+      await api.createFile(fileName, currentDir.id, '', 'text/plain');
+      await loadDirectory(currentDir.id);
+    } catch (error) {
+      console.error('Failed to create file:', error);
     }
     setDialog({ type: null });
   };
@@ -185,7 +247,13 @@ export function FileBrowserApp() {
         <div className="file-browser-path">
           {path.map((p) => p.name).join(' / ')}
         </div>
+        <button onClick={handleNewFile}>+ New File</button>
         <button onClick={handleNewFolder}>+ New Folder</button>
+        {clipboard && (
+          <button onClick={handlePaste}>
+            📋 Paste ({clipboard.operation === 'copy' ? 'Copy' : 'Move'})
+          </button>
+        )}
       </div>
 
       {/* Body with sidebar and content */}
@@ -264,6 +332,18 @@ export function FileBrowserApp() {
         >
           <div
             className="context-menu-item"
+            onClick={() => handleCopy(contextMenu.node)}
+          >
+            📄 Copy
+          </div>
+          <div
+            className="context-menu-item"
+            onClick={() => handleCut(contextMenu.node)}
+          >
+            ✂️ Cut
+          </div>
+          <div
+            className="context-menu-item"
             onClick={() => handleRename(contextMenu.node)}
           >
             ✏️ Rename
@@ -284,6 +364,17 @@ export function FileBrowserApp() {
           message="Enter the name for the new folder:"
           defaultValue=""
           onConfirm={confirmNewFolder}
+          onCancel={() => setDialog({ type: null })}
+          showInput={true}
+        />
+      )}
+
+      {dialog.type === 'new-file' && (
+        <Dialog
+          title="Create New File"
+          message="Enter the name for the new file (will be saved as .txt):"
+          defaultValue=""
+          onConfirm={confirmNewFile}
           onCancel={() => setDialog({ type: null })}
           showInput={true}
         />
