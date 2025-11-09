@@ -104,7 +104,16 @@ export function FileBrowserApp() {
   const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, node });
+    // Calculate position relative to the app container
+    const appElement = (e.currentTarget as HTMLElement).closest('.file-browser-app');
+    if (appElement) {
+      const rect = appElement.getBoundingClientRect();
+      setContextMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        node
+      });
+    }
   };
 
   const handleNewFolder = () => {
