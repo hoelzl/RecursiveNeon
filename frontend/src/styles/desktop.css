@@ -1177,6 +1177,12 @@ code {
   color: var(--accent-cyan);
 }
 
+.context-menu-separator {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 /* Dialog */
 .dialog-overlay {
   position: fixed;
@@ -1536,8 +1542,24 @@ code {
   color: var(--accent-cyan);
 }
 
+.file-browser-tree-item.drop-target {
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 4px;
+}
+
 .file-browser-tree-item-indent {
   display: inline-block;
+}
+
+.file-browser-pin-drop-zone {
+  border: 2px dashed var(--border-color);
+  opacity: 0.6;
+}
+
+.file-browser-pin-drop-zone.drop-target {
+  border-color: var(--accent-cyan);
+  opacity: 1;
 }
 
 .file-browser-content {
@@ -1573,6 +1595,12 @@ code {
 
 .file-browser-item.selected {
   background: var(--bg-tertiary);
+  border-color: var(--accent-cyan);
+}
+
+.file-browser-item.drop-target,
+.file-browser-content.drop-target {
+  background: rgba(0, 255, 255, 0.1);
   border-color: var(--accent-cyan);
 }
 
