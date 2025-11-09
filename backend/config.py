@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     ollama_host: str = "127.0.0.1"
     ollama_port: int = 11434
     ollama_binary_path: str = "../services/ollama"
-    default_model: str = "phi3:mini"  # Lightweight model for NPCs
+    default_model: str = "qwen3:4b"  # Lightweight model for NPCs
 
     # Paths
     base_dir: Path = Path(__file__).parent.parent
