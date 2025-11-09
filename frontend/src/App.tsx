@@ -1,15 +1,19 @@
 /**
  * Main App component
+ *
+ * Refactored for testability using dependency injection through React Context.
+ * Dependencies are injected via context providers instead of direct imports.
  */
 
 import { useEffect, useState } from 'react';
 import { Desktop } from './components/Desktop';
-import { useGameStore } from './stores/gameStore';
-import { wsClient } from './services/websocket';
+import { useGameStoreContext } from './contexts/GameStoreContext';
+import { useWebSocket } from './contexts/WebSocketContext';
 import './styles/desktop.css';
 
 function App() {
-  const { setNPCs, setSystemStatus, setConnected } = useGameStore();
+  const { setNPCs, setSystemStatus, setConnected } = useGameStoreContext();
+  const wsClient = useWebSocket();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

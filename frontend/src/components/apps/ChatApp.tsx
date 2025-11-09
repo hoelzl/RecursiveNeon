@@ -1,10 +1,13 @@
 /**
  * Chat App - NPC conversation interface
+ *
+ * Refactored for testability using dependency injection through React Context.
+ * Dependencies are injected via context providers instead of direct imports.
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useGameStore } from '../../stores/gameStore';
-import { wsClient } from '../../services/websocket';
+import { useGameStoreContext } from '../../contexts/GameStoreContext';
+import { useWebSocket } from '../../contexts/WebSocketContext';
 import { ChatMessage as ChatMessageType } from '../../types';
 
 interface Message {
@@ -14,7 +17,10 @@ interface Message {
 }
 
 export function ChatApp() {
-  const { npcs, updateNPC, getNPC } = useGameStore();
+  // Inject dependencies via context providers
+  const { npcs, updateNPC, getNPC } = useGameStoreContext();
+  const wsClient = useWebSocket();
+
   const [selectedNPCId, setSelectedNPCId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');

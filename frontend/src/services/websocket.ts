@@ -3,10 +3,9 @@
  */
 
 import { WebSocketMessage } from '../types';
+import { IWebSocketClient, MessageHandler } from './interfaces';
 
-type MessageHandler = (message: WebSocketMessage) => void;
-
-class WebSocketClient {
+export class WebSocketClient implements IWebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
   private reconnectAttempts = 0;
