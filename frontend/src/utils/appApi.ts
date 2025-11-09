@@ -96,7 +96,10 @@ export class AppAPI {
   }
 
   async listDirectory(dirId: string): Promise<FileNode[]> {
+    console.log('[AppAPI] Calling listDirectory with dirId:', dirId);
     const data = await this.send('fs.list', { dir_id: dirId });
+    console.log('[AppAPI] listDirectory response data:', data);
+    console.log('[AppAPI] listDirectory nodes:', data.nodes);
     return data.nodes || [];
   }
 
