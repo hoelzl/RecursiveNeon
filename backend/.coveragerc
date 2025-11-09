@@ -1,0 +1,32 @@
+[run]
+# Coverage configuration for RecursiveNeon backend
+source = .
+omit =
+    tests/*
+    */__pycache__/*
+    */site-packages/*
+    venv/*
+    .venv/*
+
+[report]
+# Reporting configuration
+precision = 2
+show_missing = True
+skip_covered = False
+
+# Fail if coverage is below threshold (can adjust as needed)
+fail_under = 0
+
+exclude_lines =
+    # Standard exclusions
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+
+[html]
+directory = htmlcov

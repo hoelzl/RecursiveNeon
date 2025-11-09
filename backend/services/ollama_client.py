@@ -1,11 +1,15 @@
 """
 Ollama HTTP Client - manages communication with local ollama server
+
+Refactored to implement IOllamaClient interface for better testability.
 """
 import httpx
 import asyncio
 import logging
 from typing import Optional, Dict, Any, List, AsyncIterator
 from dataclasses import dataclass
+
+from .interfaces import IOllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +30,11 @@ class GenerationResponse:
         return 0.0
 
 
-class OllamaClient:
+class OllamaClient(IOllamaClient):
     """
     Client for communicating with ollama server
+
+    Implements IOllamaClient interface for dependency injection support.
 
     Handles:
     - Health checking
