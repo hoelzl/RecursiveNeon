@@ -9,8 +9,8 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
 
-from services.npc_manager import NPCManager
-from models.npc import NPC, NPCPersonality, NPCRole
+from backend.services.npc_manager import NPCManager
+from backend.models.npc import NPC, NPCPersonality, NPCRole
 
 
 class TestNPCManagerWithDependencyInjection:
@@ -236,7 +236,7 @@ class TestNPCManagerWithDependencyInjection:
         """Test the factory method for creating NPCManager with Ollama."""
         # This creates a real ChatOllama instance, so it might fail without Ollama
         # In practice, you'd mock ChatOllama or skip this test
-        with patch('services.npc_manager.ChatOllama') as mock_ollama_class:
+        with patch('backend.services.npc_manager.ChatOllama') as mock_ollama_class:
             mock_llm_instance = Mock()
             mock_ollama_class.return_value = mock_llm_instance
 
@@ -257,7 +257,7 @@ class TestNPCManagerBackwardCompatibility:
 
     def test_legacy_initialization(self):
         """Test legacy initialization pattern still works."""
-        with patch('services.npc_manager.ChatOllama') as mock_ollama:
+        with patch('backend.services.npc_manager.ChatOllama') as mock_ollama:
             mock_llm = Mock()
             mock_ollama.return_value = mock_llm
 

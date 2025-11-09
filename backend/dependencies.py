@@ -14,17 +14,17 @@ Benefits:
 from dataclasses import dataclass
 from typing import Optional
 import logging
+from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
-from services.interfaces import INPCManager, IOllamaClient, IProcessManager
-from services.npc_manager import NPCManager
-from services.ollama_client import OllamaClient
-from services.process_manager import OllamaProcessManager
-from services.message_handler import MessageHandler
-from models.game_state import SystemState
-from config import settings
-from datetime import datetime
+from .services.interfaces import INPCManager, IOllamaClient, IProcessManager
+from .services.npc_manager import NPCManager
+from .services.ollama_client import OllamaClient
+from .services.process_manager import OllamaProcessManager
+from .services.message_handler import MessageHandler
+from .models.game_state import SystemState
+from .config import settings
 
 logger = logging.getLogger(__name__)
 

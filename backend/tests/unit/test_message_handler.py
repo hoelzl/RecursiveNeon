@@ -8,9 +8,9 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime
 
-from services.message_handler import MessageHandler
-from models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
-from models.game_state import SystemState, SystemStatus
+from backend.services.message_handler import MessageHandler
+from backend.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
+from backend.models.game_state import SystemState, SystemStatus
 
 
 class TestMessageHandler:
@@ -159,7 +159,7 @@ class TestMessageHandler:
         message_handler.start_time = datetime(2024, 1, 1, 12, 0, 0)
 
         # Mock current time to calculate uptime
-        with pytest.mock.patch('services.message_handler.datetime') as mock_datetime:
+        with pytest.mock.patch('backend.services.message_handler.datetime') as mock_datetime:
             mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5, 30)
 
             response = await message_handler.handle_message("get_status", {})

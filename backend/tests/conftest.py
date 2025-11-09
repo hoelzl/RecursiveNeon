@@ -8,7 +8,7 @@ from unittest.mock import Mock, AsyncMock
 from typing import AsyncGenerator
 
 # Import models for test fixtures
-from models.npc import NPC
+from backend.models.npc import NPC
 
 
 @pytest.fixture

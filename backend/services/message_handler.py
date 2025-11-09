@@ -15,8 +15,8 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from services.interfaces import INPCManager, IOllamaClient
-from models.game_state import SystemState
+from .interfaces import INPCManager, IOllamaClient
+from ..models.game_state import SystemState
 
 logger = logging.getLogger(__name__)
 
