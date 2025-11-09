@@ -1,83 +1,73 @@
 /**
- * Image Viewer App
+ * Image Viewer App - View images from the file system
  */
 import { useState, useEffect } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { FileNode } from '../../types';
 
-export function ImageViewerApp() {
+interface ImageViewerAppProps {
+  /** Optional file ID to open initially */
+  fileId?: string;
+}
+
+export function ImageViewerApp({ fileId }: ImageViewerAppProps = {}) {
   const wsClient = useWebSocket();
   const api = new AppAPI(wsClient);
 
-  const [images, setImages] = useState<FileNode[]>([]);
   const [selectedImage, setSelectedImage] = useState<FileNode | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadImages();
-  }, []);
+    if (fileId) {
+      loadImageById(fileId);
+    } else {
+      setLoading(false);
+    }
+  }, [fileId]);
 
-  const loadImages = async () => {
+  const loadImageById = async (id: string) => {
+    setLoading(true);
     try {
-      // Initialize filesystem if needed
-      const root = await api.initFilesystem();
-      // List all files in root
-      const nodes = await api.listDirectory(root.id);
-      // Filter for images
-      const imageFiles = nodes.filter(
-        (n) => n.type === 'file' && n.mime_type?.startsWith('image/')
-      );
-      setImages(imageFiles);
-      if (imageFiles.length > 0) {
-        setSelectedImage(imageFiles[0]);
+      const file = await api.getFile(id);
+      if (file.type === 'file' && file.mime_type?.startsWith('image/')) {
+        setSelectedImage(file);
+      } else {
+        console.error('File is not an image');
       }
     } catch (error) {
-      console.error('Failed to load images:', error);
+      console.error('Failed to load image:', error);
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
-    return <div className="image-viewer-loading">Loading images...</div>;
+    return <div className="image-viewer-loading">Loading image...</div>;
   }
 
   return (
     <div className="image-viewer-app">
-      <div className="image-viewer-sidebar">
-        <h3>Images</h3>
-        {images.length === 0 ? (
-          <div className="image-viewer-empty">No images found</div>
-        ) : (
-          <div className="image-viewer-list">
-            {images.map((img) => (
-              <div
-                key={img.id}
-                className={`image-viewer-item ${selectedImage?.id === img.id ? 'active' : ''}`}
-                onClick={() => setSelectedImage(img)}
-              >
-                {img.name}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="image-viewer-main">
         {selectedImage ? (
           <div className="image-viewer-display">
-            <h2>{selectedImage.name}</h2>
-            {selectedImage.content && (
-              <img
-                src={`data:${selectedImage.mime_type};base64,${selectedImage.content}`}
-                alt={selectedImage.name}
-              />
-            )}
+            <div className="image-viewer-header">
+              <h2>{selectedImage.name}</h2>
+            </div>
+            <div className="image-viewer-content">
+              {selectedImage.content && (
+                <img
+                  src={`data:${selectedImage.mime_type};base64,${selectedImage.content}`}
+                  alt={selectedImage.name}
+                  className="image-viewer-image"
+                />
+              )}
+            </div>
           </div>
         ) : (
           <div className="image-viewer-placeholder">
-            Select an image to view
+            <p>No image selected</p>
+            <p className="image-viewer-hint">Open an image file from the file browser</p>
           </div>
         )}
       </div>

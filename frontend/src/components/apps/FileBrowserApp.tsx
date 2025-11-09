@@ -6,6 +6,10 @@ import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { FileNode } from '../../types';
 import { Dialog } from '../Dialog';
+import { useGameStore } from '../../stores/gameStore';
+import { getAppTypeForFile, canOpenFile, getAppNameForFile } from '../../utils/fileTypeAssociations';
+import { TextEditorApp } from './TextEditorApp';
+import { ImageViewerApp } from './ImageViewerApp';
 
 interface ContextMenu {
   x: number;
@@ -38,6 +42,7 @@ interface PinnedFolder {
 export function FileBrowserApp() {
   const wsClient = useWebSocket();
   const api = new AppAPI(wsClient);
+  const openWindow = useGameStore((state) => state.openWindow);
 
   const [currentDir, setCurrentDir] = useState<FileNode | null>(null);
   const [contents, setContents] = useState<FileNode[]>([]);
@@ -130,7 +135,47 @@ export function FileBrowserApp() {
       setPath([...path, node]);
       loadDirectory(node.id);
       setSelectedNode(null);
+    } else if (node.type === 'file') {
+      // Open file in appropriate application based on file type
+      openFileWithApp(node);
     }
+  };
+
+  const openFileWithApp = (file: FileNode) => {
+    const appType = getAppTypeForFile(file);
+
+    if (!appType) {
+      console.warn('No application associated with file type:', file.mime_type, file.name);
+      return;
+    }
+
+    // Map app type to component and window configuration
+    let component: React.ReactNode;
+    let title: string;
+
+    switch (appType) {
+      case 'text-editor':
+        component = <TextEditorApp fileId={file.id} />;
+        title = `Text Editor - ${file.name}`;
+        break;
+      case 'image-viewer':
+        component = <ImageViewerApp fileId={file.id} />;
+        title = `Image Viewer - ${file.name}`;
+        break;
+      default:
+        console.warn('Unknown app type:', appType);
+        return;
+    }
+
+    // Open window with the appropriate app
+    openWindow({
+      title,
+      type: appType,
+      content: component,
+      position: { x: 100 + Math.random() * 100, y: 100 + Math.random() * 100 },
+      size: { width: 800, height: 600 },
+      minimized: false,
+    });
   };
 
   const handleBack = () => {
@@ -528,6 +573,25 @@ export function FileBrowserApp() {
         >
           {contextMenu.type === 'file' && contextMenu.node && (
             <>
+              {contextMenu.node.type === 'file' && canOpenFile(contextMenu.node) && (
+                <>
+                  <div
+                    className="context-menu-item"
+                    onClick={() => {
+                      setContextMenu(null);
+                      openFileWithApp(contextMenu.node!);
+                    }}
+                  >
+                    📂 Open
+                    {getAppNameForFile(contextMenu.node) && (
+                      <span style={{ fontSize: '0.85em', opacity: 0.7, marginLeft: '4px' }}>
+                        ({getAppNameForFile(contextMenu.node)})
+                      </span>
+                    )}
+                  </div>
+                  <div className="context-menu-separator"></div>
+                </>
+              )}
               <div
                 className="context-menu-item"
                 onClick={() => handleCopy(contextMenu.node!)}
