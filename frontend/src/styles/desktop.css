@@ -632,6 +632,278 @@ code {
   font-size: 14px;
 }
 
+/* Text Editor App */
+.text-editor-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.text-editor-sidebar {
+  width: 250px;
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.text-editor-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.text-editor-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.text-editor-header button {
+  width: 32px;
+  height: 32px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-editor-header button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.text-editor-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.text-editor-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.text-editor-item:hover {
+  background: var(--bg-primary);
+}
+
+.text-editor-item.active {
+  background: var(--bg-primary);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.text-editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.text-editor-toolbar {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.text-editor-filename {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.text-editor-toolbar button {
+  padding: 8px 16px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.text-editor-toolbar button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.text-editor-content {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: none;
+  padding: 16px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+.text-editor-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 32px;
+  gap: 16px;
+}
+
+.text-editor-empty button {
+  padding: 10px 20px;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.text-editor-empty button:hover {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+/* Web Browser App */
+.browser-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.browser-toolbar {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.browser-address-bar {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.browser-address-bar:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 255, 255, 0.1);
+}
+
+.browser-toolbar button {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 48px;
+}
+
+.browser-toolbar button:hover:not(:disabled) {
+  background: var(--bg-primary);
+  border-color: var(--accent-cyan);
+}
+
+.browser-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.browser-toolbar button:first-of-type {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+.browser-toolbar button:first-of-type:hover:not(:disabled) {
+  background: #00d4d4;
+  box-shadow: var(--glow);
+}
+
+.browser-bookmarks {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.browser-bookmark {
+  padding: 4px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.browser-bookmark:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-cyan);
+}
+
+.browser-content {
+  flex: 1;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  position: relative;
+}
+
+.browser-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+
+.browser-loading,
+.browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
 /* Task List App */
 .task-list-app {
   display: flex;

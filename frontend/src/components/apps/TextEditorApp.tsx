@@ -5,6 +5,9 @@ import { useState, useEffect } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { FileNode } from '../../types';
+import { Dialog } from '../Dialog';
+
+type DialogType = 'save-success' | 'new-file' | null;
 
 export function TextEditorApp() {
   const wsClient = useWebSocket();
@@ -14,6 +17,7 @@ export function TextEditorApp() {
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [content, setContent] = useState('');
   const [rootId, setRootId] = useState<string | null>(null);
+  const [dialogType, setDialogType] = useState<DialogType>(null);
 
   useEffect(() => {
     loadFiles();
@@ -50,16 +54,19 @@ export function TextEditorApp() {
     if (!selectedFile) return;
     try {
       await api.updateFile(selectedFile.id, { content });
-      alert('File saved!');
+      setDialogType('save-success');
     } catch (error) {
       console.error('Failed to save file:', error);
     }
   };
 
-  const handleNew = async () => {
+  const handleNew = () => {
     if (!rootId) return;
-    const fileName = prompt('Enter file name:');
-    if (!fileName) return;
+    setDialogType('new-file');
+  };
+
+  const handleCreateFile = async (fileName: string) => {
+    if (!rootId || !fileName) return;
     try {
       const newFile = await api.createFile(fileName, rootId, '', 'text/plain');
       setFiles([...files, newFile]);
@@ -111,6 +118,30 @@ export function TextEditorApp() {
           </div>
         )}
       </div>
+
+      {dialogType === 'save-success' && (
+        <Dialog
+          title="Success"
+          message="File saved successfully!"
+          showInput={false}
+          onConfirm={() => setDialogType(null)}
+          onCancel={() => setDialogType(null)}
+        />
+      )}
+
+      {dialogType === 'new-file' && (
+        <Dialog
+          title="New File"
+          message="Enter file name:"
+          defaultValue="untitled.txt"
+          showInput={true}
+          onConfirm={(fileName) => {
+            setDialogType(null);
+            if (fileName) handleCreateFile(fileName);
+          }}
+          onCancel={() => setDialogType(null)}
+        />
+      )}
     </div>
   );
 }

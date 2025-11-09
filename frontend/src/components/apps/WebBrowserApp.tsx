@@ -1,7 +1,7 @@
 /**
  * Web Browser App - Sandboxed browser with mapped URLs
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
 import { BrowserPage } from '../../types';
@@ -14,11 +14,69 @@ export function WebBrowserApp() {
   const [currentPage, setCurrentPage] = useState<BrowserPage | null>(null);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     loadBookmarks();
     navigateTo('home.html');
   }, []);
+
+  useEffect(() => {
+    // Inject styles into iframe for better text contrast
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const injectStyles = () => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!iframeDoc) return;
+
+        // Check if styles are already injected
+        if (iframeDoc.getElementById('browser-injected-styles')) return;
+
+        const style = iframeDoc.createElement('style');
+        style.id = 'browser-injected-styles';
+        style.textContent = `
+          body {
+            color: #333;
+            background-color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            padding: 16px;
+            max-width: 100%;
+          }
+          a {
+            color: #0066cc;
+            text-decoration: underline;
+          }
+          a:hover {
+            color: #0052a3;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            color: #222;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+          }
+          p {
+            margin-bottom: 1em;
+          }
+        `;
+        iframeDoc.head.appendChild(style);
+      } catch (e) {
+        // Silently fail if we can't access iframe content (CORS)
+        console.debug('Could not inject styles into iframe:', e);
+      }
+    };
+
+    // Inject styles after iframe loads
+    iframe.addEventListener('load', injectStyles);
+    // Also try to inject immediately in case it's already loaded
+    injectStyles();
+
+    return () => {
+      iframe.removeEventListener('load', injectStyles);
+    };
+  }, [currentPage]);
 
   const loadBookmarks = async () => {
     try {
@@ -110,6 +168,7 @@ export function WebBrowserApp() {
           <div className="browser-loading">Loading...</div>
         ) : currentPage ? (
           <iframe
+            ref={iframeRef}
             srcDoc={currentPage.content}
             title={currentPage.title}
             sandbox="allow-scripts"
