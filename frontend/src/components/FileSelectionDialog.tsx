@@ -33,8 +33,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
   initialFilename = '',
   api,
 }) => {
-  const [currentDirId, setCurrentDirId] = useState<string>('');
-  const [currentDirPath, setCurrentDirPath] = useState<string[]>([]);
+  // Store path as array of directory nodes instead of just names
+  const [pathNodes, setPathNodes] = useState<FileNode[]>([]);
   const [contents, setContents] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [filename, setFilename] = useState<string>(initialFilename);
@@ -50,8 +50,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
     setLoading(true);
     try {
       const root = await api.initFilesystem();
-      setCurrentDirId(root.id);
-      setCurrentDirPath([root.name]);
+      setPathNodes([root]);
       await loadDirectory(root.id);
       setFilename(initialFilename);
       setSelectedFile(null);
@@ -78,55 +77,19 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
   const handleNavigateToDirectory = async (dir: FileNode) => {
     if (dir.type !== 'directory') return;
 
-    setCurrentDirId(dir.id);
-    setCurrentDirPath([...currentDirPath, dir.name]);
+    setPathNodes([...pathNodes, dir]);
     await loadDirectory(dir.id);
     setSelectedFile(null);
   };
 
   const handleNavigateUp = async () => {
-    if (currentDirPath.length <= 1) return;
+    if (pathNodes.length <= 1) return;
 
-    // Find parent directory
-    try {
-      // Get current directory to find its parent
-      const allDirs = await findParentDirectory(currentDirId);
-      if (allDirs) {
-        setCurrentDirId(allDirs.id);
-        setCurrentDirPath(currentDirPath.slice(0, -1));
-        await loadDirectory(allDirs.id);
-        setSelectedFile(null);
-      }
-    } catch (error) {
-      console.error('Failed to navigate up:', error);
-    }
-  };
-
-  const findParentDirectory = async (childId: string): Promise<FileNode | null> => {
-    // Get root and search for parent
-    const root = await api.initFilesystem();
-    return await searchForParent(root.id, childId);
-  };
-
-  const searchForParent = async (dirId: string, targetId: string): Promise<FileNode | null> => {
-    const contents = await api.listDirectory(dirId);
-
-    // Check if target is directly in this directory
-    const found = contents.find(item => item.id === targetId);
-    if (found) {
-      // Return the current directory as it's the parent
-      return contents.find(item => item.id === dirId) || { id: dirId } as FileNode;
-    }
-
-    // Recursively search subdirectories
-    for (const item of contents) {
-      if (item.type === 'directory') {
-        const result = await searchForParent(item.id, targetId);
-        if (result) return result;
-      }
-    }
-
-    return null;
+    const newPath = pathNodes.slice(0, -1);
+    const parentDir = newPath[newPath.length - 1];
+    setPathNodes(newPath);
+    await loadDirectory(parentDir.id);
+    setSelectedFile(null);
   };
 
   const handleFileClick = (file: FileNode) => {
@@ -153,7 +116,8 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
     if (mode === 'open') {
       const file = fileToSelect || selectedFile;
       if (file && file.type === 'file') {
-        const fullPath = [...currentDirPath, file.name].join('/');
+        const pathNames = pathNodes.map(n => n.name);
+        const fullPath = [...pathNames, file.name].join('/');
         onSelect(file.id, fullPath);
         onClose();
       }
@@ -161,7 +125,9 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
       if (filename.trim()) {
         // In save mode, we return the directory ID and the filename
         // The parent component will handle creating the file
-        const fullPath = [...currentDirPath, filename].join('/');
+        const pathNames = pathNodes.map(n => n.name);
+        const fullPath = [...pathNames, filename].join('/');
+        const currentDirId = pathNodes[pathNodes.length - 1].id;
         onSelect(currentDirId, fullPath);
         onClose();
       }
@@ -184,43 +150,143 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[600px] max-h-[80vh] flex flex-col">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-[600px] max-h-[80vh] flex flex-col"
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '8px',
+          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+          width: '600px',
+          maxWidth: '90vw',
+          maxHeight: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-800">
+        <div
+          className="px-4 py-3 border-b border-gray-200"
+          style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid #e5e7eb',
+          }}
+        >
+          <h2
+            className="text-lg font-semibold text-gray-800"
+            style={{
+              fontSize: '18px',
+              fontWeight: 600,
+              color: '#1f2937',
+              margin: 0,
+            }}
+          >
             {title || (mode === 'open' ? 'Open File' : 'Save File')}
           </h2>
         </div>
 
         {/* Location bar */}
-        <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center space-x-2">
+        <div
+          className="px-4 py-2 border-b border-gray-200 bg-gray-50"
+          style={{
+            padding: '8px 16px',
+            borderBottom: '1px solid #e5e7eb',
+            backgroundColor: '#f9fafb',
+          }}
+        >
+          <div
+            className="flex items-center space-x-2"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
             <button
               onClick={handleNavigateUp}
-              disabled={currentDirPath.length <= 1 || loading}
+              disabled={pathNodes.length <= 1 || loading}
               className="px-2 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                padding: '4px 8px',
+                fontSize: '14px',
+                backgroundColor: 'white',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                cursor: pathNodes.length <= 1 || loading ? 'not-allowed' : 'pointer',
+                opacity: pathNodes.length <= 1 || loading ? 0.5 : 1,
+              }}
             >
               ⬆ Up
             </button>
-            <div className="flex-1 px-3 py-1 bg-white border border-gray-300 rounded text-sm font-mono">
-              {currentDirPath.join('/')}
+            <div
+              className="flex-1 px-3 py-1 bg-white border border-gray-300 rounded text-sm font-mono"
+              style={{
+                flex: 1,
+                padding: '4px 12px',
+                backgroundColor: 'white',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontFamily: 'monospace',
+              }}
+            >
+              {pathNodes.map(n => n.name).join('/')}
             </div>
           </div>
         </div>
 
         {/* File list */}
-        <div className="flex-1 overflow-y-auto p-4 min-h-[300px]">
+        <div
+          className="flex-1 overflow-y-auto p-4 min-h-[300px]"
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            minHeight: '300px',
+          }}
+        >
           {loading ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div
+              className="flex items-center justify-center h-full text-gray-500"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                color: '#6b7280',
+              }}
+            >
               Loading...
             </div>
           ) : filteredContents.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div
+              className="flex items-center justify-center h-full text-gray-500"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                color: '#6b7280',
+              }}
+            >
               No files found
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {filteredContents.map(item => (
                 <div
                   key={item.id}
@@ -231,13 +297,38 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                       ? 'bg-blue-100 border border-blue-300'
                       : 'hover:bg-gray-100'
                   }`}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: selectedFile?.id === item.id ? '#dbeafe' : 'transparent',
+                    border: selectedFile?.id === item.id ? '1px solid #93c5fd' : '1px solid transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedFile?.id !== item.id) {
+                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedFile?.id !== item.id) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
+                  }}
                 >
-                  <span className="text-xl">
+                  <span className="text-xl" style={{ fontSize: '20px' }}>
                     {item.type === 'directory' ? '📁' : '📄'}
                   </span>
-                  <span className="flex-1 text-sm text-gray-800">{item.name}</span>
+                  <span
+                    className="flex-1 text-sm text-gray-800"
+                    style={{ flex: 1, fontSize: '14px', color: '#1f2937' }}
+                  >
+                    {item.name}
+                  </span>
                   {item.type === 'directory' && (
-                    <span className="text-gray-400">→</span>
+                    <span className="text-gray-400" style={{ color: '#9ca3af' }}>→</span>
                   )}
                 </div>
               ))}
@@ -247,8 +338,23 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
 
         {/* Filename input (for save mode) */}
         {mode === 'save' && (
-          <div className="px-4 py-3 border-t border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div
+            className="px-4 py-3 border-t border-gray-200"
+            style={{
+              padding: '12px 16px',
+              borderTop: '1px solid #e5e7eb',
+            }}
+          >
+            <label
+              className="block text-sm font-medium text-gray-700 mb-2"
+              style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: '#374151',
+                marginBottom: '8px',
+              }}
+            >
               Filename:
             </label>
             <input
@@ -261,6 +367,13 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
                 }
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+              }}
               placeholder="Enter filename"
               autoFocus
             />
@@ -268,10 +381,34 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
         )}
 
         {/* Footer buttons */}
-        <div className="px-4 py-3 border-t border-gray-200 flex justify-end space-x-2">
+        <div
+          className="px-4 py-3 border-t border-gray-200 flex justify-end space-x-2"
+          style={{
+            padding: '12px 16px',
+            borderTop: '1px solid #e5e7eb',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px',
+          }}
+        >
           <button
             onClick={handleCancel}
             className="px-4 py-2 text-sm bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              backgroundColor: '#e5e7eb',
+              color: '#1f2937',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#d1d5db';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#e5e7eb';
+            }}
           >
             Cancel
           </button>
@@ -279,6 +416,26 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
             onClick={() => handleConfirm()}
             disabled={!canConfirm}
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              backgroundColor: canConfirm ? '#2563eb' : '#93c5fd',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: canConfirm ? 'pointer' : 'not-allowed',
+              opacity: canConfirm ? 1 : 0.5,
+            }}
+            onMouseEnter={(e) => {
+              if (canConfirm) {
+                e.currentTarget.style.backgroundColor = '#1d4ed8';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (canConfirm) {
+                e.currentTarget.style.backgroundColor = '#2563eb';
+              }
+            }}
           >
             {mode === 'open' ? 'Open' : 'Save'}
           </button>
