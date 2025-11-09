@@ -10,7 +10,8 @@ import { Dialog } from '../Dialog';
 interface ContextMenu {
   x: number;
   y: number;
-  node: FileNode;
+  node?: FileNode;
+  type: 'file' | 'background' | 'sidebar' | 'sidebar-tree';
 }
 
 interface DialogState {
@@ -21,6 +22,11 @@ interface DialogState {
 interface Clipboard {
   operation: 'copy' | 'cut';
   node: FileNode;
+}
+
+interface DragState {
+  node: FileNode;
+  operation: 'copy' | 'move';
 }
 
 export function FileBrowserApp() {
@@ -34,6 +40,8 @@ export function FileBrowserApp() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ type: null });
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   useEffect(() => {
     init();
@@ -51,6 +59,7 @@ export function FileBrowserApp() {
       const root = await api.initFilesystem();
       setCurrentDir(root);
       setPath([root]);
+      // Load the root directory contents immediately
       await loadDirectory(root.id);
     } catch (error) {
       console.error('Failed to initialize filesystem:', error);
@@ -101,7 +110,7 @@ export function FileBrowserApp() {
     setSelectedNode(null);
   };
 
-  const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
+  const handleContextMenu = (e: React.MouseEvent, type: 'file' | 'background' | 'sidebar' | 'sidebar-tree', node?: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
     // Calculate position relative to the app container
@@ -111,6 +120,7 @@ export function FileBrowserApp() {
       setContextMenu({
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
+        type,
         node
       });
     }
@@ -224,6 +234,67 @@ export function FileBrowserApp() {
     setDialog({ type: null });
   };
 
+  const handleDragStart = (e: React.DragEvent, node: FileNode) => {
+    e.stopPropagation();
+    // Determine operation based on modifier keys: Shift = copy, default = move
+    const operation = e.shiftKey ? 'copy' : 'move';
+    setDragState({ node, operation });
+    e.dataTransfer.effectAllowed = operation;
+    e.dataTransfer.setData('text/plain', node.name);
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetId?: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragState) {
+      e.dataTransfer.dropEffect = dragState.operation;
+      setDropTarget(targetId || 'background');
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTarget(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetNode?: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTarget(null);
+
+    if (!dragState || !currentDir) return;
+
+    try {
+      // Determine target directory
+      let targetDirId: string;
+      if (targetNode && targetNode.type === 'directory') {
+        targetDirId = targetNode.id;
+      } else {
+        targetDirId = currentDir.id;
+      }
+
+      // Don't drop on self or if source and target are the same directory
+      if (dragState.node.id === targetDirId) {
+        setDragState(null);
+        return;
+      }
+
+      // Perform the operation
+      if (dragState.operation === 'copy') {
+        await api.copyFile(dragState.node.id, targetDirId);
+      } else {
+        await api.moveFile(dragState.node.id, targetDirId);
+      }
+
+      await loadDirectory(currentDir.id);
+    } catch (error) {
+      console.error('Failed to drop:', error);
+    }
+
+    setDragState(null);
+  };
+
   const getFileIcon = (node: FileNode) => {
     if (node.type === 'directory') return '📁';
 
@@ -242,7 +313,7 @@ export function FileBrowserApp() {
       {/* Toolbar */}
       <div className="file-browser-toolbar">
         <button onClick={handleBack} disabled={path.length <= 1}>
-          ← Back
+          ↑ Up
         </button>
         <div className="file-browser-path">
           {path.map((p) => p.name).join(' / ')}
@@ -265,6 +336,7 @@ export function FileBrowserApp() {
             <div
               className="file-browser-sidebar-item active"
               onClick={navigateToRoot}
+              onContextMenu={(e) => handleContextMenu(e, 'sidebar')}
             >
               <span className="file-browser-sidebar-icon">🏠</span>
               <span>Home</span>
@@ -289,6 +361,7 @@ export function FileBrowserApp() {
                     loadDirectory(node.id);
                     setSelectedNode(null);
                   }}
+                  onContextMenu={(e) => handleContextMenu(e, 'sidebar-tree', node)}
                 >
                   <span>{index === 0 ? '🏠' : '📁'}</span>
                   <span>{node.name}</span>
@@ -299,7 +372,13 @@ export function FileBrowserApp() {
         </div>
 
         {/* Right Content Area */}
-        <div className="file-browser-content">
+        <div
+          className={`file-browser-content ${dropTarget === 'background' ? 'drop-target' : ''}`}
+          onContextMenu={(e) => handleContextMenu(e, 'background')}
+          onDragOver={(e) => handleDragOver(e)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e)}
+        >
           {contents.length === 0 ? (
             <div className="file-browser-empty">This folder is empty</div>
           ) : (
@@ -309,10 +388,15 @@ export function FileBrowserApp() {
                   key={node.id}
                   className={`file-browser-item ${
                     selectedNode?.id === node.id ? 'selected' : ''
-                  }`}
+                  } ${dropTarget === node.id && node.type === 'directory' ? 'drop-target' : ''}`}
+                  draggable
                   onClick={() => setSelectedNode(node)}
                   onDoubleClick={() => handleOpen(node)}
-                  onContextMenu={(e) => handleContextMenu(e, node)}
+                  onContextMenu={(e) => handleContextMenu(e, 'file', node)}
+                  onDragStart={(e) => handleDragStart(e, node)}
+                  onDragOver={(e) => handleDragOver(e, node.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, node)}
                 >
                   <div className="file-browser-icon">{getFileIcon(node)}</div>
                   <div className="file-browser-name">{node.name}</div>
@@ -330,30 +414,123 @@ export function FileBrowserApp() {
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="context-menu-item"
-            onClick={() => handleCopy(contextMenu.node)}
-          >
-            📄 Copy
-          </div>
-          <div
-            className="context-menu-item"
-            onClick={() => handleCut(contextMenu.node)}
-          >
-            ✂️ Cut
-          </div>
-          <div
-            className="context-menu-item"
-            onClick={() => handleRename(contextMenu.node)}
-          >
-            ✏️ Rename
-          </div>
-          <div
-            className="context-menu-item"
-            onClick={() => handleDelete(contextMenu.node)}
-          >
-            🗑️ Delete
-          </div>
+          {contextMenu.type === 'file' && contextMenu.node && (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => handleCopy(contextMenu.node!)}
+              >
+                📄 Copy
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => handleCut(contextMenu.node!)}
+              >
+                ✂️ Cut
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => handleRename(contextMenu.node!)}
+              >
+                ✏️ Rename
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => handleDelete(contextMenu.node!)}
+              >
+                🗑️ Delete
+              </div>
+            </>
+          )}
+
+          {contextMenu.type === 'background' && (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  handleNewFile();
+                }}
+              >
+                📄 New File
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  handleNewFolder();
+                }}
+              >
+                📁 New Folder
+              </div>
+              {clipboard && (
+                <>
+                  <div className="context-menu-separator"></div>
+                  <div
+                    className="context-menu-item"
+                    onClick={handlePaste}
+                  >
+                    📋 Paste ({clipboard.operation === 'copy' ? 'Copy' : 'Move'})
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {contextMenu.type === 'sidebar' && (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  navigateToRoot();
+                }}
+              >
+                🏠 Go to Home
+              </div>
+            </>
+          )}
+
+          {contextMenu.type === 'sidebar-tree' && contextMenu.node && (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  const nodeIndex = path.findIndex(p => p.id === contextMenu.node?.id);
+                  if (nodeIndex >= 0) {
+                    const newPath = path.slice(0, nodeIndex + 1);
+                    setPath(newPath);
+                    setCurrentDir(contextMenu.node!);
+                    loadDirectory(contextMenu.node!.id);
+                    setSelectedNode(null);
+                  }
+                }}
+              >
+                📂 Open
+              </div>
+              {path.length > 1 && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    handleBack();
+                  }}
+                >
+                  ↑ Go Up
+                </div>
+              )}
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  navigateToRoot();
+                }}
+              >
+                🏠 Go to Home
+              </div>
+            </>
+          )}
         </div>
       )}
 

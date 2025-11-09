@@ -1177,6 +1177,12 @@ code {
   color: var(--accent-cyan);
 }
 
+.context-menu-separator {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 /* Dialog */
 .dialog-overlay {
   position: fixed;
@@ -1573,6 +1579,12 @@ code {
 
 .file-browser-item.selected {
   background: var(--bg-tertiary);
+  border-color: var(--accent-cyan);
+}
+
+.file-browser-item.drop-target,
+.file-browser-content.drop-target {
+  background: rgba(0, 255, 255, 0.1);
   border-color: var(--accent-cyan);
 }
 
