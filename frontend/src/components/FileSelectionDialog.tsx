@@ -50,6 +50,7 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
     setLoading(true);
     try {
       const root = await api.initFilesystem();
+      console.log('FileSelectionDialog: Initialized filesystem, root:', root);
       setPathNodes([root]);
       await loadDirectory(root.id);
       setFilename(initialFilename);
@@ -63,9 +64,11 @@ export const FileSelectionDialog: React.FC<FileSelectionDialogProps> = ({
 
   const loadDirectory = async (dirId: string) => {
     setLoading(true);
+    console.log('FileSelectionDialog: Loading directory with ID:', dirId);
     try {
       const dirContents = await api.listDirectory(dirId);
-      console.log('Loaded directory contents:', dirContents);
+      console.log('FileSelectionDialog: Loaded directory contents:', dirContents);
+      console.log('FileSelectionDialog: Contents length:', dirContents.length);
       setContents(dirContents);
     } catch (error) {
       console.error('Failed to load directory:', error);
