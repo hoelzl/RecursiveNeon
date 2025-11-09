@@ -60,7 +60,7 @@ Open **two terminal windows**:
 ```bash
 cd backend
 source venv/bin/activate  # Windows: venv\Scripts\activate
-python -m backend.main
+python main.py
 ```
 
 Wait for: `Recursive://Neon Backend Ready!`
@@ -86,8 +86,13 @@ Open browser to: `http://localhost:5173`
 ### Backend won't start
 
 ```bash
-# Check if ports are free
-lsof -i :8000   # Backend
+# Make sure you're in the backend directory and venv is activated
+cd backend
+source venv/bin/activate  # Windows: venv\Scripts\activate
+python main.py
+
+# If still issues, check if ports are free
+lsof -i :8000   # Backend (Mac/Linux)
 lsof -i :11434  # Ollama
 
 # If busy, kill the process or change ports in .env

@@ -295,7 +295,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.send_personal({
                     "type": "npcs_list",
                     "data": {
-                        "npcs": [npc.dict() for npc in npcs]
+                        "npcs": [npc.model_dump(mode='json') for npc in npcs]
                     }
                 }, websocket)
 
@@ -324,7 +324,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Send response
                     await manager.send_personal({
                         "type": "chat_response",
-                        "data": response.dict()
+                        "data": response.model_dump(mode='json')
                     }, websocket)
 
                 except Exception as e:
@@ -339,7 +339,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.send_personal({
                     "type": "status",
                     "data": {
-                        "system": system_state.dict(),
+                        "system": system_state.model_dump(mode='json'),
                         "uptime_seconds": uptime
                     }
                 }, websocket)
@@ -360,7 +360,7 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "backend.main:app",
+        "main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,

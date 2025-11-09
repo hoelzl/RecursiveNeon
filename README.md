@@ -106,7 +106,7 @@ You need two terminal windows:
 ```bash
 cd backend
 source venv/bin/activate  # Windows: venv\Scripts\activate
-python -m backend.main
+python main.py
 ```
 
 **Terminal 2 - Frontend:**
@@ -247,7 +247,7 @@ Use smaller models for faster responses, larger for better quality.
 
 ### "Failed to connect to server"
 
-- Ensure backend is running: `cd backend && python -m backend.main`
+- Ensure backend is running: `cd backend && python main.py`
 - Check if port 8000 is free: `lsof -i :8000` (Mac/Linux)
 - Check ollama is running in backend logs
 
