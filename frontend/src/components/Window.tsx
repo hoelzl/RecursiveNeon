@@ -1,9 +1,8 @@
 /**
- * Window component - Draggable window container
+ * Window component - Draggable and resizable window container
  */
 
-import { useRef } from 'react';
-import Draggable from 'react-draggable';
+import { Rnd } from 'react-rnd';
 import { useGameStore } from '../stores/gameStore';
 import { WindowState } from '../types';
 
@@ -12,7 +11,6 @@ interface WindowProps {
 }
 
 export function Window({ window }: WindowProps) {
-  const nodeRef = useRef(null);
   const { closeWindow, minimizeWindow, focusWindow, updateWindow } = useGameStore();
 
   const handleDragStop = (_e: any, data: { x: number; y: number }) => {
@@ -21,25 +19,41 @@ export function Window({ window }: WindowProps) {
     });
   };
 
+  const handleResizeStop = (
+    _e: any,
+    _direction: any,
+    ref: HTMLElement,
+    _delta: any,
+    position: { x: number; y: number }
+  ) => {
+    updateWindow(window.id, {
+      size: {
+        width: ref.offsetWidth,
+        height: ref.offsetHeight,
+      },
+      position,
+    });
+  };
+
   if (window.minimized) {
     return null;
   }
 
   return (
-    <Draggable
-      nodeRef={nodeRef}
-      handle=".window-titlebar"
-      position={window.position}
-      onStop={handleDragStop}
+    <Rnd
+      size={{ width: window.size.width, height: window.size.height }}
+      position={{ x: window.position.x, y: window.position.y }}
+      onDragStop={handleDragStop}
+      onResizeStop={handleResizeStop}
+      minWidth={300}
+      minHeight={200}
+      bounds="parent"
+      dragHandleClassName="window-titlebar"
+      style={{ zIndex: window.zIndex }}
     >
       <div
-        ref={nodeRef}
         className="window"
-        style={{
-          width: window.size.width,
-          height: window.size.height,
-          zIndex: window.zIndex,
-        }}
+        style={{ width: '100%', height: '100%' }}
         onMouseDown={() => focusWindow(window.id)}
       >
         <div className="window-titlebar" onMouseDown={() => focusWindow(window.id)}>
@@ -63,6 +77,6 @@ export function Window({ window }: WindowProps) {
         </div>
         <div className="window-content">{window.content}</div>
       </div>
-    </Draggable>
+    </Rnd>
   );
 }
