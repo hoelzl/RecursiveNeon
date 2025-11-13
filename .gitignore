@@ -71,3 +71,6 @@ logs/
 # Build artifacts
 frontend/.vite/
 backend/*.pyc
+
+# Claude Code user-specific settings
+.claude/*.local.json
