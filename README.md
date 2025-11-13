@@ -106,11 +106,15 @@ You need two terminal windows:
 
 **Terminal 1 - Backend:**
 ```bash
-# Activate virtual environment (from project root)
-source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
+# Install backend in development mode (from project root, one-time setup)
+cd backend
+uv pip install -e .
 
-# Run backend (from project root)
-python -m backend.main
+# Run backend using the entry point (can be run from any directory)
+run-recursive-neon-backend
+
+# Or alternatively, run directly with Python
+python -m recursive_neon.main
 ```
 
 **Terminal 2 - Frontend:**
@@ -149,13 +153,17 @@ Each has their own personality, conversation style, and secrets to discover!
 
 ```
 RecursiveNeon/
-├── backend/                # Python FastAPI backend
-│   ├── models/            # Data models (NPCs, game state)
-│   ├── services/          # Business logic (ollama, NPCs)
-│   ├── main.py            # FastAPI app entry point
-│   └── config.py          # Configuration
+├── backend/                     # Python FastAPI backend
+│   ├── src/
+│   │   └── recursive_neon/     # Main Python package
+│   │       ├── models/         # Data models (NPCs, game state)
+│   │       ├── services/       # Business logic (ollama, NPCs)
+│   │       ├── main.py         # FastAPI app entry point
+│   │       └── config.py       # Configuration
+│   ├── tests/                  # Backend tests
+│   └── pyproject.toml          # Python project config (uv-compatible)
 │
-├── frontend/              # React TypeScript frontend
+├── frontend/                    # React TypeScript frontend
 │   ├── src/
 │   │   ├── components/   # UI components (Desktop, Window, etc.)
 │   │   ├── services/     # WebSocket client

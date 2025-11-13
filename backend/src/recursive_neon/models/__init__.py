@@ -1,7 +1,7 @@
 """Data models"""
-from .npc import NPC, NPCPersonality, NPCRole, ChatRequest, ChatResponse
-from .game_state import GameState, SystemState, SystemStatus
-from .app_models import (
+from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole, ChatRequest, ChatResponse
+from recursive_neon.models.game_state import GameState, SystemState, SystemStatus
+from recursive_neon.models.app_models import (
     Note,
     NotesState,
     Task,

@@ -1,6 +1,6 @@
 [run]
 # Coverage configuration for RecursiveNeon backend
-source = .
+source = src/recursive_neon
 omit =
     tests/*
     */__pycache__/*

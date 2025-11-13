@@ -15,11 +15,11 @@ import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from .interfaces import INPCManager, IOllamaClient
-from ..models.game_state import SystemState
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient
+from recursive_neon.models.game_state import SystemState
 
 if TYPE_CHECKING:
-    from .app_service import AppService
+    from recursive_neon.services.app_service import AppService
 
 logger = logging.getLogger(__name__)
 

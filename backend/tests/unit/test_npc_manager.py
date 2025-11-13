@@ -9,8 +9,8 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
 
-from backend.services.npc_manager import NPCManager
-from backend.models.npc import NPC, NPCPersonality, NPCRole
+from recursive_neon.services.npc_manager import NPCManager
+from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole
 
 
 class TestNPCManagerWithDependencyInjection:

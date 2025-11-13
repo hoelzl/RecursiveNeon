@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any, List, AsyncIterator
 from dataclasses import dataclass
 
-from .interfaces import IOllamaClient
+from recursive_neon.services.interfaces import IOllamaClient
 
 logger = logging.getLogger(__name__)
 
