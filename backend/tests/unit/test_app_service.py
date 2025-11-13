@@ -3,9 +3,9 @@ Tests for desktop app service
 """
 import pytest
 from datetime import datetime
-from backend.services.app_service import AppService
-from backend.models.game_state import GameState
-from backend.models.app_models import Note, Task, TaskList, FileNode, BrowserPage
+from recursive_neon.services.app_service import AppService
+from recursive_neon.models.game_state import GameState
+from recursive_neon.models.app_models import Note, Task, TaskList, FileNode, BrowserPage
 
 
 class TestNotesService:

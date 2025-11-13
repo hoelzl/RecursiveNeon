@@ -12,9 +12,9 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationChain
 from langchain.prompts import PromptTemplate
 
-from ..models.npc import NPC, NPCPersonality, NPCRole, ChatResponse
-from ..config import settings
-from .interfaces import INPCManager, LLMInterface
+from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole, ChatResponse
+from recursive_neon.config import settings
+from recursive_neon.services.interfaces import INPCManager, LLMInterface
 
 logger = logging.getLogger(__name__)
 

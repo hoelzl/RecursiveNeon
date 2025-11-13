@@ -8,7 +8,7 @@ from unittest.mock import Mock, AsyncMock
 from typing import AsyncGenerator
 
 # Import models for test fixtures
-from backend.models.npc import NPC
+from recursive_neon.models.npc import NPC
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def sample_npc():
 
     Returns a fully configured NPC instance with all required fields.
     """
-    from backend.models.npc import NPCPersonality, NPCRole
+    from recursive_neon.models.npc import NPCPersonality, NPCRole
 
     return NPC(
         id="test_npc_1",
@@ -84,7 +84,7 @@ def multiple_npcs(sample_npc):
 
     Returns a list of NPC instances.
     """
-    from backend.models.npc import NPCPersonality, NPCRole
+    from recursive_neon.models.npc import NPCPersonality, NPCRole
 
     npc2 = NPC(
         id="test_npc_2",

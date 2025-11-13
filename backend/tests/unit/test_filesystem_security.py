@@ -7,8 +7,8 @@ access files outside of its designated storage areas.
 import pytest
 import os
 from pathlib import Path
-from backend.models.game_state import GameState
-from backend.services.app_service import AppService
+from recursive_neon.models.game_state import GameState
+from recursive_neon.services.app_service import AppService
 
 
 class TestFilesystemSecurity:
@@ -230,7 +230,7 @@ def test_no_real_filesystem_access():
     # All other operations work purely with in-memory FileNode objects
     # and never touch the real file system.
 
-    from backend.services.app_service import AppService
+    from recursive_neon.services.app_service import AppService
     import inspect
 
     # Get all methods of AppService

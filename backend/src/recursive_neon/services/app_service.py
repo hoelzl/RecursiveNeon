@@ -10,8 +10,8 @@ import base64
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from ..models.game_state import GameState
-from ..models.app_models import (
+from recursive_neon.models.game_state import GameState
+from recursive_neon.models.app_models import (
     Note,
     Task,
     TaskList,

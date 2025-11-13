@@ -18,10 +18,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depe
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import settings
-from .models.npc import ChatRequest, ChatResponse, NPCListResponse
-from .models.game_state import SystemStatus, StatusResponse
-from .dependencies import ServiceContainer, ServiceFactory, get_container, initialize_container
+from recursive_neon.config import settings
+from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
+from recursive_neon.models.game_state import SystemStatus, StatusResponse
+from recursive_neon.dependencies import ServiceContainer, ServiceFactory, get_container, initialize_container
 
 # Configure logging
 logging.basicConfig(
@@ -296,12 +296,17 @@ async def websocket_endpoint(
         manager.disconnect(websocket)
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the Recursive://Neon backend server"""
     import uvicorn
     uvicorn.run(
-        "backend.main:app",
+        "recursive_neon.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
         log_level="debug" if settings.debug else "info"
     )
+
+
+if __name__ == "__main__":
+    main()

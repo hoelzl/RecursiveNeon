@@ -3,7 +3,7 @@ Tests for desktop app data models
 """
 import pytest
 from datetime import datetime
-from backend.models.app_models import (
+from recursive_neon.models.app_models import (
     Note,
     NotesState,
     Task,

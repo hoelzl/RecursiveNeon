@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 import psutil
 
-from .interfaces import IProcessManager
+from recursive_neon.services.interfaces import IProcessManager
 
 logger = logging.getLogger(__name__)
 

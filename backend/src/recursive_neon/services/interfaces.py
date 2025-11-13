@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, AsyncIterator, Protocol
 from dataclasses import dataclass
 
-from ..models.npc import NPC, ChatResponse
+from recursive_neon.models.npc import NPC, ChatResponse
 
 
 # ============================================================================

@@ -18,14 +18,14 @@ from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
-from .services.interfaces import INPCManager, IOllamaClient, IProcessManager
-from .services.npc_manager import NPCManager
-from .services.ollama_client import OllamaClient
-from .services.process_manager import OllamaProcessManager
-from .services.message_handler import MessageHandler
-from .services.app_service import AppService
-from .models.game_state import SystemState, GameState
-from .config import settings
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager
+from recursive_neon.services.npc_manager import NPCManager
+from recursive_neon.services.ollama_client import OllamaClient
+from recursive_neon.services.process_manager import OllamaProcessManager
+from recursive_neon.services.message_handler import MessageHandler
+from recursive_neon.services.app_service import AppService
+from recursive_neon.models.game_state import SystemState, GameState
+from recursive_neon.config import settings
 
 logger = logging.getLogger(__name__)
 

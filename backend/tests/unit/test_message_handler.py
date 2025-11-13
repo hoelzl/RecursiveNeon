@@ -8,9 +8,9 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
 
-from backend.services.message_handler import MessageHandler
-from backend.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
-from backend.models.game_state import SystemState, SystemStatus
+from recursive_neon.services.message_handler import MessageHandler
+from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
+from recursive_neon.models.game_state import SystemState, SystemStatus
 
 
 class TestMessageHandler:

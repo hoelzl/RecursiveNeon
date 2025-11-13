@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 from datetime import datetime
 from enum import Enum
-from .app_models import NotesState, TasksState, FileSystemState, BrowserState
+from recursive_neon.models.app_models import NotesState, TasksState, FileSystemState, BrowserState
 
 
 class SystemStatus(str, Enum):
