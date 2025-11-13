@@ -100,19 +100,6 @@ export const lsCommand: Command = {
       session.writeError(`ls: ${error.message}`);
     }
   },
-
-  async complete(context) {
-    // Complete directory paths
-    const fs = context.session.getFileSystem();
-    const cwd = context.session.getWorkingDirectory();
-
-    try {
-      const nodes = await fs.listDirectory(cwd);
-      return nodes.filter((n) => n.type === 'directory').map((n) => n.name);
-    } catch {
-      return [];
-    }
-  },
 };
 
 export const cdCommand: Command = {
@@ -128,19 +115,6 @@ export const cdCommand: Command = {
       await session.changeDirectory(path);
     } catch (error: any) {
       session.writeError(`cd: ${error.message}`);
-    }
-  },
-
-  async complete(context) {
-    // Complete directory paths
-    const fs = context.session.getFileSystem();
-    const cwd = context.session.getWorkingDirectory();
-
-    try {
-      const nodes = await fs.listDirectory(cwd);
-      return nodes.filter((n) => n.type === 'directory').map((n) => n.name);
-    } catch {
-      return [];
     }
   },
 };
@@ -179,19 +153,6 @@ export const catCommand: Command = {
       } catch (error: any) {
         session.writeError(`cat: ${error.message}`);
       }
-    }
-  },
-
-  async complete(context) {
-    // Complete file paths
-    const fs = context.session.getFileSystem();
-    const cwd = context.session.getWorkingDirectory();
-
-    try {
-      const nodes = await fs.listDirectory(cwd);
-      return nodes.map((n) => n.name);
-    } catch {
-      return [];
     }
   },
 };

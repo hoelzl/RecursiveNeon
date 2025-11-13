@@ -128,9 +128,10 @@ export class CompletionEngine {
       const basePath = partial.substring(0, partial.length - filePrefix.length);
       const result = this.buildCompletionResult(filePrefix, matches);
 
-      // Adjust prefix to include the base path
+      // Adjust prefix, commonPrefix, and completions to include the base path
       result.prefix = basePath + result.prefix;
       result.commonPrefix = basePath + result.commonPrefix;
+      result.completions = result.completions.map((c) => basePath + c);
 
       return result;
     } catch (error) {
