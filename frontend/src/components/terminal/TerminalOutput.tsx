@@ -20,9 +20,14 @@ export function TerminalOutput({ lines, currentApp }: TerminalOutputProps) {
   // Auto-scroll to bottom when new lines are added
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     }
-  }, [lines.length]);
+  }, [lines]);
 
   // If there's a current app, render its output instead
   if (currentApp) {
