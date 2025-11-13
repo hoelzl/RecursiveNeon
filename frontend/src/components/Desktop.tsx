@@ -12,6 +12,7 @@ import { FileBrowserApp } from './apps/FileBrowserApp';
 import { TextEditorApp } from './apps/TextEditorApp';
 import { ImageViewerApp } from './apps/ImageViewerApp';
 import { WebBrowserApp } from './apps/WebBrowserApp';
+import { TerminalApp } from './apps/TerminalApp';
 
 interface DesktopIcon {
   id: string;
@@ -207,6 +208,21 @@ export function Desktop() {
           content: <WebBrowserApp />,
           position: { x: 220, y: 220 },
           size: { width: 1000, height: 700 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'terminal',
+      label: 'Terminal',
+      emoji: '⌨️',
+      action: () => {
+        openWindow({
+          title: 'Terminal',
+          type: 'terminal',
+          content: <TerminalApp />,
+          position: { x: 240, y: 240 },
+          size: { width: 900, height: 650 },
           minimized: false,
         });
       },

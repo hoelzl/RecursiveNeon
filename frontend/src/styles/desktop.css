@@ -1694,3 +1694,181 @@ code {
   color: var(--text-secondary);
   font-size: 14px;
 }
+
+/* ============================================================================
+   Terminal Styles
+   ============================================================================ */
+
+.terminal-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--terminal-bg, #0a0e27);
+  color: var(--terminal-fg, #00ffff);
+  font-family: var(--terminal-font, 'Courier New', 'Consolas', monospace);
+  font-size: var(--terminal-font-size, 14px);
+  line-height: var(--terminal-line-height, 1.5);
+  opacity: var(--terminal-opacity, 0.95);
+  overflow: hidden;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.terminal-output::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-output::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.terminal-output::-webkit-scrollbar-thumb {
+  background: var(--terminal-cursor, #ff00ff);
+  border-radius: 4px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb:hover {
+  background: var(--terminal-cursor-accent, #00ffff);
+}
+
+.terminal-line {
+  margin: 0;
+  padding: 0;
+  min-height: 1.5em;
+}
+
+.terminal-line-output {
+  color: var(--terminal-fg, #00ffff);
+}
+
+.terminal-line-error {
+  color: var(--terminal-error, #ff5555);
+}
+
+.terminal-line-system {
+  color: var(--terminal-system, #ffcc00);
+}
+
+.terminal-line-input {
+  color: var(--terminal-input, inherit);
+}
+
+.terminal-app-output {
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  color: inherit;
+}
+
+.terminal-input-area {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.terminal-input-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-prompt {
+  color: var(--terminal-cyan, #00ffff);
+  font-weight: bold;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--terminal-fg, #00ffff);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  caret-color: var(--terminal-cursor, #ff00ff);
+}
+
+.terminal-input::selection {
+  background: var(--terminal-selection, rgba(0, 255, 255, 0.3));
+}
+
+.terminal-suggestions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.terminal-suggestion {
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--terminal-fg, #00ffff);
+}
+
+/* Cursor blink animation */
+@keyframes terminal-blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+/* Terminal theme-specific colors */
+.terminal-app {
+  --terminal-black: #000000;
+  --terminal-red: #ff5555;
+  --terminal-green: #00ff9f;
+  --terminal-yellow: #ffcc00;
+  --terminal-blue: #0099ff;
+  --terminal-magenta: #ff00ff;
+  --terminal-cyan: #00ffff;
+  --terminal-white: #e0e0e0;
+  --terminal-bright-black: #555577;
+  --terminal-bright-red: #ff5588;
+  --terminal-bright-green: #55ffbb;
+  --terminal-bright-yellow: #ffee55;
+  --terminal-bright-blue: #55bbff;
+  --terminal-bright-magenta: #ff55ff;
+  --terminal-bright-cyan: #55ffff;
+  --terminal-bright-white: #ffffff;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .terminal-app {
+    font-size: 12px;
+  }
+
+  .terminal-input-area {
+    padding: 6px 8px;
+  }
+
+  .terminal-output {
+    padding: 8px;
+  }
+}
