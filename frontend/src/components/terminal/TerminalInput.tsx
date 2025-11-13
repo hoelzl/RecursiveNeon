@@ -24,6 +24,7 @@ export function TerminalInput({
 }: TerminalInputProps) {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
   const [cursorPosition, setCursorPosition] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -42,9 +43,75 @@ export function TerminalInput({
   }, [cursorPosition, input]);
 
   const handleKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
-    // Clear suggestions on most keys
-    if (e.key !== 'Tab') {
+    // Handle suggestions interactions first
+    if (suggestions.length > 0) {
+      // Enter - Select highlighted suggestion
+      if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
+        e.preventDefault();
+        const selected = suggestions[selectedSuggestionIndex];
+        // Replace the last word in input with the selected suggestion
+        const parts = input.split(/\s+/);
+        parts[parts.length - 1] = selected;
+        const newInput = parts.join(' ');
+        setInput(newInput);
+        setCursorPosition(newInput.length);
+        setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+        return;
+      }
+
+      // Escape - Clear suggestions
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+        return;
+      }
+
+      // Arrow keys - Navigate suggestions
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (e.key === 'ArrowUp') {
+          setSelectedSuggestionIndex((prev) =>
+            prev <= 0 ? suggestions.length - 1 : prev - 1
+          );
+        } else {
+          setSelectedSuggestionIndex((prev) =>
+            prev >= suggestions.length - 1 ? 0 : prev + 1
+          );
+        }
+        return;
+      }
+
+      // Tab - Cycle through suggestions
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (suggestions.length > 0) {
+          // Cycle to next suggestion
+          const nextIndex = (selectedSuggestionIndex + 1) % suggestions.length;
+          setSelectedSuggestionIndex(nextIndex);
+          // Update input with selected suggestion
+          const selected = suggestions[nextIndex];
+          const parts = input.split(/\s+/);
+          parts[parts.length - 1] = selected;
+          const newInput = parts.join(' ');
+          setInput(newInput);
+          setCursorPosition(newInput.length);
+        }
+        return;
+      }
+
+      // Any other key - Clear suggestions
+      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+        setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+      }
+    }
+
+    // Clear suggestions on most keys (if not already cleared above)
+    if (e.key !== 'Tab' && suggestions.length === 0) {
       setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
     }
 
     // Enter - Submit command
@@ -54,11 +121,13 @@ export function TerminalInput({
         onSubmit(input);
         setInput('');
         setCursorPosition(0);
+        setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
       }
       return;
     }
 
-    // Tab - Command completion
+    // Tab - Command completion (when no suggestions shown)
     if (e.key === 'Tab') {
       e.preventDefault();
 
@@ -71,14 +140,16 @@ export function TerminalInput({
 
       if (result.showSuggestions.length > 1) {
         setSuggestions(result.showSuggestions);
+        setSelectedSuggestionIndex(0); // Start with first suggestion selected
       } else {
         setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
       }
 
       return;
     }
 
-    // Up arrow - History previous
+    // Up arrow - History previous (when no suggestions shown)
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       const historyItem = onHistoryUp();
@@ -89,7 +160,7 @@ export function TerminalInput({
       return;
     }
 
-    // Down arrow - History next
+    // Down arrow - History next (when no suggestions shown)
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       const historyItem = onHistoryDown();
@@ -156,6 +227,21 @@ export function TerminalInput({
     setCursorPosition(target.selectionStart || 0);
   };
 
+  const handleSuggestionClick = (suggestion: string, index: number) => {
+    // Replace the last word in input with the selected suggestion
+    const parts = input.split(/\s+/);
+    parts[parts.length - 1] = suggestion;
+    const newInput = parts.join(' ');
+    setInput(newInput);
+    setCursorPosition(newInput.length);
+    setSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+    // Refocus input
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
   return (
     <div className="terminal-input-area">
       <div className="terminal-input-line">
@@ -177,7 +263,14 @@ export function TerminalInput({
       {suggestions.length > 0 && (
         <div className="terminal-suggestions">
           {suggestions.map((suggestion, index) => (
-            <span key={index} className="terminal-suggestion">
+            <span
+              key={index}
+              className={`terminal-suggestion ${
+                index === selectedSuggestionIndex ? 'terminal-suggestion-selected' : ''
+              }`}
+              onClick={() => handleSuggestionClick(suggestion, index)}
+              style={{ cursor: 'pointer' }}
+            >
               {suggestion}
             </span>
           ))}

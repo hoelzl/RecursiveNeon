@@ -1826,6 +1826,18 @@ code {
   border-radius: 3px;
   font-size: 12px;
   color: var(--terminal-fg, #00ffff);
+  transition: all 0.2s;
+}
+
+.terminal-suggestion:hover {
+  background: rgba(0, 255, 255, 0.2);
+  border: 1px solid var(--terminal-cyan, #00ffff);
+}
+
+.terminal-suggestion-selected {
+  background: rgba(0, 255, 255, 0.3);
+  border: 1px solid var(--terminal-cyan, #00ffff);
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
 }
 
 /* Cursor blink animation */

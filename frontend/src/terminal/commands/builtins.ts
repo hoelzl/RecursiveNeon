@@ -91,7 +91,10 @@ export const lsCommand: Command = {
         const names = filtered.map((node) => {
           return node.type === 'directory' ? node.name + '/' : node.name;
         });
-        session.write(formatGrid(names, 80));
+        const output = formatGrid(names, 80);
+        // Split by newlines and write each line separately to avoid appending to command line
+        const lines = output.split('\n').filter(line => line.trim().length > 0);
+        lines.forEach(line => session.writeLine(line));
       }
     } catch (error: any) {
       session.writeError(`ls: ${error.message}`);

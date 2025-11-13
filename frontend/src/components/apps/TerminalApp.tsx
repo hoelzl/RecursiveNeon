@@ -43,10 +43,17 @@ export function TerminalApp({
   const [outputLines, setOutputLines] = useState(session.outputBuffer);
   const [currentApp, setCurrentApp] = useState(session.getCurrentApp());
   const [forceUpdate, setForceUpdate] = useState(0);
+  const initRef = useRef(false);
 
   // Initialize session
   useEffect(() => {
     const initSession = async () => {
+      // Prevent double initialization (e.g., in React StrictMode)
+      if (initRef.current) {
+        return;
+      }
+      initRef.current = true;
+
       try {
         await session.init();
 
