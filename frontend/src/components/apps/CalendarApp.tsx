@@ -64,62 +64,80 @@ export function CalendarApp() {
       return;
     }
 
-    const handleMessage = (event: MessageEvent) => {
+    // Handler for calendar events list
+    const handleEventsList = (msg: any) => {
       try {
-        const message = JSON.parse(event.data);
-        console.log('[CalendarApp] Received message:', message.type);
-
-        switch (message.type) {
-          case 'calendar_events_list':
-            if (message.data && Array.isArray(message.data.events)) {
-              console.log('[CalendarApp] Loaded events:', message.data.events.length);
-              setEvents(message.data.events);
-            }
-            break;
-
-          case 'calendar_event_created':
-            if (message.data && message.data.event) {
-              console.log('[CalendarApp] Event created:', message.data.event.id);
-              setEvents(prev => [...prev, message.data.event]);
-            }
-            break;
-
-          case 'calendar_event_updated':
-            if (message.data && message.data.event) {
-              console.log('[CalendarApp] Event updated:', message.data.event.id);
-              setEvents(prev => prev.map(e =>
-                e.id === message.data.event.id ? message.data.event : e
-              ));
-            }
-            break;
-
-          case 'calendar_event_deleted':
-            if (message.data && message.data.event_id) {
-              console.log('[CalendarApp] Event deleted:', message.data.event_id);
-              setEvents(prev => prev.filter(e => e.id !== message.data.event_id));
-            }
-            break;
+        if (msg.data && Array.isArray(msg.data.events)) {
+          console.log('[CalendarApp] Loaded events:', msg.data.events.length);
+          setEvents(msg.data.events);
         }
       } catch (error) {
-        console.error('[CalendarApp] Error handling calendar message:', error);
-        setError('Error processing calendar data');
+        console.error('[CalendarApp] Error handling events list:', error);
+        setError('Error loading events');
+      }
+    };
+
+    // Handler for calendar event created
+    const handleEventCreated = (msg: any) => {
+      try {
+        if (msg.data && msg.data.event) {
+          console.log('[CalendarApp] Event created:', msg.data.event.id);
+          setEvents(prev => [...prev, msg.data.event]);
+        }
+      } catch (error) {
+        console.error('[CalendarApp] Error handling event created:', error);
+      }
+    };
+
+    // Handler for calendar event updated
+    const handleEventUpdated = (msg: any) => {
+      try {
+        if (msg.data && msg.data.event) {
+          console.log('[CalendarApp] Event updated:', msg.data.event.id);
+          setEvents(prev => prev.map(e =>
+            e.id === msg.data.event.id ? msg.data.event : e
+          ));
+        }
+      } catch (error) {
+        console.error('[CalendarApp] Error handling event updated:', error);
+      }
+    };
+
+    // Handler for calendar event deleted
+    const handleEventDeleted = (msg: any) => {
+      try {
+        if (msg.data && msg.data.event_id) {
+          console.log('[CalendarApp] Event deleted:', msg.data.event_id);
+          setEvents(prev => prev.filter(e => e.id !== msg.data.event_id));
+        }
+      } catch (error) {
+        console.error('[CalendarApp] Error handling event deleted:', error);
       }
     };
 
     try {
-      console.log('[CalendarApp] Adding message event listener');
-      wsClient.addEventListener('message', handleMessage);
+      console.log('[CalendarApp] Registering message handlers');
+
+      // Register handlers using the WebSocketClient API
+      wsClient.on('calendar_events_list', handleEventsList);
+      wsClient.on('calendar_event_created', handleEventCreated);
+      wsClient.on('calendar_event_updated', handleEventUpdated);
+      wsClient.on('calendar_event_deleted', handleEventDeleted);
+
       return () => {
-        console.log('[CalendarApp] Removing message event listener');
+        console.log('[CalendarApp] Unregistering message handlers');
         try {
-          wsClient.removeEventListener('message', handleMessage);
+          wsClient.off('calendar_events_list', handleEventsList);
+          wsClient.off('calendar_event_created', handleEventCreated);
+          wsClient.off('calendar_event_updated', handleEventUpdated);
+          wsClient.off('calendar_event_deleted', handleEventDeleted);
         } catch (error) {
-          console.error('[CalendarApp] Error removing event listener:', error);
+          console.error('[CalendarApp] Error unregistering handlers:', error);
         }
       };
     } catch (error) {
-      console.error('[CalendarApp] Error setting up message listener:', error);
-      setError('Failed to setup message listener');
+      console.error('[CalendarApp] Error setting up message handlers:', error);
+      setError('Failed to setup message handlers');
     }
   }, [wsClient]);
 
