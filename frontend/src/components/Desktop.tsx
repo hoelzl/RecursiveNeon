@@ -14,6 +14,8 @@ import { ImageViewerApp } from './apps/ImageViewerApp';
 import { WebBrowserApp } from './apps/WebBrowserApp';
 import { TerminalApp } from './apps/TerminalApp';
 import { CalendarApp } from './apps/CalendarApp';
+import { NotificationContainer } from './notifications/NotificationContainer';
+import { NotificationDemoApp } from './apps/NotificationDemoApp';
 
 interface DesktopIcon {
   id: string;
@@ -243,6 +245,21 @@ export function Desktop() {
         });
       },
     },
+    {
+      id: 'notification-demo',
+      label: 'Notifications',
+      emoji: '🔔',
+      action: () => {
+        openWindow({
+          title: 'Notification Demo',
+          type: 'notification-demo',
+          content: <NotificationDemoApp />,
+          position: { x: 260, y: 260 },
+          size: { width: 600, height: 650 },
+          minimized: false,
+        });
+      },
+    },
   ];
 
   return (
@@ -266,6 +283,9 @@ export function Desktop() {
       {windows.map((window) => (
         <Window key={window.id} window={window} />
       ))}
+
+      {/* Notification toasts */}
+      <NotificationContainer />
 
       {/* Taskbar */}
       <Taskbar />
