@@ -22,6 +22,11 @@ export interface Theme {
     error: string;
     taskbarBackground: string;
     windowTitleBar: string;
+    // Desktop-specific colors
+    desktopGradientStart: string;
+    desktopGradientEnd: string;
+    desktopOverlay1: string;
+    desktopOverlay2: string;
   };
 }
 
@@ -44,6 +49,11 @@ export const themes: Theme[] = [
       error: '#CC0000',
       taskbarBackground: '#C0C0C0',
       windowTitleBar: '#000080',
+      // Desktop-specific colors (teal gradient with cyan/magenta overlays)
+      desktopGradientStart: '#0a0e27',
+      desktopGradientEnd: '#1a1f3a',
+      desktopOverlay1: 'rgba(0, 255, 255, 0.1)',
+      desktopOverlay2: 'rgba(255, 0, 255, 0.1)',
     },
   },
   {
@@ -64,6 +74,11 @@ export const themes: Theme[] = [
       error: '#F44336',
       taskbarBackground: '#252525',
       windowTitleBar: '#1E1E1E',
+      // Desktop-specific colors (dark gradient with blue overlays)
+      desktopGradientStart: '#0f0f0f',
+      desktopGradientEnd: '#1a1a1a',
+      desktopOverlay1: 'rgba(51, 145, 255, 0.08)',
+      desktopOverlay2: 'rgba(31, 95, 168, 0.08)',
     },
   },
   {
@@ -84,6 +99,11 @@ export const themes: Theme[] = [
       error: '#F44336',
       taskbarBackground: '#F5F5F5',
       windowTitleBar: '#2196F3',
+      // Desktop-specific colors (light gradient with subtle blue overlays)
+      desktopGradientStart: '#f0f4f8',
+      desktopGradientEnd: '#e8f0f7',
+      desktopOverlay1: 'rgba(33, 150, 243, 0.04)',
+      desktopOverlay2: 'rgba(25, 118, 210, 0.04)',
     },
   },
   {
@@ -104,6 +124,11 @@ export const themes: Theme[] = [
       error: '#FF0066',
       taskbarBackground: '#0F0F2E',
       windowTitleBar: '#FF00FF',
+      // Desktop-specific colors (deep purple gradient with intense neon overlays)
+      desktopGradientStart: '#000033',
+      desktopGradientEnd: '#1a0033',
+      desktopOverlay1: 'rgba(0, 255, 255, 0.15)',
+      desktopOverlay2: 'rgba(255, 0, 255, 0.15)',
     },
   },
   {
@@ -124,6 +149,11 @@ export const themes: Theme[] = [
       error: '#FF0000',
       taskbarBackground: '#000000',
       windowTitleBar: '#000000',
+      // Desktop-specific colors (pure black with green overlays)
+      desktopGradientStart: '#000000',
+      desktopGradientEnd: '#001100',
+      desktopOverlay1: 'rgba(0, 255, 0, 0.08)',
+      desktopOverlay2: 'rgba(0, 170, 0, 0.08)',
     },
   },
   {
@@ -144,6 +174,11 @@ export const themes: Theme[] = [
       error: '#FF0066',
       taskbarBackground: '#1A0033',
       windowTitleBar: '#2D0052',
+      // Desktop-specific colors (deep purple gradient with cyberpunk overlays)
+      desktopGradientStart: '#0D001A',
+      desktopGradientEnd: '#1a0033',
+      desktopOverlay1: 'rgba(255, 16, 240, 0.12)',
+      desktopOverlay2: 'rgba(0, 255, 255, 0.12)',
     },
   },
 ];

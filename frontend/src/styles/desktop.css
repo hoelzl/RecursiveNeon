@@ -41,7 +41,7 @@ code {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+  background: linear-gradient(135deg, var(--desktop-gradient-start, #0a0e27) 0%, var(--desktop-gradient-end, #1a1f3a) 100%);
   overflow: hidden;
 }
 
@@ -53,8 +53,8 @@ code {
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(circle at 20% 50%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%);
+    radial-gradient(circle at 20% 50%, var(--desktop-overlay1, rgba(0, 255, 255, 0.1)) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, var(--desktop-overlay2, rgba(255, 0, 255, 0.1)) 0%, transparent 50%);
   pointer-events: none;
 }
 
