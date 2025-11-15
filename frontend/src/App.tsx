@@ -10,6 +10,8 @@ import { Desktop } from './components/Desktop';
 import { useGameStoreContext } from './contexts/GameStoreContext';
 import { useWebSocket } from './contexts/WebSocketContext';
 import { useNotificationStore } from './stores/notificationStore';
+import { timeService } from './services/timeService';
+import { settingsService } from './services/settingsService';
 import './styles/desktop.css';
 
 function App() {
@@ -45,6 +47,10 @@ function App() {
         // Load notification data
         loadHistory();
         loadConfig();
+
+        // Initialize time and settings services
+        timeService.initialize(wsClient);
+        settingsService.initialize(wsClient);
 
         // Set up message handlers
         wsClient.on('npcs_list', (msg) => {
@@ -94,6 +100,38 @@ function App() {
           }
         });
 
+        // Time service event handlers
+        wsClient.on('time_response', (msg) => {
+          if (mounted) {
+            timeService.handleTimeUpdate(msg);
+          }
+        });
+
+        wsClient.on('time_update', (msg) => {
+          if (mounted) {
+            timeService.handleTimeUpdate(msg);
+          }
+        });
+
+        // Settings service event handlers
+        wsClient.on('settings_response', (msg) => {
+          if (mounted) {
+            settingsService.handleSettingsResponse(msg);
+          }
+        });
+
+        wsClient.on('setting_update', (msg) => {
+          if (mounted) {
+            settingsService.handleSettingUpdate(msg);
+          }
+        });
+
+        wsClient.on('settings_update', (msg) => {
+          if (mounted) {
+            settingsService.handleSettingsUpdate(msg);
+          }
+        });
+
         setLoading(false);
       } catch (err) {
         console.error('Failed to initialize:', err);
@@ -108,6 +146,7 @@ function App() {
 
     return () => {
       mounted = false;
+      timeService.destroy();
       wsClient.disconnect();
     };
   }, [setNPCs, setSystemStatus, setConnected, handleNotificationCreated, handleNotificationUpdated, handleNotificationDeleted, handleNotificationsCleared, handleConfigUpdated, loadHistory, loadConfig]);
