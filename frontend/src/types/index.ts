@@ -109,3 +109,41 @@ export interface BrowserPage {
   title: string;
   content: string;
 }
+
+// ============================================================================
+// Calendar Types
+// ============================================================================
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  start_time: string;  // ISO 8601 datetime string
+  end_time: string;    // ISO 8601 datetime string
+  location?: string;
+  color?: string;      // Hex color code
+  notes?: string;
+  all_day: boolean;
+  created_at: string;  // ISO 8601 datetime string
+  updated_at: string;  // ISO 8601 datetime string
+}
+
+export interface CreateEventData {
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  location?: string;
+  color?: string;
+  notes?: string;
+  all_day?: boolean;
+}
+
+export type CalendarView = 'month' | 'week' | 'day' | 'list';
+
+export interface CalendarState {
+  events: CalendarEvent[];
+  selectedDate: Date;
+  currentView: CalendarView;
+  selectedEvent: CalendarEvent | null;
+}

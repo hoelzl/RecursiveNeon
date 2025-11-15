@@ -13,6 +13,7 @@ import { TextEditorApp } from './apps/TextEditorApp';
 import { ImageViewerApp } from './apps/ImageViewerApp';
 import { WebBrowserApp } from './apps/WebBrowserApp';
 import { TerminalApp } from './apps/TerminalApp';
+import { CalendarApp } from './apps/CalendarApp';
 
 interface DesktopIcon {
   id: string;
@@ -148,6 +149,21 @@ export function Desktop() {
           content: <TaskListApp />,
           position: { x: 140, y: 140 },
           size: { width: 800, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'calendar',
+      label: 'Calendar',
+      emoji: '📅',
+      action: () => {
+        openWindow({
+          title: 'Calendar',
+          type: 'calendar',
+          content: <CalendarApp />,
+          position: { x: 150, y: 150 },
+          size: { width: 1000, height: 700 },
           minimized: false,
         });
       },
