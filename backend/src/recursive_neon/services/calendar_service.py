@@ -103,10 +103,17 @@ class CalendarService(ICalendarService):
         # Filter out None values
         update_data = {k: v for k, v in updates.items() if v is not None}
 
-        # Validate that end_time is after start_time if both are being updated
+        # Convert ISO strings to datetime objects for validation
         start_time = update_data.get('start_time', event.start_time)
         end_time = update_data.get('end_time', event.end_time)
 
+        # Ensure both are datetime objects for comparison
+        if isinstance(start_time, str):
+            start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        if isinstance(end_time, str):
+            end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+
+        # Validate that end_time is after start_time
         if end_time <= start_time:
             raise ValueError('end_time must be after start_time')
 

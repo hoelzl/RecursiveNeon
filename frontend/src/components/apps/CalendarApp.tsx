@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { CalendarEvent, CalendarView, CreateEventData } from '../../types';
 import { useWebSocket } from '../../contexts/WebSocketContext';
+import { timeService } from '../../services/timeService';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { MonthView } from './calendar/MonthView';
 import { WeekView } from './calendar/WeekView';
@@ -11,7 +12,7 @@ import '../../styles/calendar.css';
 
 export function CalendarApp() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(timeService.getCurrentTime());
   const [currentView, setCurrentView] = useState<CalendarView>('month');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);

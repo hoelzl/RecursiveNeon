@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { CalendarEvent } from '../../../types';
+import { timeService } from '../../../services/timeService';
 
 interface MonthViewProps {
   events: CalendarEvent[];
@@ -67,7 +68,7 @@ export function MonthView({
   };
 
   const isToday = (date: Date): boolean => {
-    const today = new Date();
+    const today = timeService.getCurrentTime();
     return date.toDateString() === today.toDateString();
   };
 

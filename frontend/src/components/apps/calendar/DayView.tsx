@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { CalendarEvent } from '../../../types';
+import { timeService } from '../../../services/timeService';
 
 interface DayViewProps {
   events: CalendarEvent[];
@@ -76,7 +77,7 @@ export function DayView({
     };
   };
 
-  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  const isToday = selectedDate.toDateString() === timeService.getCurrentTime().toDateString();
 
   const handleDragStart = (e: React.DragEvent, event: CalendarEvent) => {
     e.stopPropagation();
