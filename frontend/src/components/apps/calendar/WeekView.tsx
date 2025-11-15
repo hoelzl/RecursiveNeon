@@ -105,7 +105,7 @@ export function WeekView({
   const handleDragStart = (e: React.DragEvent, event: CalendarEvent) => {
     e.stopPropagation();
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('eventId', event.id);
+    e.dataTransfer.setData('text/plain', event.id);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -117,7 +117,7 @@ export function WeekView({
     e.preventDefault();
     e.stopPropagation();
 
-    const eventId = e.dataTransfer.getData('eventId');
+    const eventId = e.dataTransfer.getData('text/plain');
     if (eventId && onEventDrop) {
       onEventDrop(eventId, date, hour);
     }
