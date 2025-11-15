@@ -18,6 +18,8 @@ from recursive_neon.models.app_models import (
     FileNode,
     BrowserPage,
     FileSystemState,
+    MediaViewerConfig,
+    TextMessage,
 )
 
 
@@ -30,6 +32,7 @@ class AppService:
     - Tasks and TaskLists (task management app)
     - FileSystem (file browser, text editor, image viewer)
     - Browser pages and bookmarks (web browser app)
+    - Media Viewer (hypnotic spiral display with text overlays)
     """
 
     def __init__(self, game_state: GameState):
@@ -616,3 +619,210 @@ class AppService:
         self.game_state.browser.bookmarks = [
             b for b in self.game_state.browser.bookmarks if b != url
         ]
+
+    # ============================================================================
+    # Media Viewer Service
+    # ============================================================================
+
+    def get_media_viewer_config(self) -> MediaViewerConfig:
+        """Get the media viewer configuration"""
+        return self.game_state.media_viewer.config
+
+    def update_media_viewer_config(self, data: Dict[str, Any]) -> MediaViewerConfig:
+        """
+        Update the media viewer configuration.
+
+        Args:
+            data: Configuration data including spiral_style, rotation_speed, messages, loop
+
+        Returns:
+            Updated MediaViewerConfig
+        """
+        current = self.game_state.media_viewer.config
+
+        # Parse messages if provided
+        messages = current.messages
+        if "messages" in data:
+            messages = [
+                TextMessage(**msg) if isinstance(msg, dict) else msg
+                for msg in data["messages"]
+            ]
+
+        # Create updated config
+        updated_config = MediaViewerConfig(
+            spiral_style=data.get("spiral_style", current.spiral_style),
+            rotation_speed=data.get("rotation_speed", current.rotation_speed),
+            messages=messages,
+            loop=data.get("loop", current.loop),
+        )
+
+        self.game_state.media_viewer.config = updated_config
+        return updated_config
+
+    def add_media_viewer_message(self, message_data: Dict[str, Any]) -> TextMessage:
+        """
+        Add a text message to the media viewer sequence.
+
+        Args:
+            message_data: Message data (text, duration, size, color, position, etc.)
+
+        Returns:
+            The created TextMessage
+        """
+        message = TextMessage(**message_data)
+        current_messages = list(self.game_state.media_viewer.config.messages)
+        current_messages.append(message)
+
+        self.game_state.media_viewer.config = MediaViewerConfig(
+            spiral_style=self.game_state.media_viewer.config.spiral_style,
+            rotation_speed=self.game_state.media_viewer.config.rotation_speed,
+            messages=current_messages,
+            loop=self.game_state.media_viewer.config.loop,
+        )
+
+        return message
+
+    def set_media_viewer_style(self, style: str) -> MediaViewerConfig:
+        """
+        Set the spiral style for the media viewer.
+
+        Args:
+            style: Spiral style ("blackwhite" or "colorful")
+
+        Returns:
+            Updated MediaViewerConfig
+        """
+        self.game_state.media_viewer.config = MediaViewerConfig(
+            spiral_style=style,
+            rotation_speed=self.game_state.media_viewer.config.rotation_speed,
+            messages=self.game_state.media_viewer.config.messages,
+            loop=self.game_state.media_viewer.config.loop,
+        )
+
+        return self.game_state.media_viewer.config
+
+    def initialize_default_media_viewer_messages(self) -> None:
+        """
+        Initialize the media viewer with default corporate "wellness" messages.
+
+        This creates a dystopian sequence of messages that appears to be for
+        health and relaxation but subtly reinforces corporate/government messaging.
+        """
+        default_messages = [
+            # Opening relaxation
+            TextMessage(
+                text="Welcome to MindSync Wellness",
+                duration=3.0,
+                size=48,
+                color="#00FFFF",
+                x=50,
+                y=30,
+                font_weight="bold"
+            ),
+            TextMessage(
+                text="Take a deep breath...",
+                duration=4.0,
+                size=36,
+                color="#FFFFFF",
+                x=50,
+                y=50,
+                font_weight="normal"
+            ),
+            # Pause for breathing
+            TextMessage(
+                text=None,  # Pause
+                duration=2.0,
+                size=32,
+                color="#FFFFFF",
+                x=50,
+                y=50
+            ),
+            # Subtle corporate messaging
+            TextMessage(
+                text="You are valued.",
+                duration=3.0,
+                size=40,
+                color="#00FF00",
+                x=50,
+                y=45,
+                font_weight="normal"
+            ),
+            TextMessage(
+                text="Your productivity matters.",
+                duration=3.0,
+                size=32,
+                color="#FFFF00",
+                x=50,
+                y=55,
+                font_weight="normal"
+            ),
+            TextMessage(
+                text=None,  # Pause
+                duration=2.0,
+                size=32,
+                color="#FFFFFF",
+                x=50,
+                y=50
+            ),
+            # More relaxation mixed with messaging
+            TextMessage(
+                text="Trust the system.",
+                duration=3.5,
+                size=36,
+                color="#FF00FF",
+                x=50,
+                y=50,
+                font_weight="normal"
+            ),
+            TextMessage(
+                text="Consume responsibly.",
+                duration=3.0,
+                size=28,
+                color="#00FFFF",
+                x=50,
+                y=60,
+                font_weight="normal"
+            ),
+            TextMessage(
+                text=None,  # Pause
+                duration=2.0,
+                size=32,
+                color="#FFFFFF",
+                x=50,
+                y=50
+            ),
+            # Closing
+            TextMessage(
+                text="You are refreshed.",
+                duration=3.0,
+                size=42,
+                color="#00FF00",
+                x=50,
+                y=45,
+                font_weight="bold"
+            ),
+            TextMessage(
+                text="Return to work with renewed focus.",
+                duration=4.0,
+                size=30,
+                color="#FFFFFF",
+                x=50,
+                y=55,
+                font_weight="normal"
+            ),
+            TextMessage(
+                text=None,  # Final pause before loop
+                duration=3.0,
+                size=32,
+                color="#FFFFFF",
+                x=50,
+                y=50
+            ),
+        ]
+
+        self.game_state.media_viewer.config = MediaViewerConfig(
+            spiral_style="blackwhite",
+            rotation_speed=1.0,
+            messages=default_messages,
+            loop=True,
+        )

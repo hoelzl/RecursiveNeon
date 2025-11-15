@@ -161,3 +161,26 @@ export interface CalendarState {
   currentView: CalendarView;
   selectedEvent: CalendarEvent | null;
 }
+
+// ============================================================================
+// Media Viewer Types
+// ============================================================================
+
+export interface TextMessage {
+  text: string | null;  // null means pause/blank screen
+  duration: number;     // Duration in seconds
+  size: number;         // Font size in pixels
+  color: string;        // Text color (CSS color)
+  x: number;            // X position (percentage 0-100)
+  y: number;            // Y position (percentage 0-100)
+  font_weight: string;  // CSS font-weight
+}
+
+export type SpiralStyle = 'blackwhite' | 'colorful';
+
+export interface MediaViewerConfig {
+  spiral_style: SpiralStyle;
+  rotation_speed: number;  // Speed multiplier
+  messages: TextMessage[];
+  loop: boolean;  // Whether to loop messages
+}

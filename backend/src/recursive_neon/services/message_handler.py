@@ -323,6 +323,20 @@ class MessageHandler:
                 self.app_service.remove_bookmark(payload["url"])
                 return {"type": "app_response", "data": {"success": True}}
 
+            # Media viewer operations
+            elif operation == "media_viewer.get_config":
+                config = self.app_service.get_media_viewer_config()
+                return {"type": "app_response", "data": {"config": config.model_dump()}}
+            elif operation == "media_viewer.update_config":
+                config = self.app_service.update_media_viewer_config(payload)
+                return {"type": "app_response", "data": {"config": config.model_dump()}}
+            elif operation == "media_viewer.add_message":
+                message = self.app_service.add_media_viewer_message(payload)
+                return {"type": "app_response", "data": {"message": message.model_dump()}}
+            elif operation == "media_viewer.set_style":
+                config = self.app_service.set_media_viewer_style(payload["style"])
+                return {"type": "app_response", "data": {"config": config.model_dump()}}
+
             else:
                 return self._create_error_response(f"Unknown app operation: {operation}")
 

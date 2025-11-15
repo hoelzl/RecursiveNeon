@@ -98,3 +98,46 @@ class BrowserState(BaseModel):
 
     pages: List[BrowserPage] = Field(default_factory=list)
     bookmarks: List[str] = Field(default_factory=list)  # List of URLs
+
+
+# ============================================================================
+# Media Viewer Models (Hypnotic Spiral Display)
+# ============================================================================
+
+
+class TextMessage(BaseModel):
+    """
+    A text message to display over the spiral animation.
+
+    Can represent either text to display or a pause (when text is None).
+    """
+
+    text: Optional[str] = None  # None means pause/blank screen
+    duration: float = 3.0  # Duration in seconds
+    size: int = 32  # Font size in pixels
+    color: str = "#FFFFFF"  # Text color (CSS color)
+    x: int = 50  # X position (percentage of screen width, 0-100)
+    y: int = 50  # Y position (percentage of screen height, 0-100)
+    font_weight: str = "normal"  # CSS font-weight: "normal", "bold", etc.
+
+
+class MediaViewerConfig(BaseModel):
+    """
+    Configuration for the Media Viewer app.
+
+    This "health and relaxation" feature displays hypnotic spirals with
+    configurable text messages. In-universe, it's marketed for wellness
+    but is actually used for subtle manipulation by corporations and
+    the government.
+    """
+
+    spiral_style: str = "blackwhite"  # "blackwhite" or "colorful"
+    rotation_speed: float = 1.0  # Speed multiplier for spiral rotation
+    messages: List[TextMessage] = Field(default_factory=list)
+    loop: bool = True  # Whether to loop messages continuously
+
+
+class MediaViewerState(BaseModel):
+    """State for the media viewer app"""
+
+    config: MediaViewerConfig = Field(default_factory=MediaViewerConfig)

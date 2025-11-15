@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
-from recursive_neon.models.app_models import NotesState, TasksState, FileSystemState, BrowserState
+from recursive_neon.models.app_models import NotesState, TasksState, FileSystemState, BrowserState, MediaViewerState
 from recursive_neon.models.notification import Notification, NotificationConfig
 
 
@@ -32,6 +32,7 @@ class GameState(BaseModel):
     tasks: TasksState = Field(default_factory=TasksState)
     filesystem: FileSystemState = Field(default_factory=FileSystemState)
     browser: BrowserState = Field(default_factory=BrowserState)
+    media_viewer: MediaViewerState = Field(default_factory=MediaViewerState)
 
     # Notification system
     notifications: List[Notification] = Field(default_factory=list)
