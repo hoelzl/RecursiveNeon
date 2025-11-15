@@ -55,15 +55,31 @@ export function MonthView({
   }, [selectedDate]);
 
   const getEventsForDate = (date: Date): CalendarEvent[] => {
-    const dateStr = date.toISOString().split('T')[0];
+    // Get date components (avoids timezone conversion issues)
+    const targetYear = date.getFullYear();
+    const targetMonth = date.getMonth();
+    const targetDay = date.getDate();
 
     return events.filter(event => {
       const eventStart = new Date(event.start_time);
       const eventEnd = new Date(event.end_time);
-      const eventStartStr = eventStart.toISOString().split('T')[0];
-      const eventEndStr = eventEnd.toISOString().split('T')[0];
 
-      return dateStr >= eventStartStr && dateStr <= eventEndStr;
+      // Get date components for start and end
+      const startYear = eventStart.getFullYear();
+      const startMonth = eventStart.getMonth();
+      const startDay = eventStart.getDate();
+
+      const endYear = eventEnd.getFullYear();
+      const endMonth = eventEnd.getMonth();
+      const endDay = eventEnd.getDate();
+
+      // Create comparable values (YYYYMMDD as number)
+      const targetDate = targetYear * 10000 + targetMonth * 100 + targetDay;
+      const startDate = startYear * 10000 + startMonth * 100 + startDay;
+      const endDate = endYear * 10000 + endMonth * 100 + endDay;
+
+      // Check if target date is within event range
+      return targetDate >= startDate && targetDate <= endDate;
     });
   };
 
