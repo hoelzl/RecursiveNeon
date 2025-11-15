@@ -5,6 +5,7 @@
 import { useGameStore } from '../stores/gameStore';
 import { Window } from './Window';
 import { Taskbar } from './Taskbar';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ChatApp } from './apps/ChatApp';
 import { NotesApp } from './apps/NotesApp';
 import { TaskListApp } from './apps/TaskListApp';
@@ -166,7 +167,11 @@ export function Desktop() {
         openWindow({
           title: 'Calendar',
           type: 'calendar',
-          content: <CalendarApp />,
+          content: (
+            <ErrorBoundary>
+              <CalendarApp />
+            </ErrorBoundary>
+          ),
           position: { x: 150, y: 150 },
           size: { width: 1000, height: 700 },
           minimized: false,
