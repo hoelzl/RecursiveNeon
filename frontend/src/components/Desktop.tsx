@@ -16,6 +16,8 @@ import { TerminalApp } from './apps/TerminalApp';
 import { CalendarApp } from './apps/CalendarApp';
 import { NotificationContainer } from './notifications/NotificationContainer';
 import { NotificationDemoApp } from './apps/NotificationDemoApp';
+import { ClockWidget } from './ClockWidget';
+import { SettingsApp } from './apps/SettingsApp';
 
 interface DesktopIcon {
   id: string;
@@ -260,6 +262,21 @@ export function Desktop() {
         });
       },
     },
+    {
+      id: 'settings',
+      label: 'Settings',
+      emoji: '⚙️',
+      action: () => {
+        openWindow({
+          title: 'Settings',
+          type: 'settings',
+          content: <SettingsApp />,
+          position: { x: 280, y: 280 },
+          size: { width: 900, height: 600 },
+          minimized: false,
+        });
+      },
+    },
   ];
 
   return (
@@ -286,6 +303,9 @@ export function Desktop() {
 
       {/* Notification toasts */}
       <NotificationContainer />
+
+      {/* Clock widget */}
+      <ClockWidget />
 
       {/* Taskbar */}
       <Taskbar />

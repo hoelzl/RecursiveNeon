@@ -1,0 +1,38 @@
+/**
+ * Digital Clock Styles
+ */
+
+.digital-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Courier New', monospace;
+  user-select: none;
+}
+
+.digital-clock-time {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent-cyan, #00d4ff);
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  letter-spacing: 2px;
+}
+
+.digital-clock-date {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary, #a0a0a0);
+  letter-spacing: 1px;
+}
+
+/* Responsive sizing */
+@media (max-width: 768px) {
+  .digital-clock-time {
+    font-size: 20px;
+  }
+
+  .digital-clock-date {
+    font-size: 10px;
+  }
+}

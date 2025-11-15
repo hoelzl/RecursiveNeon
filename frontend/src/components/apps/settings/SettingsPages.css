@@ -1,0 +1,219 @@
+/**
+ * Settings Pages Styles
+ */
+
+.settings-page {
+  max-width: 800px;
+}
+
+.settings-page h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text, #e0e0e0);
+}
+
+.settings-page-description {
+  margin: 0 0 32px 0;
+  color: var(--text-secondary, #a0a0a0);
+  line-height: 1.5;
+}
+
+/* Setting groups */
+.setting-group {
+  margin-bottom: 32px;
+}
+
+.setting-group h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #e0e0e0);
+}
+
+/* Radio buttons */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.radio-label input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.radio-label span {
+  font-size: 14px;
+  color: var(--text, #e0e0e0);
+}
+
+/* Checkboxes */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.checkbox-label span {
+  font-size: 14px;
+  color: var(--text, #e0e0e0);
+}
+
+/* Select dropdowns */
+.settings-select {
+  padding: 10px 14px;
+  background: var(--surface, #2d2d2d);
+  border: 1px solid var(--border, #404040);
+  border-radius: 6px;
+  color: var(--text, #e0e0e0);
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-select:hover {
+  border-color: var(--accent, #3391ff);
+}
+
+.settings-select:focus {
+  border-color: var(--accent, #3391ff);
+  box-shadow: 0 0 0 2px rgba(51, 145, 255, 0.2);
+}
+
+/* Buttons */
+.settings-button {
+  padding: 10px 20px;
+  background: var(--accent, #3391ff);
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.settings-button:hover {
+  opacity: 0.9;
+}
+
+.settings-button:active {
+  opacity: 0.8;
+}
+
+.setting-actions {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border, #404040);
+}
+
+/* Theme grid */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.theme-card {
+  padding: 16px;
+  background: var(--surface, #2d2d2d);
+  border: 2px solid var(--border, #404040);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.theme-card:hover {
+  border-color: var(--accent, #3391ff);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.theme-card.selected {
+  border-color: var(--accent, #3391ff);
+  background: rgba(51, 145, 255, 0.1);
+}
+
+.theme-preview {
+  margin-bottom: 12px;
+}
+
+.theme-colors {
+  display: flex;
+  gap: 8px;
+  height: 40px;
+}
+
+.theme-color-swatch {
+  flex: 1;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-info {
+  margin-bottom: 8px;
+}
+
+.theme-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text, #e0e0e0);
+}
+
+.theme-description {
+  font-size: 12px;
+  color: var(--text-secondary, #a0a0a0);
+  line-height: 1.4;
+}
+
+.theme-selected-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 12px;
+  background: var(--accent, #3391ff);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 12px;
+}
+
+.theme-details {
+  padding: 16px;
+  background: var(--surface, #2d2d2d);
+  border-radius: 8px;
+  border: 1px solid var(--border, #404040);
+}
+
+.theme-details p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--text, #e0e0e0);
+}
+
+.theme-details strong {
+  color: var(--text-secondary, #a0a0a0);
+  font-weight: 600;
+}

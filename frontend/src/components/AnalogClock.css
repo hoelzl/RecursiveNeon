@@ -1,0 +1,80 @@
+/**
+ * Analog Clock Styles
+ */
+
+.analog-clock {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analog-clock-face {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(20, 20, 30, 0.9);
+  border: 3px solid var(--accent-cyan, #00d4ff);
+  position: relative;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+/* Hour markers */
+.hour-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+  font-size: 10px;
+  color: var(--text-primary, #e0e0e0);
+  font-weight: 600;
+  user-select: none;
+}
+
+/* Clock hands */
+.clock-hand {
+  position: absolute;
+  bottom: 50%;
+  left: 50%;
+  transform-origin: 50% 100%;
+  background: var(--text-primary, #e0e0e0);
+  border-radius: 2px;
+}
+
+.hour-hand {
+  width: 4px;
+  height: 25px;
+  margin-left: -2px;
+  background: var(--accent-cyan, #00d4ff);
+  box-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+}
+
+.minute-hand {
+  width: 3px;
+  height: 35px;
+  margin-left: -1.5px;
+  background: var(--text-primary, #e0e0e0);
+}
+
+.second-hand {
+  width: 2px;
+  height: 40px;
+  margin-left: -1px;
+  background: var(--accent-magenta, #ff00ff);
+  box-shadow: 0 0 5px rgba(255, 0, 255, 0.5);
+}
+
+/* Center dot */
+.clock-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--accent-cyan, #00d4ff);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.7);
+  z-index: 10;
+}

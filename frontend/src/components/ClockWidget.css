@@ -1,0 +1,42 @@
+/**
+ * Clock Widget Styles
+ */
+
+.clock-widget {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+}
+
+/* Positioning */
+.clock-widget-top-left {
+  top: 16px;
+  left: 16px;
+}
+
+.clock-widget-top-right {
+  top: 16px;
+  right: 16px;
+}
+
+.clock-widget-bottom-left {
+  bottom: 60px; /* Above taskbar */
+  left: 16px;
+}
+
+.clock-widget-bottom-right {
+  bottom: 60px; /* Above taskbar */
+  right: 16px;
+}
+
+/* Responsive sizing */
+@media (max-width: 768px) {
+  .clock-widget {
+    padding: 8px;
+  }
+}
