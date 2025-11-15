@@ -258,4 +258,164 @@ describe('CompletionEngine', () => {
       expect(result.completions).toEqual(['Pictures/my-pic.png']);
     });
   });
+
+  describe('Path Completion - Spaces in Paths', () => {
+    beforeEach(async () => {
+      // Add directories and files with spaces to the mock file system
+      const spacedDirs: FileSystemNode[] = [
+        {
+          id: 'my-docs',
+          name: 'My Documents',
+          type: 'directory',
+          mimeType: '',
+          content: '',
+          size: 0,
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        },
+        {
+          id: 'important-files',
+          name: 'Important Files',
+          type: 'directory',
+          mimeType: '',
+          content: '',
+          size: 0,
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        },
+      ];
+
+      const spacedFiles: FileSystemNode[] = [
+        {
+          id: 'my-notes',
+          name: 'my notes.txt',
+          type: 'file',
+          mimeType: 'text/plain',
+          content: 'Notes',
+          size: 5,
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        },
+        {
+          id: 'project-plan',
+          name: 'project plan.md',
+          type: 'file',
+          mimeType: 'text/markdown',
+          content: 'Plan',
+          size: 4,
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Update mock to include spaced directories at root
+      (mockAPI.listDirectory as any).mockImplementation((dirId: string) => {
+        if (dirId === 'root') {
+          const allDirs = [
+            {
+              id: 'documents',
+              name: 'Documents',
+              type: 'directory',
+              mimeType: '',
+              content: '',
+              size: 0,
+              createdAt: new Date().toISOString(),
+              modifiedAt: new Date().toISOString(),
+            },
+            {
+              id: 'pictures',
+              name: 'Pictures',
+              type: 'directory',
+              mimeType: '',
+              content: '',
+              size: 0,
+              createdAt: new Date().toISOString(),
+              modifiedAt: new Date().toISOString(),
+            },
+            ...spacedDirs,
+          ];
+          return Promise.resolve(allDirs);
+        }
+        if (dirId === 'my-docs') return Promise.resolve(spacedFiles);
+        if (dirId === 'important-files') return Promise.resolve([]);
+        if (dirId === 'documents') {
+          return Promise.resolve([
+            {
+              id: 'readme',
+              name: 'readme.txt',
+              type: 'file',
+              mimeType: 'text/plain',
+              content: 'README',
+              size: 6,
+              createdAt: new Date().toISOString(),
+              modifiedAt: new Date().toISOString(),
+            },
+            {
+              id: 'welcome',
+              name: 'welcome.txt',
+              type: 'file',
+              mimeType: 'text/plain',
+              content: 'WELCOME',
+              size: 7,
+              createdAt: new Date().toISOString(),
+              modifiedAt: new Date().toISOString(),
+            },
+          ]);
+        }
+        return Promise.reject(new Error('Directory not found'));
+      });
+
+      (mockAPI.getFile as any).mockImplementation((id: string) => {
+        const allFiles = [
+          { id: 'root', name: '/', type: 'directory' },
+          { id: 'documents', name: 'Documents', type: 'directory' },
+          { id: 'pictures', name: 'Pictures', type: 'directory' },
+          ...spacedDirs,
+          ...spacedFiles,
+        ];
+        const file = allFiles.find((f) => f.id === id);
+        if (file) return Promise.resolve(file);
+        return Promise.reject(new Error('File not found'));
+      });
+    });
+
+    it('should complete paths with spaces and wrap in quotes', async () => {
+      const result = await engine.complete(session, 'cd My', 5);
+
+      // Should complete to "My Documents/" with quotes
+      expect(result.completions).toContain('"My Documents/"');
+      expect(result.completions).not.toContain('My Documents/');
+    });
+
+    it('should complete partial quoted path', async () => {
+      const result = await engine.complete(session, 'cd "My Doc', 10);
+
+      // Should complete the quoted path
+      expect(result.completions).toContain('"My Documents/"');
+    });
+
+    it('should handle multiple directories with spaces', async () => {
+      const result = await engine.complete(session, 'cd ', 3);
+
+      // Should include both directories with spaces, quoted
+      expect(result.completions).toContain('"My Documents/"');
+      expect(result.completions).toContain('"Important Files/"');
+      expect(result.completions).toContain('Documents/');
+      expect(result.completions).toContain('Pictures/');
+    });
+
+    it('should complete files with spaces inside quoted directory path', async () => {
+      const result = await engine.complete(session, 'cat "My Documents/', 18);
+
+      expect(result.completions).toContain('"My Documents/my notes.txt"');
+      expect(result.completions).toContain('"My Documents/project plan.md"');
+    });
+
+    it('should filter files with spaces by prefix', async () => {
+      const result = await engine.complete(session, 'cat "My Documents/my', 20);
+
+      expect(result.completions).toContain('"My Documents/my notes.txt"');
+      expect(result.completions).not.toContain('"My Documents/project plan.md"');
+    });
+  });
 });
