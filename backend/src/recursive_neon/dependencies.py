@@ -18,12 +18,13 @@ from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager, ICalendarService
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient
 from recursive_neon.services.process_manager import OllamaProcessManager
 from recursive_neon.services.message_handler import MessageHandler
 from recursive_neon.services.app_service import AppService
+from recursive_neon.services.calendar_service import CalendarService
 from recursive_neon.models.game_state import SystemState, GameState
 from recursive_neon.config import settings
 
@@ -46,6 +47,7 @@ class ServiceContainer:
         system_state: System state tracking
         game_state: Game state (player data, inventory, app data)
         app_service: Desktop app service
+        calendar_service: Calendar event service
         start_time: Application start time
     """
     process_manager: IProcessManager
@@ -55,6 +57,7 @@ class ServiceContainer:
     system_state: SystemState
     game_state: GameState
     app_service: AppService
+    calendar_service: ICalendarService
     start_time: datetime
 
     def __repr__(self) -> str:
@@ -187,13 +190,21 @@ class ServiceFactory:
         else:
             logger.info("Filesystem loaded from saved state")
 
+        # Create calendar service
+        calendar_service = CalendarService()
+
+        # Load calendar data from disk if it exists
+        calendar_data_path = settings.game_data_path / "calendar.json"
+        calendar_service.load_from_disk(str(calendar_data_path))
+
         # Create message handler with dependencies
         message_handler = MessageHandler(
             npc_manager=npc_manager,
             ollama_client=ollama_client,
             system_state=system_state,
             start_time=start_time,
-            app_service=app_service
+            app_service=app_service,
+            calendar_service=calendar_service
         )
 
         container = ServiceContainer(
@@ -204,6 +215,7 @@ class ServiceFactory:
             system_state=system_state,
             game_state=game_state,
             app_service=app_service,
+            calendar_service=calendar_service,
             start_time=start_time
         )
 
