@@ -110,8 +110,10 @@ class CalendarService(ICalendarService):
         # Ensure both are datetime objects for comparison
         if isinstance(start_time, str):
             start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            update_data['start_time'] = start_time  # Update the dict with datetime object
         if isinstance(end_time, str):
             end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            update_data['end_time'] = end_time  # Update the dict with datetime object
 
         # Validate that end_time is after start_time
         if end_time <= start_time:
