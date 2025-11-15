@@ -9,6 +9,7 @@
   background-color: #1a1a2e;
   color: #e0e0e0;
   font-family: 'Courier New', monospace;
+  position: relative;
 }
 
 /* ============================================================================
@@ -299,7 +300,7 @@
    ============================================================================ */
 
 .modal-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -308,7 +309,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 1000;
 }
 
 .modal-content {
