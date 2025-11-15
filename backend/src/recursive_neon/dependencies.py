@@ -18,7 +18,7 @@ from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager, ICalendarService, INotificationService
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager, ICalendarService, INotificationService, ITimeService, ISettingsService
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient
 from recursive_neon.services.process_manager import OllamaProcessManager
@@ -26,6 +26,8 @@ from recursive_neon.services.message_handler import MessageHandler
 from recursive_neon.services.app_service import AppService
 from recursive_neon.services.calendar_service import CalendarService
 from recursive_neon.services.notification_service import NotificationService
+from recursive_neon.services.time_service import TimeService
+from recursive_neon.services.settings_service import SettingsService
 from recursive_neon.models.game_state import SystemState, GameState
 from recursive_neon.config import settings
 
@@ -50,6 +52,8 @@ class ServiceContainer:
         app_service: Desktop app service
         calendar_service: Calendar event service
         notification_service: Notification management service
+        time_service: Game time management service
+        settings_service: Application settings service
         start_time: Application start time
     """
     process_manager: IProcessManager
@@ -61,6 +65,8 @@ class ServiceContainer:
     app_service: AppService
     calendar_service: ICalendarService
     notification_service: INotificationService
+    time_service: ITimeService
+    settings_service: ISettingsService
     start_time: datetime
 
     def __repr__(self) -> str:
@@ -203,6 +209,16 @@ class ServiceFactory:
         # Create notification service
         notification_service = NotificationService(game_state)
 
+        # Create time service
+        time_data_path = settings.game_data_path / "time_state.json"
+        time_service = TimeService(persistence_path=time_data_path)
+        time_service.load_state()  # Load saved state if exists
+
+        # Create settings service
+        settings_data_path = settings.game_data_path / "settings.json"
+        settings_service = SettingsService(persistence_path=settings_data_path)
+        settings_service.load()  # Load saved settings if exists
+
         # Create message handler with dependencies
         message_handler = MessageHandler(
             npc_manager=npc_manager,
@@ -210,7 +226,9 @@ class ServiceFactory:
             system_state=system_state,
             start_time=start_time,
             app_service=app_service,
-            calendar_service=calendar_service
+            calendar_service=calendar_service,
+            time_service=time_service,
+            settings_service=settings_service
         )
 
         container = ServiceContainer(
@@ -223,6 +241,8 @@ class ServiceFactory:
             app_service=app_service,
             calendar_service=calendar_service,
             notification_service=notification_service,
+            time_service=time_service,
+            settings_service=settings_service,
             start_time=start_time
         )
 

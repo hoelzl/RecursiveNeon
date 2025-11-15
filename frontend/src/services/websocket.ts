@@ -79,6 +79,10 @@ export class WebSocketClient implements IWebSocketClient {
     }
   }
 
+  sendMessage(message: { type: string; data: any }) {
+    this.send(message.type, message.data);
+  }
+
   on(type: string, handler: MessageHandler) {
     if (!this.handlers.has(type)) {
       this.handlers.set(type, new Set());

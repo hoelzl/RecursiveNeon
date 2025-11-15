@@ -9,8 +9,8 @@ These interfaces enable:
 - Clear service contracts
 """
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Dict, List, Optional, Any, AsyncIterator, Protocol
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, AsyncIterator, Protocol, Callable
 from dataclasses import dataclass
 
 from recursive_neon.models.npc import NPC, ChatResponse
@@ -505,5 +505,274 @@ class INotificationService(ABC):
 
         Returns:
             Updated configuration
+        """
+        pass
+
+
+# ============================================================================
+# Time Service Interface
+# ============================================================================
+
+class ITimeService(ABC):
+    """
+    Abstract interface for game time management.
+
+    Defines the contract for managing game time independently from OS time,
+    including time dilation and manual time manipulation.
+    """
+
+    @abstractmethod
+    def get_current_time(self) -> datetime:
+        """
+        Get the current game time.
+
+        Returns:
+            Current game time as datetime
+        """
+        pass
+
+    @abstractmethod
+    def get_time_state(self) -> Dict[str, Any]:
+        """
+        Get complete time state including dilation and pause status.
+
+        Returns:
+            Dictionary containing time state information
+        """
+        pass
+
+    @abstractmethod
+    def set_time_dilation(self, dilation: float) -> None:
+        """
+        Set time dilation factor.
+
+        Args:
+            dilation: Time dilation factor (0.0 = paused, 1.0 = real-time, etc.)
+
+        Raises:
+            ValueError: If dilation is negative
+        """
+        pass
+
+    @abstractmethod
+    def get_time_dilation(self) -> float:
+        """
+        Get current time dilation factor.
+
+        Returns:
+            Current time dilation factor
+        """
+        pass
+
+    @abstractmethod
+    def pause(self) -> None:
+        """Pause time (equivalent to set_time_dilation(0.0))."""
+        pass
+
+    @abstractmethod
+    def resume(self) -> None:
+        """Resume time at previous dilation rate."""
+        pass
+
+    @abstractmethod
+    def is_paused(self) -> bool:
+        """
+        Check if time is currently paused.
+
+        Returns:
+            True if paused, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def jump_to(self, target_time: datetime) -> None:
+        """
+        Jump to a specific time.
+
+        Args:
+            target_time: Target datetime to jump to
+        """
+        pass
+
+    @abstractmethod
+    def advance(self, duration: timedelta) -> None:
+        """
+        Advance time by a specific duration.
+
+        Args:
+            duration: Duration to advance time by
+        """
+        pass
+
+    @abstractmethod
+    def rewind(self, duration: timedelta) -> None:
+        """
+        Rewind time by a specific duration.
+
+        Args:
+            duration: Duration to rewind time by
+        """
+        pass
+
+    @abstractmethod
+    def reset_to_default(self) -> None:
+        """Reset to default time and dilation."""
+        pass
+
+    @abstractmethod
+    def save_state(self) -> None:
+        """Save current time state to disk."""
+        pass
+
+    @abstractmethod
+    def load_state(self) -> None:
+        """Load time state from disk."""
+        pass
+
+    @abstractmethod
+    def subscribe(self, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """
+        Subscribe to time change events.
+
+        Args:
+            callback: Function to call when time state changes
+        """
+        pass
+
+
+# ============================================================================
+# Settings Service Interface
+# ============================================================================
+
+class ISettingsService(ABC):
+    """
+    Abstract interface for settings management.
+
+    Defines the contract for managing application settings with persistence.
+    """
+
+    @abstractmethod
+    def get(self, key: str) -> Any:
+        """
+        Get a setting value.
+
+        Args:
+            key: Setting key
+
+        Returns:
+            Setting value
+
+        Raises:
+            KeyError: If setting not found
+        """
+        pass
+
+    @abstractmethod
+    def get_all(self) -> Dict[str, Any]:
+        """
+        Get all settings.
+
+        Returns:
+            Dictionary of all settings
+        """
+        pass
+
+    @abstractmethod
+    def set(self, key: str, value: Any) -> None:
+        """
+        Set a setting value.
+
+        Args:
+            key: Setting key
+            value: New value
+
+        Raises:
+            ValueError: If value is invalid
+        """
+        pass
+
+    @abstractmethod
+    def set_many(self, settings: Dict[str, Any]) -> None:
+        """
+        Set multiple settings at once.
+
+        Args:
+            settings: Dictionary of settings to update
+
+        Raises:
+            ValueError: If any value is invalid
+        """
+        pass
+
+    @abstractmethod
+    def reset(self, key: str) -> None:
+        """
+        Reset a setting to its default value.
+
+        Args:
+            key: Setting key to reset
+
+        Raises:
+            KeyError: If setting has no default
+        """
+        pass
+
+    @abstractmethod
+    def reset_all(self) -> None:
+        """Reset all settings to defaults."""
+        pass
+
+    @abstractmethod
+    def get_default(self, key: str) -> Any:
+        """
+        Get the default value for a setting.
+
+        Args:
+            key: Setting key
+
+        Returns:
+            Default value
+
+        Raises:
+            KeyError: If setting has no default
+        """
+        pass
+
+    @abstractmethod
+    def register_default(
+        self,
+        key: str,
+        default_value: Any,
+        validator: Optional[Callable[[Any], bool]] = None,
+        description: Optional[str] = None
+    ) -> None:
+        """
+        Register a default value and optional validator.
+
+        Args:
+            key: Setting key
+            default_value: Default value
+            validator: Optional validation function
+            description: Optional description
+        """
+        pass
+
+    @abstractmethod
+    def save(self) -> None:
+        """Save settings to disk."""
+        pass
+
+    @abstractmethod
+    def load(self) -> None:
+        """Load settings from disk."""
+        pass
+
+    @abstractmethod
+    def subscribe(self, callback: Callable[[str, Any], None]) -> None:
+        """
+        Subscribe to setting changes.
+
+        Args:
+            callback: Function to call when settings change (receives key, value)
         """
         pass

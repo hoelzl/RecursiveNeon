@@ -15,7 +15,7 @@ import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient, ICalendarService
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, ICalendarService, ITimeService, ISettingsService
 from recursive_neon.models.game_state import SystemState
 
 if TYPE_CHECKING:
@@ -39,7 +39,9 @@ class MessageHandler:
         system_state: Optional[SystemState] = None,
         start_time: Optional[datetime] = None,
         app_service: Optional["AppService"] = None,
-        calendar_service: Optional[ICalendarService] = None
+        calendar_service: Optional[ICalendarService] = None,
+        time_service: Optional[ITimeService] = None,
+        settings_service: Optional[ISettingsService] = None
     ):
         """
         Initialize the message handler.
@@ -51,6 +53,8 @@ class MessageHandler:
             start_time: Application start time for uptime calculation (optional)
             app_service: Desktop app service (optional)
             calendar_service: Calendar service (optional)
+            time_service: Time service (optional)
+            settings_service: Settings service (optional)
         """
         self.npc_manager = npc_manager
         self.ollama_client = ollama_client
@@ -58,6 +62,8 @@ class MessageHandler:
         self.start_time = start_time or datetime.now()
         self.app_service = app_service
         self.calendar_service = calendar_service
+        self.time_service = time_service
+        self.settings_service = settings_service
 
     async def handle_message(self, message_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -84,6 +90,10 @@ class MessageHandler:
             "app": self._handle_app_operation,
             # Calendar handlers
             "calendar": self._handle_calendar_operation,
+            # Time handlers
+            "time": self._handle_time_operation,
+            # Settings handlers
+            "settings": self._handle_settings_operation,
         }
 
         handler = handler_map.get(message_type)
@@ -405,3 +415,215 @@ class MessageHandler:
             "type": "chat_thinking",
             "data": {"npc_id": npc_id}
         }
+
+    async def _handle_time_operation(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle time operations.
+
+        Message format:
+        {
+            "type": "time",
+            "data": {
+                "action": "get_time" | "set_dilation" | "pause" | "resume" | "jump_to" | "advance",
+                ...
+            }
+        }
+        """
+        if not self.time_service:
+            return self._create_error_response("Time service not available")
+
+        action = data.get("action")
+
+        try:
+            if action == "get_time":
+                return {
+                    "type": "time_response",
+                    "data": self.time_service.get_time_state()
+                }
+
+            elif action == "set_dilation":
+                value = data.get("value")
+                if value is None or value < 0:
+                    return self._create_error_response("Invalid dilation value")
+
+                self.time_service.set_time_dilation(value)
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "dilation_change"
+                }
+
+            elif action == "pause":
+                self.time_service.pause()
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "pause"
+                }
+
+            elif action == "resume":
+                self.time_service.resume()
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "resume"
+                }
+
+            elif action == "jump_to":
+                target_time_str = data.get("target_time")
+                if not target_time_str:
+                    return self._create_error_response("Missing target_time")
+
+                target_time = datetime.fromisoformat(target_time_str)
+                self.time_service.jump_to(target_time)
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "manual_jump"
+                }
+
+            elif action == "advance":
+                seconds = data.get("value")
+                if seconds is None:
+                    return self._create_error_response("Missing duration")
+
+                from datetime import timedelta
+                self.time_service.advance(timedelta(seconds=seconds))
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "manual_advance"
+                }
+
+            elif action == "rewind":
+                seconds = data.get("value")
+                if seconds is None:
+                    return self._create_error_response("Missing duration")
+
+                from datetime import timedelta
+                self.time_service.rewind(timedelta(seconds=seconds))
+                return {
+                    "type": "time_update",
+                    "data": self.time_service.get_time_state(),
+                    "update_type": "manual_rewind"
+                }
+
+            else:
+                return self._create_error_response(f"Unknown time action: {action}")
+
+        except Exception as e:
+            logger.error(f"Error in time operation {action}: {e}", exc_info=True)
+            return self._create_error_response(str(e))
+
+    async def _handle_settings_operation(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle settings operations.
+
+        Message format:
+        {
+            "type": "settings",
+            "data": {
+                "action": "get_all" | "get" | "set" | "set_many" | "reset" | "reset_all",
+                ...
+            }
+        }
+        """
+        if not self.settings_service:
+            return self._create_error_response("Settings service not available")
+
+        action = data.get("action")
+
+        try:
+            if action == "get_all":
+                return {
+                    "type": "settings_response",
+                    "data": {
+                        "settings": self.settings_service.get_all()
+                    }
+                }
+
+            elif action == "get":
+                key = data.get("key")
+                if not key:
+                    return self._create_error_response("Missing key")
+
+                try:
+                    value = self.settings_service.get(key)
+                    return {
+                        "type": "settings_response",
+                        "data": {
+                            "key": key,
+                            "value": value
+                        }
+                    }
+                except KeyError as e:
+                    return self._create_error_response(str(e))
+
+            elif action == "set":
+                key = data.get("key")
+                value = data.get("value")
+
+                if not key:
+                    return self._create_error_response("Missing key")
+
+                try:
+                    self.settings_service.set(key, value)
+                    return {
+                        "type": "setting_update",
+                        "data": {
+                            "key": key,
+                            "value": value
+                        }
+                    }
+                except (KeyError, ValueError) as e:
+                    return self._create_error_response(str(e))
+
+            elif action == "set_many":
+                settings = data.get("settings")
+                if not settings:
+                    return self._create_error_response("Missing settings")
+
+                try:
+                    self.settings_service.set_many(settings)
+                    return {
+                        "type": "settings_update",
+                        "data": {
+                            "settings": settings
+                        }
+                    }
+                except (KeyError, ValueError) as e:
+                    return self._create_error_response(str(e))
+
+            elif action == "reset":
+                key = data.get("key")
+                if not key:
+                    return self._create_error_response("Missing key")
+
+                try:
+                    self.settings_service.reset(key)
+                    value = self.settings_service.get(key)
+                    return {
+                        "type": "setting_update",
+                        "data": {
+                            "key": key,
+                            "value": value
+                        }
+                    }
+                except KeyError as e:
+                    return self._create_error_response(str(e))
+
+            elif action == "reset_all":
+                self.settings_service.reset_all()
+                return {
+                    "type": "settings_update",
+                    "data": {
+                        "settings": self.settings_service.get_all()
+                    }
+                }
+
+            else:
+                return self._create_error_response(f"Unknown settings action: {action}")
+
+        except Exception as e:
+            logger.error(f"Error in settings operation {action}: {e}", exc_info=True)
+            return self._create_error_response(str(e))
