@@ -5,7 +5,7 @@
  * Dependencies are injected via context providers instead of direct imports.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Desktop } from './components/Desktop';
 import { useGameStoreContext } from './contexts/GameStoreContext';
 import { useWebSocket } from './contexts/WebSocketContext';
@@ -29,37 +29,68 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Use refs to store the latest handlers without triggering effect re-runs
+  // This is critical because Zustand handlers are not stable references
+  const handlersRef = useRef({
+    setNPCs,
+    setSystemStatus,
+    setConnected,
+    handleNotificationCreated,
+    handleNotificationUpdated,
+    handleNotificationDeleted,
+    handleNotificationsCleared,
+    handleConfigUpdated,
+    loadHistory,
+    loadConfig,
+  });
+
+  // Update refs when handlers change, but don't trigger effect re-run
+  useEffect(() => {
+    handlersRef.current = {
+      setNPCs,
+      setSystemStatus,
+      setConnected,
+      handleNotificationCreated,
+      handleNotificationUpdated,
+      handleNotificationDeleted,
+      handleNotificationsCleared,
+      handleConfigUpdated,
+      loadHistory,
+      loadConfig,
+    };
+  });
+
   useEffect(() => {
     let mounted = true;
 
-    // Define event handlers at useEffect scope so they're accessible in cleanup
+    // Define event handlers that use the ref to access current handlers
     const notificationCreatedHandler = (msg: any) => {
       if (mounted) {
-        handleNotificationCreated(msg.data);
+        handlersRef.current.handleNotificationCreated(msg.data);
       }
     };
 
     const notificationUpdatedHandler = (msg: any) => {
       if (mounted) {
-        handleNotificationUpdated(msg.data);
+        handlersRef.current.handleNotificationUpdated(msg.data);
       }
     };
 
     const notificationDeletedHandler = (msg: any) => {
       if (mounted) {
-        handleNotificationDeleted(msg.data.id);
+        handlersRef.current.handleNotificationDeleted(msg.data.id);
       }
     };
 
     const notificationsClearedHandler = (_msg: any) => {
       if (mounted) {
-        handleNotificationsCleared();
+        handlersRef.current.handleNotificationsCleared();
       }
     };
 
     const notificationConfigUpdatedHandler = (msg: any) => {
       if (mounted) {
-        handleConfigUpdated(msg.data);
+        handlersRef.current.handleConfigUpdated(msg.data);
       }
     };
 
@@ -69,15 +100,15 @@ function App() {
         await wsClient.connect();
 
         if (!mounted) return;
-        setConnected(true);
+        handlersRef.current.setConnected(true);
 
         // Request initial data
         wsClient.send('get_npcs', {});
         wsClient.send('get_status', {});
 
-        // Load notification data
-        loadHistory();
-        loadConfig();
+        // Load notification data using ref to avoid dependency issues
+        handlersRef.current.loadHistory();
+        handlersRef.current.loadConfig();
 
         // Initialize time and settings services
         timeService.initialize(wsClient);
@@ -86,13 +117,13 @@ function App() {
         // Set up message handlers
         wsClient.on('npcs_list', (msg) => {
           if (mounted) {
-            setNPCs(msg.data.npcs);
+            handlersRef.current.setNPCs(msg.data.npcs);
           }
         });
 
         wsClient.on('status', (msg) => {
           if (mounted) {
-            setSystemStatus(msg.data);
+            handlersRef.current.setSystemStatus(msg.data);
           }
         });
 
@@ -164,7 +195,8 @@ function App() {
 
       wsClient.disconnect();
     };
-  }, [setNPCs, setSystemStatus, setConnected, handleNotificationCreated, handleNotificationUpdated, handleNotificationDeleted, handleNotificationsCleared, handleConfigUpdated, loadHistory, loadConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient]); // Only depend on wsClient - notification handlers are accessed via ref
 
   if (loading) {
     return (
