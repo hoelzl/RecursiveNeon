@@ -21,6 +21,27 @@ export class WebSocketClient implements IWebSocketClient {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        // If already connected or connecting, don't create a new connection
+        if (this.ws && (this.connected || this.ws.readyState === WebSocket.CONNECTING)) {
+          console.log('WebSocket already connected or connecting');
+          if (this.connected) {
+            resolve();
+          } else {
+            // Wait for existing connection to open
+            const onOpen = () => {
+              this.ws?.removeEventListener('open', onOpen);
+              resolve();
+            };
+            this.ws.addEventListener('open', onOpen);
+          }
+          return;
+        }
+
+        // Close existing connection if any
+        if (this.ws) {
+          this.ws.close();
+        }
+
         this.ws = new WebSocket(this.url);
 
         this.ws.onopen = () => {
@@ -112,6 +133,15 @@ export class WebSocketClient implements IWebSocketClient {
 
   disconnect() {
     if (this.ws) {
+      console.log('WebSocket disconnecting');
+      this.connected = false;
+
+      // Remove event listeners to prevent reconnection attempts
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.onopen = null;
+
       this.ws.close();
       this.ws = null;
     }

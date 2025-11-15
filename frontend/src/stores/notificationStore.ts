@@ -244,6 +244,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
    */
   handleNotificationCreated: (notification: Notification) => {
     set(state => {
+      // Check if notification already exists (deduplicate)
+      const existsInHistory = state.history.some(n => n.id === notification.id);
+      const existsInActive = state.activeNotifications.some(n => n.id === notification.id);
+
+      // If already exists, don't add duplicate
+      if (existsInHistory || existsInActive) {
+        console.warn(`Duplicate notification received: ${notification.id}`);
+        return state; // No changes
+      }
+
       const newHistory = [notification, ...state.history];
       const newUnreadCount = state.unreadCount + 1;
 
