@@ -9,10 +9,12 @@ These interfaces enable:
 - Clear service contracts
 """
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Dict, List, Optional, Any, AsyncIterator, Protocol
 from dataclasses import dataclass
 
 from recursive_neon.models.npc import NPC, ChatResponse
+from recursive_neon.models.calendar import CalendarEvent, CreateEventRequest
 
 
 # ============================================================================
@@ -247,5 +249,125 @@ class IProcessManager(ABC):
 
         Returns:
             Dictionary containing process status
+        """
+        pass
+
+
+# ============================================================================
+# Calendar Service Interface
+# ============================================================================
+
+class ICalendarService(ABC):
+    """
+    Abstract interface for calendar event management.
+
+    Defines the contract for managing calendar events in the game.
+    """
+
+    @abstractmethod
+    def create_event(self, event_data: CreateEventRequest) -> CalendarEvent:
+        """
+        Create a new calendar event.
+
+        Args:
+            event_data: Event data to create
+
+        Returns:
+            The created CalendarEvent
+        """
+        pass
+
+    @abstractmethod
+    def get_event(self, event_id: str) -> Optional[CalendarEvent]:
+        """
+        Get a specific event by ID.
+
+        Args:
+            event_id: ID of the event to retrieve
+
+        Returns:
+            The event if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_all_events(self) -> List[CalendarEvent]:
+        """
+        Get all calendar events.
+
+        Returns:
+            List of all events
+        """
+        pass
+
+    @abstractmethod
+    def get_events_in_range(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[CalendarEvent]:
+        """
+        Get events within a date range.
+
+        Args:
+            start_date: Start of date range
+            end_date: End of date range
+
+        Returns:
+            List of events in range
+        """
+        pass
+
+    @abstractmethod
+    def update_event(
+        self,
+        event_id: str,
+        updates: Dict[str, Any]
+    ) -> CalendarEvent:
+        """
+        Update an existing event.
+
+        Args:
+            event_id: ID of event to update
+            updates: Dictionary of fields to update
+
+        Returns:
+            The updated event
+
+        Raises:
+            ValueError: If event not found
+        """
+        pass
+
+    @abstractmethod
+    def delete_event(self, event_id: str) -> bool:
+        """
+        Delete an event.
+
+        Args:
+            event_id: ID of event to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        pass
+
+    @abstractmethod
+    def save_to_disk(self, file_path: str) -> None:
+        """
+        Save calendar events to disk.
+
+        Args:
+            file_path: Path to save calendar data
+        """
+        pass
+
+    @abstractmethod
+    def load_from_disk(self, file_path: str) -> None:
+        """
+        Load calendar events from disk.
+
+        Args:
+            file_path: Path to load calendar data from
         """
         pass

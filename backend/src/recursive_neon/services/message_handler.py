@@ -15,7 +15,7 @@ import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, ICalendarService
 from recursive_neon.models.game_state import SystemState
 
 if TYPE_CHECKING:
@@ -38,7 +38,8 @@ class MessageHandler:
         ollama_client: Optional[IOllamaClient] = None,
         system_state: Optional[SystemState] = None,
         start_time: Optional[datetime] = None,
-        app_service: Optional["AppService"] = None
+        app_service: Optional["AppService"] = None,
+        calendar_service: Optional[ICalendarService] = None
     ):
         """
         Initialize the message handler.
@@ -49,12 +50,14 @@ class MessageHandler:
             system_state: System state instance (optional)
             start_time: Application start time for uptime calculation (optional)
             app_service: Desktop app service (optional)
+            calendar_service: Calendar service (optional)
         """
         self.npc_manager = npc_manager
         self.ollama_client = ollama_client
         self.system_state = system_state or SystemState()
         self.start_time = start_time or datetime.now()
         self.app_service = app_service
+        self.calendar_service = calendar_service
 
     async def handle_message(self, message_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -79,6 +82,8 @@ class MessageHandler:
             "get_status": self._handle_get_status,
             # Desktop app handlers
             "app": self._handle_app_operation,
+            # Calendar handlers
+            "calendar": self._handle_calendar_operation,
         }
 
         handler = handler_map.get(message_type)
@@ -313,6 +318,74 @@ class MessageHandler:
 
         except Exception as e:
             logger.error(f"Error in app operation {operation}: {e}", exc_info=True)
+            return self._create_error_response(str(e))
+
+    async def _handle_calendar_operation(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle calendar operations.
+
+        Message format:
+        {
+            "type": "calendar",
+            "data": {
+                "action": "get_events" | "get_events_range" | "create_event" | "update_event" | "delete_event",
+                ...
+            }
+        }
+        """
+        if not self.calendar_service:
+            return self._create_error_response("Calendar service not available")
+
+        action = data.get("action")
+
+        try:
+            if action == "get_events":
+                events = self.calendar_service.get_all_events()
+                return {
+                    "type": "calendar_events_list",
+                    "data": {"events": [e.model_dump(mode='json') for e in events]}
+                }
+
+            elif action == "get_events_range":
+                start = datetime.fromisoformat(data['start_date'])
+                end = datetime.fromisoformat(data['end_date'])
+                events = self.calendar_service.get_events_in_range(start, end)
+                return {
+                    "type": "calendar_events_list",
+                    "data": {"events": [e.model_dump(mode='json') for e in events]}
+                }
+
+            elif action == "create_event":
+                from recursive_neon.models.calendar import CreateEventRequest
+                request = CreateEventRequest(**data['event'])
+                event = self.calendar_service.create_event(request)
+                return {
+                    "type": "calendar_event_created",
+                    "data": {"event": event.model_dump(mode='json')}
+                }
+
+            elif action == "update_event":
+                event = self.calendar_service.update_event(
+                    data['event_id'],
+                    data['updates']
+                )
+                return {
+                    "type": "calendar_event_updated",
+                    "data": {"event": event.model_dump(mode='json')}
+                }
+
+            elif action == "delete_event":
+                success = self.calendar_service.delete_event(data['event_id'])
+                return {
+                    "type": "calendar_event_deleted",
+                    "data": {"event_id": data['event_id'], "success": success}
+                }
+
+            else:
+                return self._create_error_response(f"Unknown calendar action: {action}")
+
+        except Exception as e:
+            logger.error(f"Error in calendar operation {action}: {e}", exc_info=True)
             return self._create_error_response(str(e))
 
     async def create_thinking_indicator(self, npc_id: str) -> Dict[str, Any]:

@@ -110,6 +110,15 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"Failed to save filesystem state: {e}")
 
+            # Save calendar data before shutdown
+            logger.info("Saving calendar data...")
+            try:
+                calendar_data_path = settings.game_data_path / "calendar.json"
+                container.calendar_service.save_to_disk(str(calendar_data_path))
+                logger.info("Calendar data saved successfully")
+            except Exception as e:
+                logger.error(f"Failed to save calendar data: {e}")
+
             await container.ollama_client.close()
             await container.process_manager.stop()
 
