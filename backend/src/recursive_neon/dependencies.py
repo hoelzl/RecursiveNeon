@@ -18,13 +18,14 @@ from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager, ICalendarService
+from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager, ICalendarService, INotificationService
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient
 from recursive_neon.services.process_manager import OllamaProcessManager
 from recursive_neon.services.message_handler import MessageHandler
 from recursive_neon.services.app_service import AppService
 from recursive_neon.services.calendar_service import CalendarService
+from recursive_neon.services.notification_service import NotificationService
 from recursive_neon.models.game_state import SystemState, GameState
 from recursive_neon.config import settings
 
@@ -48,6 +49,7 @@ class ServiceContainer:
         game_state: Game state (player data, inventory, app data)
         app_service: Desktop app service
         calendar_service: Calendar event service
+        notification_service: Notification management service
         start_time: Application start time
     """
     process_manager: IProcessManager
@@ -58,6 +60,7 @@ class ServiceContainer:
     game_state: GameState
     app_service: AppService
     calendar_service: ICalendarService
+    notification_service: INotificationService
     start_time: datetime
 
     def __repr__(self) -> str:
@@ -197,6 +200,9 @@ class ServiceFactory:
         calendar_data_path = settings.game_data_path / "calendar.json"
         calendar_service.load_from_disk(str(calendar_data_path))
 
+        # Create notification service
+        notification_service = NotificationService(game_state)
+
         # Create message handler with dependencies
         message_handler = MessageHandler(
             npc_manager=npc_manager,
@@ -216,6 +222,7 @@ class ServiceFactory:
             game_state=game_state,
             app_service=app_service,
             calendar_service=calendar_service,
+            notification_service=notification_service,
             start_time=start_time
         )
 

@@ -9,11 +9,21 @@ import { useEffect, useState } from 'react';
 import { Desktop } from './components/Desktop';
 import { useGameStoreContext } from './contexts/GameStoreContext';
 import { useWebSocket } from './contexts/WebSocketContext';
+import { useNotificationStore } from './stores/notificationStore';
 import './styles/desktop.css';
 
 function App() {
   const { setNPCs, setSystemStatus, setConnected } = useGameStoreContext();
   const wsClient = useWebSocket();
+  const {
+    handleNotificationCreated,
+    handleNotificationUpdated,
+    handleNotificationDeleted,
+    handleNotificationsCleared,
+    handleConfigUpdated,
+    loadHistory,
+    loadConfig,
+  } = useNotificationStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +42,10 @@ function App() {
         wsClient.send('get_npcs', {});
         wsClient.send('get_status', {});
 
+        // Load notification data
+        loadHistory();
+        loadConfig();
+
         // Set up message handlers
         wsClient.on('npcs_list', (msg) => {
           if (mounted) {
@@ -47,6 +61,37 @@ function App() {
 
         wsClient.on('error', (msg) => {
           console.error('Server error:', msg.data);
+        });
+
+        // Notification event handlers
+        wsClient.on('notification_created', (msg) => {
+          if (mounted) {
+            handleNotificationCreated(msg.data);
+          }
+        });
+
+        wsClient.on('notification_updated', (msg) => {
+          if (mounted) {
+            handleNotificationUpdated(msg.data);
+          }
+        });
+
+        wsClient.on('notification_deleted', (msg) => {
+          if (mounted) {
+            handleNotificationDeleted(msg.data.id);
+          }
+        });
+
+        wsClient.on('notifications_cleared', (msg) => {
+          if (mounted) {
+            handleNotificationsCleared();
+          }
+        });
+
+        wsClient.on('notification_config_updated', (msg) => {
+          if (mounted) {
+            handleConfigUpdated(msg.data);
+          }
         });
 
         setLoading(false);
@@ -65,7 +110,7 @@ function App() {
       mounted = false;
       wsClient.disconnect();
     };
-  }, [setNPCs, setSystemStatus, setConnected]);
+  }, [setNPCs, setSystemStatus, setConnected, handleNotificationCreated, handleNotificationUpdated, handleNotificationDeleted, handleNotificationsCleared, handleConfigUpdated, loadHistory, loadConfig]);
 
   if (loading) {
     return (

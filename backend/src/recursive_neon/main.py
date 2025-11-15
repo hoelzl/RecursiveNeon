@@ -13,6 +13,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,13 @@ from fastapi.responses import JSONResponse
 from recursive_neon.config import settings
 from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
 from recursive_neon.models.game_state import SystemStatus, StatusResponse
+from recursive_neon.models.notification import (
+    Notification,
+    NotificationCreate,
+    NotificationUpdate,
+    NotificationFilters,
+    NotificationConfig
+)
 from recursive_neon.dependencies import ServiceContainer, ServiceFactory, get_container, initialize_container
 
 # Configure logging
@@ -217,6 +225,149 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
         "ollama_process": container.process_manager.get_status(),
         "npc_manager": container.npc_manager.get_stats()
     }
+
+
+# ============================================================================
+# Notification Endpoints
+# ============================================================================
+
+@app.post("/api/notifications", response_model=Notification, status_code=201)
+async def create_notification(
+    data: NotificationCreate,
+    container: ServiceContainer = Depends(get_container)
+) -> Notification:
+    """Create a new notification"""
+    notification = container.notification_service.create_notification(data)
+
+    # Broadcast via WebSocket
+    await manager.broadcast({
+        "type": "notification_created",
+        "data": notification.model_dump(mode='json')
+    })
+
+    return notification
+
+
+@app.get("/api/notifications", response_model=List[Notification])
+async def list_notifications(
+    type: Optional[str] = None,
+    source: Optional[str] = None,
+    read: Optional[bool] = None,
+    limit: int = 100,
+    offset: int = 0,
+    container: ServiceContainer = Depends(get_container)
+) -> List[Notification]:
+    """List notifications with optional filters"""
+    filters = NotificationFilters(
+        type=type,
+        source=source,
+        read=read,
+        limit=limit,
+        offset=offset
+    )
+    return container.notification_service.list_notifications(filters)
+
+
+@app.get("/api/notifications/unread-count", response_model=dict)
+async def get_unread_count(
+    container: ServiceContainer = Depends(get_container)
+) -> dict:
+    """Get unread notification count"""
+    count = container.notification_service.get_unread_count()
+    return {"count": count}
+
+
+@app.get("/api/notifications/config", response_model=NotificationConfig)
+async def get_notification_config(
+    container: ServiceContainer = Depends(get_container)
+) -> NotificationConfig:
+    """Get notification configuration"""
+    return container.notification_service.get_config()
+
+
+@app.put("/api/notifications/config", response_model=NotificationConfig)
+async def update_notification_config(
+    config: NotificationConfig,
+    container: ServiceContainer = Depends(get_container)
+) -> NotificationConfig:
+    """Update notification configuration"""
+    updated_config = container.notification_service.update_config(config)
+
+    # Broadcast config update via WebSocket
+    await manager.broadcast({
+        "type": "notification_config_updated",
+        "data": updated_config.model_dump(mode='json')
+    })
+
+    return updated_config
+
+
+@app.get("/api/notifications/{notification_id}", response_model=Notification)
+async def get_notification(
+    notification_id: str,
+    container: ServiceContainer = Depends(get_container)
+) -> Notification:
+    """Get a specific notification"""
+    notification = container.notification_service.get_notification(notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return notification
+
+
+@app.patch("/api/notifications/{notification_id}", response_model=Notification)
+async def update_notification(
+    notification_id: str,
+    data: NotificationUpdate,
+    container: ServiceContainer = Depends(get_container)
+) -> Notification:
+    """Update a notification"""
+    notification = container.notification_service.update_notification(
+        notification_id,
+        data
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    # Broadcast update via WebSocket
+    await manager.broadcast({
+        "type": "notification_updated",
+        "data": notification.model_dump(mode='json')
+    })
+
+    return notification
+
+
+@app.delete("/api/notifications/{notification_id}", status_code=204)
+async def delete_notification(
+    notification_id: str,
+    container: ServiceContainer = Depends(get_container)
+) -> None:
+    """Delete a notification"""
+    success = container.notification_service.delete_notification(notification_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    # Broadcast deletion via WebSocket
+    await manager.broadcast({
+        "type": "notification_deleted",
+        "data": {"id": notification_id}
+    })
+
+
+@app.delete("/api/notifications", response_model=dict)
+async def clear_all_notifications(
+    container: ServiceContainer = Depends(get_container)
+) -> dict:
+    """Clear all notifications"""
+    count = container.notification_service.clear_all_notifications()
+
+    # Broadcast clear via WebSocket
+    await manager.broadcast({
+        "type": "notifications_cleared",
+        "data": {"count": count}
+    })
+
+    return {"deleted_count": count}
 
 
 # ============================================================================

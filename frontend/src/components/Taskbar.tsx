@@ -3,6 +3,7 @@
  */
 
 import { useGameStore } from '../stores/gameStore';
+import { NotificationIndicator } from './notifications/NotificationIndicator';
 
 export function Taskbar() {
   const { windows, restoreWindow, systemStatus, connected } = useGameStore();
@@ -30,6 +31,7 @@ export function Taskbar() {
       </div>
 
       <div className="taskbar-status">
+        <NotificationIndicator />
         <div className="status-indicator">
           <span className={`status-dot ${connected ? '' : 'disconnected'}`} />
           <span>{connected ? 'Connected' : 'Disconnected'}</span>

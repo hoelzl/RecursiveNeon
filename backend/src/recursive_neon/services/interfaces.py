@@ -15,6 +15,13 @@ from dataclasses import dataclass
 
 from recursive_neon.models.npc import NPC, ChatResponse
 from recursive_neon.models.calendar import CalendarEvent, CreateEventRequest
+from recursive_neon.models.notification import (
+    Notification,
+    NotificationCreate,
+    NotificationUpdate,
+    NotificationFilters,
+    NotificationConfig
+)
 
 
 # ============================================================================
@@ -369,5 +376,134 @@ class ICalendarService(ABC):
 
         Args:
             file_path: Path to load calendar data from
+        """
+        pass
+
+
+# ============================================================================
+# Notification Service Interface
+# ============================================================================
+
+class INotificationService(ABC):
+    """
+    Abstract interface for notification management.
+
+    Defines the contract for creating, retrieving, updating, and managing
+    notifications in the game.
+    """
+
+    @abstractmethod
+    def create_notification(self, data: NotificationCreate) -> Notification:
+        """
+        Create a new notification.
+
+        Args:
+            data: Notification creation data
+
+        Returns:
+            The created Notification
+        """
+        pass
+
+    @abstractmethod
+    def get_notification(self, notification_id: str) -> Optional[Notification]:
+        """
+        Get a specific notification by ID.
+
+        Args:
+            notification_id: ID of the notification to retrieve
+
+        Returns:
+            The notification if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    def list_notifications(
+        self,
+        filters: NotificationFilters
+    ) -> List[Notification]:
+        """
+        List notifications with optional filters.
+
+        Args:
+            filters: Filters to apply to the query
+
+        Returns:
+            List of notifications matching filters
+        """
+        pass
+
+    @abstractmethod
+    def update_notification(
+        self,
+        notification_id: str,
+        data: NotificationUpdate
+    ) -> Optional[Notification]:
+        """
+        Update a notification.
+
+        Args:
+            notification_id: ID of notification to update
+            data: Update data
+
+        Returns:
+            The updated notification if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    def delete_notification(self, notification_id: str) -> bool:
+        """
+        Delete a notification.
+
+        Args:
+            notification_id: ID of notification to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        pass
+
+    @abstractmethod
+    def clear_all_notifications(self) -> int:
+        """
+        Delete all notifications.
+
+        Returns:
+            Number of notifications deleted
+        """
+        pass
+
+    @abstractmethod
+    def get_unread_count(self) -> int:
+        """
+        Get count of unread notifications.
+
+        Returns:
+            Number of unread notifications
+        """
+        pass
+
+    @abstractmethod
+    def get_config(self) -> NotificationConfig:
+        """
+        Get notification configuration.
+
+        Returns:
+            Current notification configuration
+        """
+        pass
+
+    @abstractmethod
+    def update_config(self, config: NotificationConfig) -> NotificationConfig:
+        """
+        Update notification configuration.
+
+        Args:
+            config: New configuration
+
+        Returns:
+            Updated configuration
         """
         pass

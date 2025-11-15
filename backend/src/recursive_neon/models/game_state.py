@@ -2,10 +2,11 @@
 Game State Models
 """
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
 from recursive_neon.models.app_models import NotesState, TasksState, FileSystemState, BrowserState
+from recursive_neon.models.notification import Notification, NotificationConfig
 
 
 class SystemStatus(str, Enum):
@@ -31,6 +32,10 @@ class GameState(BaseModel):
     tasks: TasksState = Field(default_factory=TasksState)
     filesystem: FileSystemState = Field(default_factory=FileSystemState)
     browser: BrowserState = Field(default_factory=BrowserState)
+
+    # Notification system
+    notifications: List[Notification] = Field(default_factory=list)
+    notification_config: NotificationConfig = Field(default_factory=NotificationConfig)
 
 
 class SystemState(BaseModel):
