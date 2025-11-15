@@ -32,6 +32,37 @@ function App() {
   useEffect(() => {
     let mounted = true;
 
+    // Define event handlers at useEffect scope so they're accessible in cleanup
+    const notificationCreatedHandler = (msg: any) => {
+      if (mounted) {
+        handleNotificationCreated(msg.data);
+      }
+    };
+
+    const notificationUpdatedHandler = (msg: any) => {
+      if (mounted) {
+        handleNotificationUpdated(msg.data);
+      }
+    };
+
+    const notificationDeletedHandler = (msg: any) => {
+      if (mounted) {
+        handleNotificationDeleted(msg.data.id);
+      }
+    };
+
+    const notificationsClearedHandler = (_msg: any) => {
+      if (mounted) {
+        handleNotificationsCleared();
+      }
+    };
+
+    const notificationConfigUpdatedHandler = (msg: any) => {
+      if (mounted) {
+        handleConfigUpdated(msg.data);
+      }
+    };
+
     const initialize = async () => {
       try {
         // Connect to WebSocket
@@ -70,35 +101,11 @@ function App() {
         });
 
         // Notification event handlers
-        wsClient.on('notification_created', (msg) => {
-          if (mounted) {
-            handleNotificationCreated(msg.data);
-          }
-        });
-
-        wsClient.on('notification_updated', (msg) => {
-          if (mounted) {
-            handleNotificationUpdated(msg.data);
-          }
-        });
-
-        wsClient.on('notification_deleted', (msg) => {
-          if (mounted) {
-            handleNotificationDeleted(msg.data.id);
-          }
-        });
-
-        wsClient.on('notifications_cleared', (msg) => {
-          if (mounted) {
-            handleNotificationsCleared();
-          }
-        });
-
-        wsClient.on('notification_config_updated', (msg) => {
-          if (mounted) {
-            handleConfigUpdated(msg.data);
-          }
-        });
+        wsClient.on('notification_created', notificationCreatedHandler);
+        wsClient.on('notification_updated', notificationUpdatedHandler);
+        wsClient.on('notification_deleted', notificationDeletedHandler);
+        wsClient.on('notifications_cleared', notificationsClearedHandler);
+        wsClient.on('notification_config_updated', notificationConfigUpdatedHandler);
 
         // Time service event handlers
         wsClient.on('time_response', (msg) => {
@@ -147,6 +154,14 @@ function App() {
     return () => {
       mounted = false;
       timeService.destroy();
+
+      // Remove all event handlers before disconnecting
+      wsClient.off('notification_created', notificationCreatedHandler);
+      wsClient.off('notification_updated', notificationUpdatedHandler);
+      wsClient.off('notification_deleted', notificationDeletedHandler);
+      wsClient.off('notifications_cleared', notificationsClearedHandler);
+      wsClient.off('notification_config_updated', notificationConfigUpdatedHandler);
+
       wsClient.disconnect();
     };
   }, [setNPCs, setSystemStatus, setConnected, handleNotificationCreated, handleNotificationUpdated, handleNotificationDeleted, handleNotificationsCleared, handleConfigUpdated, loadHistory, loadConfig]);
