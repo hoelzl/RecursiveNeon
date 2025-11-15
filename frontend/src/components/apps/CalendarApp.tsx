@@ -30,26 +30,38 @@ export function CalendarApp() {
   // Listen for calendar updates
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const message = JSON.parse(event.data);
+      try {
+        const message = JSON.parse(event.data);
 
-      switch (message.type) {
-        case 'calendar_events_list':
-          setEvents(message.data.events);
-          break;
+        switch (message.type) {
+          case 'calendar_events_list':
+            if (message.data && Array.isArray(message.data.events)) {
+              setEvents(message.data.events);
+            }
+            break;
 
-        case 'calendar_event_created':
-          setEvents(prev => [...prev, message.data.event]);
-          break;
+          case 'calendar_event_created':
+            if (message.data && message.data.event) {
+              setEvents(prev => [...prev, message.data.event]);
+            }
+            break;
 
-        case 'calendar_event_updated':
-          setEvents(prev => prev.map(e =>
-            e.id === message.data.event.id ? message.data.event : e
-          ));
-          break;
+          case 'calendar_event_updated':
+            if (message.data && message.data.event) {
+              setEvents(prev => prev.map(e =>
+                e.id === message.data.event.id ? message.data.event : e
+              ));
+            }
+            break;
 
-        case 'calendar_event_deleted':
-          setEvents(prev => prev.filter(e => e.id !== message.data.event_id));
-          break;
+          case 'calendar_event_deleted':
+            if (message.data && message.data.event_id) {
+              setEvents(prev => prev.filter(e => e.id !== message.data.event_id));
+            }
+            break;
+        }
+      } catch (error) {
+        console.error('Error handling calendar message:', error);
       }
     };
 
