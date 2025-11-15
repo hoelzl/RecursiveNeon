@@ -1,4 +1,5 @@
 import type { CalendarView } from '../../../types';
+import { timeService } from '../../../services/timeService';
 
 interface CalendarHeaderProps {
   currentView: CalendarView;
@@ -52,7 +53,7 @@ export function CalendarHeader({
   };
 
   const handleToday = () => {
-    onDateChange(new Date());
+    onDateChange(timeService.getCurrentTime());
   };
 
   const getHeaderTitle = () => {

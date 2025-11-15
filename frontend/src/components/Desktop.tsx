@@ -308,7 +308,6 @@ export function Desktop() {
           <div
             key={icon.id}
             className="desktop-icon"
-            onClick={icon.action}
             onDoubleClick={icon.action}
           >
             <div className="desktop-icon-emoji">{icon.emoji}</div>
