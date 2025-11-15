@@ -1,10 +1,40 @@
 """Calendar event models for RecursiveNeon."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import uuid4
+from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
+
+
+class RecurrenceFrequency(str, Enum):
+    """Frequency of recurring events."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+class RecurrenceRule(BaseModel):
+    """Recurrence rule for repeating events."""
+
+    frequency: RecurrenceFrequency
+    interval: int = Field(default=1, ge=1)  # Every N days/weeks/months/years
+    count: Optional[int] = Field(default=None, ge=1)  # Number of occurrences
+    until: Optional[datetime] = None  # End date for recurrence
+    by_day: Optional[List[int]] = Field(default=None)  # Days of week (0=Sunday, 6=Saturday)
+    by_month_day: Optional[List[int]] = Field(default=None)  # Days of month (1-31)
+
+    @field_validator('count', 'until')
+    @classmethod
+    def validate_end_condition(cls, v, info):
+        """Ensure only one of count or until is set."""
+        if v is not None:
+            other_field = 'until' if info.field_name == 'count' else 'count'
+            if other_field in info.data and info.data[other_field] is not None:
+                raise ValueError('Cannot set both count and until')
+        return v
 
 
 class CalendarEvent(BaseModel):
@@ -19,6 +49,8 @@ class CalendarEvent(BaseModel):
     color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
     notes: Optional[str] = Field(None, max_length=5000)
     all_day: bool = False
+    recurrence_rule: Optional[RecurrenceRule] = None
+    recurrence_id: Optional[str] = None  # For event instances, links to parent recurring event
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -49,6 +81,7 @@ class CreateEventRequest(BaseModel):
     color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
     notes: Optional[str] = Field(None, max_length=5000)
     all_day: bool = False
+    recurrence_rule: Optional[RecurrenceRule] = None
 
     @field_validator('end_time')
     @classmethod
@@ -70,3 +103,4 @@ class UpdateEventRequest(BaseModel):
     color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
     notes: Optional[str] = Field(None, max_length=5000)
     all_day: Optional[bool] = None
+    recurrence_rule: Optional[RecurrenceRule] = None

@@ -3,6 +3,9 @@ import type { CalendarEvent, CalendarView, CreateEventData } from '../../types';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { MonthView } from './calendar/MonthView';
+import { WeekView } from './calendar/WeekView';
+import { DayView } from './calendar/DayView';
+import { ListView } from './calendar/ListView';
 import { EventModal } from './calendar/EventModal';
 import '../../styles/calendar.css';
 
@@ -107,6 +110,39 @@ export function CalendarApp() {
     setIsModalOpen(true);
   }, []);
 
+  const handleEventDrop = useCallback((eventId: string, newDate: Date, newHour?: number) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+
+    const oldStart = new Date(event.start_time);
+    const oldEnd = new Date(event.end_time);
+    const duration = oldEnd.getTime() - oldStart.getTime();
+
+    // Create new start time with the new date and optionally new hour
+    const newStart = new Date(newDate);
+    if (newHour !== undefined) {
+      newStart.setHours(newHour, oldStart.getMinutes(), oldStart.getSeconds());
+    } else {
+      newStart.setHours(oldStart.getHours(), oldStart.getMinutes(), oldStart.getSeconds());
+    }
+
+    // Calculate new end time (maintain duration)
+    const newEnd = new Date(newStart.getTime() + duration);
+
+    // Update event
+    wsClient.sendMessage({
+      type: 'calendar',
+      data: {
+        action: 'update_event',
+        event_id: eventId,
+        updates: {
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString()
+        }
+      }
+    });
+  }, [events, wsClient]);
+
   const renderView = () => {
     switch (currentView) {
       case 'month':
@@ -117,20 +153,49 @@ export function CalendarApp() {
             onDateClick={handleDateClick}
             onEventClick={handleEventClick}
             onCreateEvent={handleCreateClick}
+            onEventDrop={handleEventDrop}
           />
         );
 
       case 'week':
-        // TODO: Implement WeekView
-        return <div className="calendar-view-placeholder">Week View - Coming Soon</div>;
+        return (
+          <WeekView
+            events={events}
+            selectedDate={selectedDate}
+            onEventClick={handleEventClick}
+            onTimeSlotClick={(date, hour) => {
+              const newDate = new Date(date);
+              newDate.setHours(hour, 0, 0, 0);
+              setSelectedDate(newDate);
+              handleCreateClick(newDate);
+            }}
+            onEventDrop={(eventId, date, hour) => handleEventDrop(eventId, date, hour)}
+          />
+        );
 
       case 'day':
-        // TODO: Implement DayView
-        return <div className="calendar-view-placeholder">Day View - Coming Soon</div>;
+        return (
+          <DayView
+            events={events}
+            selectedDate={selectedDate}
+            onEventClick={handleEventClick}
+            onTimeSlotClick={(hour) => {
+              const newDate = new Date(selectedDate);
+              newDate.setHours(hour, 0, 0, 0);
+              setSelectedDate(newDate);
+              handleCreateClick(newDate);
+            }}
+            onEventDrop={(eventId, hour) => handleEventDrop(eventId, selectedDate, hour)}
+          />
+        );
 
       case 'list':
-        // TODO: Implement ListView
-        return <div className="calendar-view-placeholder">List View - Coming Soon</div>;
+        return (
+          <ListView
+            events={events}
+            onEventClick={handleEventClick}
+          />
+        );
 
       default:
         return null;

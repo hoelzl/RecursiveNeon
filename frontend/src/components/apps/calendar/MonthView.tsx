@@ -7,6 +7,7 @@ interface MonthViewProps {
   onDateClick: (date: Date) => void;
   onEventClick: (event: CalendarEvent) => void;
   onCreateEvent: (date: Date) => void;
+  onEventDrop?: (eventId: string, newDate: Date) => void;
 }
 
 export function MonthView({
@@ -14,7 +15,8 @@ export function MonthView({
   selectedDate,
   onDateClick,
   onEventClick,
-  onCreateEvent
+  onCreateEvent,
+  onEventDrop
 }: MonthViewProps) {
   const monthDays = useMemo(() => {
     const year = selectedDate.getFullYear();
@@ -81,6 +83,27 @@ export function MonthView({
     onCreateEvent(date);
   };
 
+  const handleDragStart = (e: React.DragEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('eventId', event.id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, date: Date) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const eventId = e.dataTransfer.getData('eventId');
+    if (eventId && onEventDrop) {
+      onEventDrop(eventId, date);
+    }
+  };
+
   return (
     <div className="month-view">
       <div className="month-grid">
@@ -105,6 +128,8 @@ export function MonthView({
               className={`day-cell ${!isCurrentMonthDate ? 'other-month' : ''} ${isTodayDate ? 'today' : ''}`}
               onClick={() => handleDayClick(date)}
               onDoubleClick={() => handleDayDoubleClick(date)}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, date)}
             >
               <div className="day-number">{date.getDate()}</div>
               <div className="day-events">
@@ -113,6 +138,8 @@ export function MonthView({
                     key={event.id}
                     className="event-pill"
                     style={{ backgroundColor: event.color || '#4A90E2' }}
+                    draggable={!!onEventDrop}
+                    onDragStart={(e) => handleDragStart(e, event)}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEventClick(event);

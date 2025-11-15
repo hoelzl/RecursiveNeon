@@ -114,6 +114,17 @@ export interface BrowserPage {
 // Calendar Types
 // ============================================================================
 
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurrenceRule {
+  frequency: RecurrenceFrequency;
+  interval: number;  // Every N days/weeks/months/years
+  count?: number;    // Number of occurrences
+  until?: string;    // ISO 8601 datetime string - end date for recurrence
+  by_day?: number[]; // Days of week (0=Sunday, 6=Saturday)
+  by_month_day?: number[]; // Days of month (1-31)
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -124,6 +135,8 @@ export interface CalendarEvent {
   color?: string;      // Hex color code
   notes?: string;
   all_day: boolean;
+  recurrence_rule?: RecurrenceRule;
+  recurrence_id?: string;  // For event instances, links to parent recurring event
   created_at: string;  // ISO 8601 datetime string
   updated_at: string;  // ISO 8601 datetime string
 }
@@ -137,6 +150,7 @@ export interface CreateEventData {
   color?: string;
   notes?: string;
   all_day?: boolean;
+  recurrence_rule?: RecurrenceRule;
 }
 
 export type CalendarView = 'month' | 'week' | 'day' | 'list';

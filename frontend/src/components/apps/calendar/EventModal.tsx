@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { CalendarEvent, CreateEventData } from '../../../types';
+import type { CalendarEvent, CreateEventData, RecurrenceRule, RecurrenceFrequency } from '../../../types';
 
 interface EventModalProps {
   event: CalendarEvent | null;
@@ -39,6 +39,15 @@ export function EventModal({
   const [allDay, setAllDay] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Recurrence state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>('weekly');
+  const [recurrenceInterval, setRecurrenceInterval] = useState(1);
+  const [recurrenceEndType, setRecurrenceEndType] = useState<'never' | 'count' | 'until'>('never');
+  const [recurrenceCount, setRecurrenceCount] = useState(10);
+  const [recurrenceUntil, setRecurrenceUntil] = useState('');
+  const [recurrenceByDay, setRecurrenceByDay] = useState<number[]>([]);
+
   useEffect(() => {
     if (event) {
       // Editing existing event
@@ -57,6 +66,24 @@ export function EventModal({
       setColor(event.color || DEFAULT_COLORS[0]);
       setNotes(event.notes || '');
       setAllDay(event.all_day);
+
+      // Load recurrence data
+      if (event.recurrence_rule) {
+        setIsRecurring(true);
+        setRecurrenceFrequency(event.recurrence_rule.frequency);
+        setRecurrenceInterval(event.recurrence_rule.interval);
+        setRecurrenceByDay(event.recurrence_rule.by_day || []);
+
+        if (event.recurrence_rule.count) {
+          setRecurrenceEndType('count');
+          setRecurrenceCount(event.recurrence_rule.count);
+        } else if (event.recurrence_rule.until) {
+          setRecurrenceEndType('until');
+          setRecurrenceUntil(new Date(event.recurrence_rule.until).toISOString().split('T')[0]);
+        } else {
+          setRecurrenceEndType('never');
+        }
+      }
     } else {
       // Creating new event
       const dateStr = selectedDate.toISOString().split('T')[0];
@@ -125,6 +152,22 @@ export function EventModal({
       ? new Date(`${endDate}T23:59:59`).toISOString()
       : new Date(`${endDate}T${endTime}`).toISOString();
 
+    // Build recurrence rule if event is recurring
+    let recurrence_rule: RecurrenceRule | undefined = undefined;
+    if (isRecurring) {
+      recurrence_rule = {
+        frequency: recurrenceFrequency,
+        interval: recurrenceInterval,
+        by_day: recurrenceFrequency === 'weekly' && recurrenceByDay.length > 0 ? recurrenceByDay : undefined,
+      };
+
+      if (recurrenceEndType === 'count') {
+        recurrence_rule.count = recurrenceCount;
+      } else if (recurrenceEndType === 'until') {
+        recurrence_rule.until = new Date(recurrenceUntil).toISOString();
+      }
+    }
+
     const eventData: CreateEventData = {
       title: title.trim(),
       description: description.trim() || undefined,
@@ -133,7 +176,8 @@ export function EventModal({
       location: location.trim() || undefined,
       color,
       notes: notes.trim() || undefined,
-      all_day: allDay
+      all_day: allDay,
+      recurrence_rule
     };
 
     onSave(eventData);
@@ -241,6 +285,155 @@ export function EventModal({
               All day event
             </label>
           </div>
+
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => setIsRecurring(e.target.checked)}
+              />
+              Recurring event
+            </label>
+          </div>
+
+          {isRecurring && (
+            <div className="recurrence-section">
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="recurrence-frequency">Frequency</label>
+                  <select
+                    id="recurrence-frequency"
+                    value={recurrenceFrequency}
+                    onChange={(e) => setRecurrenceFrequency(e.target.value as RecurrenceFrequency)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      backgroundColor: '#0f3460',
+                      border: '1px solid #16213e',
+                      borderRadius: '4px',
+                      color: '#e0e0e0',
+                      fontFamily: "'Courier New', monospace"
+                    }}
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="recurrence-interval">Every</label>
+                  <input
+                    id="recurrence-interval"
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={recurrenceInterval}
+                    onChange={(e) => setRecurrenceInterval(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+              </div>
+
+              {recurrenceFrequency === 'weekly' && (
+                <div className="form-group">
+                  <label>Repeat on</label>
+                  <div className="weekday-picker" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                      <button
+                        key={day}
+                        type="button"
+                        className={`btn-secondary ${recurrenceByDay.includes(index) ? 'active' : ''}`}
+                        onClick={() => {
+                          if (recurrenceByDay.includes(index)) {
+                            setRecurrenceByDay(recurrenceByDay.filter(d => d !== index));
+                          } else {
+                            setRecurrenceByDay([...recurrenceByDay, index].sort());
+                          }
+                        }}
+                        style={{
+                          padding: '0.5rem',
+                          minWidth: '50px',
+                          backgroundColor: recurrenceByDay.includes(index) ? '#00d9ff' : '#0f3460',
+                          color: recurrenceByDay.includes(index) ? '#1a1a2e' : '#00d9ff'
+                        }}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Ends</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label className="checkbox-label">
+                    <input
+                      type="radio"
+                      name="recurrence-end"
+                      checked={recurrenceEndType === 'never'}
+                      onChange={() => setRecurrenceEndType('never')}
+                    />
+                    Never
+                  </label>
+
+                  <label className="checkbox-label">
+                    <input
+                      type="radio"
+                      name="recurrence-end"
+                      checked={recurrenceEndType === 'count'}
+                      onChange={() => setRecurrenceEndType('count')}
+                    />
+                    After
+                    <input
+                      type="number"
+                      min="1"
+                      max="999"
+                      value={recurrenceCount}
+                      onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)}
+                      disabled={recurrenceEndType !== 'count'}
+                      style={{
+                        width: '80px',
+                        marginLeft: '0.5rem',
+                        padding: '0.25rem',
+                        backgroundColor: '#0f3460',
+                        border: '1px solid #16213e',
+                        borderRadius: '4px',
+                        color: '#e0e0e0'
+                      }}
+                    />
+                    occurrences
+                  </label>
+
+                  <label className="checkbox-label">
+                    <input
+                      type="radio"
+                      name="recurrence-end"
+                      checked={recurrenceEndType === 'until'}
+                      onChange={() => setRecurrenceEndType('until')}
+                    />
+                    On
+                    <input
+                      type="date"
+                      value={recurrenceUntil}
+                      onChange={(e) => setRecurrenceUntil(e.target.value)}
+                      disabled={recurrenceEndType !== 'until'}
+                      style={{
+                        marginLeft: '0.5rem',
+                        padding: '0.25rem',
+                        backgroundColor: '#0f3460',
+                        border: '1px solid #16213e',
+                        borderRadius: '4px',
+                        color: '#e0e0e0'
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="location">Location</label>
