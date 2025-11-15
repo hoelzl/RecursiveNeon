@@ -1,0 +1,91 @@
+/**
+ * Settings App Styles
+ */
+
+.settings-app {
+  display: flex;
+  height: 100%;
+  background: var(--background, #1e1e1e);
+  color: var(--text, #e0e0e0);
+}
+
+/* Sidebar */
+.settings-sidebar {
+  width: 200px;
+  background: var(--surface, #2d2d2d);
+  border-right: 1px solid var(--border, #404040);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.settings-category {
+  margin-top: 16px;
+}
+
+.settings-category-header {
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary, #a0a0a0);
+  letter-spacing: 1px;
+}
+
+.settings-page-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.settings-page-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-page-item.selected {
+  background: var(--accent, #3391ff);
+  color: #ffffff;
+}
+
+.settings-page-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+
+.settings-page-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Content area */
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Scrollbar styling */
+.settings-sidebar::-webkit-scrollbar,
+.settings-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-sidebar::-webkit-scrollbar-track,
+.settings-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.settings-sidebar::-webkit-scrollbar-thumb,
+.settings-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.settings-sidebar::-webkit-scrollbar-thumb:hover,
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
