@@ -22,8 +22,12 @@ Recursive://Neon is both a game and a demonstration of LLM-assisted development.
 
 - **Dynamic NPCs**: Each NPC has a unique personality, background, and conversational style
 - **Persistent Memory**: NPCs remember past conversations and build relationships with you
-- **Desktop Environment**: Navigate through a simulated computer interface
+- **Desktop Environment**: Navigate through a simulated computer interface with customizable themes
 - **Real-Time Chat**: Instant messaging with NPCs using WebSocket communication
+- **Game Time System**: Independent in-game time with time dilation support (pause, slow down, speed up)
+- **Clock Widget**: Configurable clock display (analog, digital, or hidden) with customizable position
+- **Settings App**: System-wide configuration for clock, themes, and more
+- **Theme System**: 6 predefined themes (Classic, Dark, Light, Neon, Terminal, Cyberpunk)
 
 ### 🛠️ Technical Features
 
@@ -33,6 +37,9 @@ Recursive://Neon is both a game and a demonstration of LLM-assisted development.
 - **Ollama LLM Server**: Local AI inference (no API keys needed)
 - **WebSocket Communication**: Real-time bidirectional updates
 - **Zustand State Management**: Simple and powerful React state
+- **Time Service**: Backend-controlled game time with frontend synchronization and interpolation
+- **Settings Service**: Persistent configuration with validation and change notifications
+- **Dependency Injection**: Testable, modular architecture throughout the backend
 
 ## Architecture
 
@@ -41,6 +48,10 @@ Recursive://Neon is both a game and a demonstration of LLM-assisted development.
 │     React Frontend (Desktop UI)             │
 │     - Window Manager                        │
 │     - Chat Interface                        │
+│     - Clock Widget (Analog/Digital)         │
+│     - Settings App                          │
+│     - Time Service (Sync & Interpolation)   │
+│     - Settings Service (Local Cache)        │
 │     - WebSocket Client                      │
 └───────────────┬─────────────────────────────┘
                 │ WebSocket + HTTP
@@ -48,12 +59,14 @@ Recursive://Neon is both a game and a demonstration of LLM-assisted development.
 │     FastAPI Backend                         │
 │     - WebSocket Handler                     │
 │     - NPC Manager (LangChain)               │
+│     - Time Service (Game Clock)             │
+│     - Settings Service (Persistence)        │
 │     - Process Orchestrator                  │
 └───────────────┬─────────────────────────────┘
                 │ HTTP (localhost:11434)
 ┌───────────────▼─────────────────────────────┐
 │     Ollama Server                           │
-│     - LLM Inference (Phi-3, etc.)           │
+│     - LLM Inference (Qwen3, etc.)           │
 │     - Auto GPU/CPU Detection                │
 └─────────────────────────────────────────────┘
 ```
@@ -131,9 +144,19 @@ Then open your browser to: **http://localhost:5173**
 
 1. **Wait for initialization**: The backend starts ollama and loads NPCs (takes ~10-30 seconds)
 2. **Check the status indicator**: Green dot in taskbar = ready to go
-3. **Open the Chat app**: Double-click the Chat icon on the desktop
-4. **Select an NPC**: Click on an NPC in the sidebar
-5. **Start chatting**: Type your message and press Enter
+3. **Notice the clock**: The game clock displays in the corner (showing game time: Nov 13, 2048)
+4. **Open the Chat app**: Double-click the Chat icon on the desktop
+5. **Select an NPC**: Click on an NPC in the sidebar
+6. **Start chatting**: Type your message and press Enter
+
+### Customizing Your Experience
+
+- **Settings App**: Open the Settings icon to customize:
+  - **Clock Settings**: Choose analog/digital display, toggle seconds/date, adjust position
+  - **Theme Settings**: Select from 6 themes (Classic, Dark, Light, Neon, Terminal, Cyberpunk)
+- **Game Time**: The in-game time progresses independently (default: 2048-11-13 08:00 UTC)
+  - Time can be controlled via the time service (future UI planned)
+  - Supports time dilation (pause, speed up, slow down)
 
 ### Available NPCs
 
@@ -157,16 +180,36 @@ RecursiveNeon/
 │   ├── src/
 │   │   └── recursive_neon/     # Main Python package
 │   │       ├── models/         # Data models (NPCs, game state)
-│   │       ├── services/       # Business logic (ollama, NPCs)
+│   │       ├── services/       # Business logic
+│   │       │   ├── npc_manager.py    # NPC chat management
+│   │       │   ├── time_service.py   # Game time with dilation
+│   │       │   ├── settings_service.py # Configuration management
+│   │       │   └── message_handler.py  # WebSocket routing
 │   │       ├── main.py         # FastAPI app entry point
+│   │       ├── dependencies.py # Dependency injection container
 │   │       └── config.py       # Configuration
-│   ├── tests/                  # Backend tests
+│   ├── tests/                  # Comprehensive test suite
+│   │   ├── unit/              # Unit tests (time, settings, NPCs)
+│   │   └── integration/       # Integration tests (WebSocket)
 │   └── pyproject.toml          # Python project config (uv-compatible)
 │
 ├── frontend/                    # React TypeScript frontend
 │   ├── src/
-│   │   ├── components/   # UI components (Desktop, Window, etc.)
-│   │   ├── services/     # WebSocket client
+│   │   ├── components/   # UI components
+│   │   │   ├── Desktop.tsx      # Main desktop
+│   │   │   ├── ClockWidget.tsx  # Clock widget
+│   │   │   ├── AnalogClock.tsx  # Analog clock face
+│   │   │   ├── DigitalClock.tsx # Digital clock display
+│   │   │   └── apps/           # Desktop applications
+│   │   │       ├── ChatApp.tsx     # NPC chat interface
+│   │   │       ├── SettingsApp.tsx # Settings configuration
+│   │   │       └── settings/       # Settings pages
+│   │   ├── services/     # Frontend services
+│   │   │   ├── websocket.ts     # WebSocket client
+│   │   │   ├── timeService.ts   # Time sync & interpolation
+│   │   │   └── settingsService.ts # Settings cache
+│   │   ├── themes/       # Theme system
+│   │   │   └── themes.ts        # 6 predefined themes
 │   │   ├── stores/       # Zustand state management
 │   │   └── styles/       # CSS styles
 │   └── package.json
@@ -180,6 +223,10 @@ RecursiveNeon/
 │   └── download_ollama.py # Ollama downloader
 │
 └── docs/                  # Documentation
+    ├── time-system-requirements.md  # Time system specs
+    ├── time-system-design.md        # Time system architecture
+    ├── settings-app-requirements.md # Settings specs
+    └── settings-app-design.md       # Settings architecture
 ```
 
 ### Running Tests
