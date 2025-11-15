@@ -18,6 +18,7 @@ import { NotificationContainer } from './notifications/NotificationContainer';
 import { NotificationDemoApp } from './apps/NotificationDemoApp';
 import { ClockWidget } from './ClockWidget';
 import { SettingsApp } from './apps/SettingsApp';
+import { MediaViewerApp } from './apps/MediaViewerApp';
 
 interface DesktopIcon {
   id: string;
@@ -273,6 +274,21 @@ export function Desktop() {
           content: <SettingsApp />,
           position: { x: 280, y: 280 },
           size: { width: 900, height: 600 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'media-viewer',
+      label: 'MindSync',
+      emoji: '🌀',
+      action: () => {
+        openWindow({
+          title: 'MindSync Wellness',
+          type: 'media-viewer',
+          content: <MediaViewerApp />,
+          position: { x: 100, y: 80 },
+          size: { width: 900, height: 750 },
           minimized: false,
         });
       },

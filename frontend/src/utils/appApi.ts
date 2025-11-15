@@ -4,7 +4,7 @@
  */
 
 import { WebSocketClient } from '../services/websocket';
-import { Note, Task, TaskList, FileNode, BrowserPage } from '../types';
+import { Note, Task, TaskList, FileNode, BrowserPage, MediaViewerConfig, TextMessage } from '../types';
 
 export class AppAPI {
   private requestQueue: Promise<any> = Promise.resolve();
@@ -189,5 +189,26 @@ export class AppAPI {
 
   async removeBookmark(url: string): Promise<void> {
     await this.send('browser.bookmark.remove', { url });
+  }
+
+  // Media Viewer API
+  async getMediaViewerConfig(): Promise<MediaViewerConfig> {
+    const data = await this.send('media_viewer.get_config');
+    return data.config;
+  }
+
+  async updateMediaViewerConfig(config: Partial<MediaViewerConfig>): Promise<MediaViewerConfig> {
+    const data = await this.send('media_viewer.update_config', config);
+    return data.config;
+  }
+
+  async addMediaViewerMessage(message: TextMessage): Promise<TextMessage> {
+    const data = await this.send('media_viewer.add_message', message);
+    return data.message;
+  }
+
+  async setMediaViewerStyle(style: string): Promise<MediaViewerConfig> {
+    const data = await this.send('media_viewer.set_style', { style });
+    return data.config;
   }
 }

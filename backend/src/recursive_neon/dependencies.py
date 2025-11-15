@@ -199,6 +199,12 @@ class ServiceFactory:
         else:
             logger.info("Filesystem loaded from saved state")
 
+        # Initialize media viewer with default messages if not already configured
+        if not game_state.media_viewer.config.messages:
+            logger.info("Initializing media viewer with default wellness messages...")
+            app_service.initialize_default_media_viewer_messages()
+            logger.info("Media viewer initialized")
+
         # Create calendar service
         calendar_service = CalendarService()
 
