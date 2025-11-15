@@ -480,3 +480,407 @@
 .modal-content::-webkit-scrollbar-thumb:hover {
   background: #00b8d4;
 }
+
+/* ============================================================================
+   Week View
+   ============================================================================ */
+
+.week-view {
+  height: 100%;
+  overflow: auto;
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: 80px repeat(7, 1fr);
+  gap: 1px;
+  background-color: #0f3460;
+  min-height: 100%;
+}
+
+.time-header {
+  background-color: #16213e;
+  border-bottom: 2px solid #0f3460;
+}
+
+.week-day-header {
+  background-color: #16213e;
+  padding: 0.75rem;
+  text-align: center;
+  font-weight: bold;
+  color: #00d9ff;
+  border-bottom: 2px solid #0f3460;
+}
+
+.week-day-header.today {
+  background-color: #0f3460;
+}
+
+.week-day-header .day-name {
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.week-day-header .day-date {
+  font-size: 1.25rem;
+}
+
+.hour-label {
+  background-color: #16213e;
+  padding: 0.5rem;
+  text-align: right;
+  font-size: 0.75rem;
+  color: #00d9ff;
+  border-right: 2px solid #0f3460;
+}
+
+.time-slot {
+  background-color: #1a1a2e;
+  min-height: 60px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.time-slot:hover {
+  background-color: #16213e;
+}
+
+.time-slot.today {
+  background-color: rgba(15, 52, 96, 0.3);
+}
+
+.week-event {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  border-left: 3px solid rgba(0, 0, 0, 0.3);
+}
+
+.week-event:hover {
+  opacity: 0.8;
+  z-index: 10;
+}
+
+.week-event .event-title {
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-event .event-time-range {
+  font-size: 0.65rem;
+  opacity: 0.9;
+}
+
+/* ============================================================================
+   Day View
+   ============================================================================ */
+
+.day-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.day-view-header {
+  padding: 1rem;
+  background-color: #16213e;
+  border-bottom: 2px solid #0f3460;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.day-view-header h3 {
+  margin: 0;
+  color: #e0e0e0;
+  font-size: 1.25rem;
+}
+
+.day-view-header h3.today {
+  color: #00d9ff;
+}
+
+.event-count {
+  color: #00d9ff;
+  font-size: 0.875rem;
+}
+
+.day-timeline {
+  flex: 1;
+  overflow: auto;
+}
+
+.hour-slot {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  border-bottom: 1px solid #0f3460;
+  min-height: 80px;
+}
+
+.hour-slot .hour-label {
+  background-color: #16213e;
+  padding: 0.5rem;
+  text-align: right;
+  font-size: 0.875rem;
+  color: #00d9ff;
+  border-right: 2px solid #0f3460;
+}
+
+.hour-content {
+  background-color: #1a1a2e;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.hour-content:hover {
+  background-color: #16213e;
+}
+
+.hour-content.today {
+  background-color: rgba(15, 52, 96, 0.3);
+}
+
+.day-event {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+  border-left: 4px solid rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.day-event:hover {
+  opacity: 0.9;
+  transform: translateX(2px);
+  z-index: 10;
+}
+
+.day-event .event-title {
+  font-weight: bold;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-event .event-time-range {
+  font-size: 0.75rem;
+  opacity: 0.9;
+  margin-bottom: 0.25rem;
+}
+
+.day-event .event-location {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* ============================================================================
+   List View
+   ============================================================================ */
+
+.list-view {
+  height: 100%;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.list-view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 1rem;
+  color: #666;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  opacity: 0.5;
+}
+
+.empty-message {
+  font-size: 1.5rem;
+  color: #888;
+}
+
+.empty-hint {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.list-group {
+  margin-bottom: 2rem;
+}
+
+.list-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #16213e;
+  border-left: 4px solid #0f3460;
+  margin-bottom: 0.5rem;
+}
+
+.list-group-header.today {
+  border-left-color: #00d9ff;
+  background-color: #0f3460;
+}
+
+.date-label {
+  font-size: 1.125rem;
+  font-weight: bold;
+  color: #00d9ff;
+}
+
+.event-count-badge {
+  background-color: #0f3460;
+  color: #00d9ff;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+.list-group-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.list-event {
+  display: flex;
+  background-color: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.list-event:hover {
+  background-color: #16213e;
+  transform: translateX(4px);
+}
+
+.list-event.past {
+  opacity: 0.6;
+}
+
+.event-color-bar {
+  width: 6px;
+  flex-shrink: 0;
+}
+
+.event-details {
+  flex: 1;
+  padding: 1rem;
+}
+
+.event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+  gap: 1rem;
+}
+
+.list-event .event-title {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #e0e0e0;
+}
+
+.list-event .event-time {
+  color: #00d9ff;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.event-description {
+  color: #aaa;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.event-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+}
+
+.list-event .event-location {
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.list-event .event-location .icon {
+  font-size: 0.75rem;
+}
+
+/* ============================================================================
+   Drag and Drop
+   ============================================================================ */
+
+/* Make draggable events look interactive */
+[draggable="true"] {
+  cursor: move;
+  cursor: grab;
+}
+
+[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.5;
+}
+
+/* Highlight drop zones during drag */
+.day-cell:has(.event-pill[draggable="true"]) {
+  transition: background-color 0.2s;
+}
+
+.time-slot:has(.week-event[draggable="true"]),
+.hour-content:has(.day-event[draggable="true"]) {
+  transition: background-color 0.2s;
+}
+
+/* Add hover effect to drop zones when dragging */
+.day-cell.drag-over,
+.time-slot.drag-over,
+.hour-content.drag-over {
+  background-color: rgba(0, 217, 255, 0.2) !important;
+  border: 2px dashed #00d9ff;
+}
+
+/* Recurrence section styling */
+.recurrence-section {
+  padding: 1rem;
+  background-color: rgba(15, 52, 96, 0.3);
+  border-radius: 4px;
+  border: 1px solid #0f3460;
+  margin-top: 0.5rem;
+}
+
+.recurrence-section .form-group {
+  margin-bottom: 1rem;
+}
+
+.recurrence-section .form-row {
+  margin-bottom: 0.5rem;
+}
