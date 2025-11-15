@@ -193,8 +193,9 @@ class ServiceFactory:
         logger.info("Initializing in-game filesystem...")
         if not app_service.load_filesystem_from_disk():
             # No saved state, load initial filesystem from source directory
-            logger.info("No saved filesystem found, loading initial state from backend/initial_fs")
-            app_service.load_initial_filesystem()
+            initial_fs_path = str(settings.initial_fs_path)
+            logger.info(f"No saved filesystem found, loading initial state from {initial_fs_path}")
+            app_service.load_initial_filesystem(initial_fs_path)
             logger.info("Initial filesystem loaded successfully")
         else:
             logger.info("Filesystem loaded from saved state")

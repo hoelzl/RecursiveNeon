@@ -64,8 +64,8 @@ code {
   top: 20px;
   left: 20px;
   display: grid;
-  grid-template-columns: repeat(3, 100px);
-  gap: 20px;
+  grid-template-columns: repeat(6, 90px);
+  gap: 12px;
   z-index: 1;
 }
 
@@ -73,12 +73,12 @@ code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
-  max-width: 100px;
+  max-width: 90px;
   text-align: center;
 }
 

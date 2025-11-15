@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     data_dir: Path = base_dir / "game_data"
     game_data_path: Path = base_dir / "game_data"  # Alias for data_dir
     chromadb_dir: Path = base_dir / "data" / "chromadb"
+    initial_fs_path: Path = Path(__file__).parent / "initial_fs"
 
     # Game Configuration
     max_npcs: int = 20
