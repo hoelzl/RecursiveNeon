@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     base_dir: Path = Path(__file__).parent.parent
     models_dir: Path = base_dir / "services" / "ollama" / "models"
     data_dir: Path = base_dir / "game_data"
+    game_data_path: Path = base_dir / "game_data"  # Alias for data_dir
     chromadb_dir: Path = base_dir / "data" / "chromadb"
 
     # Game Configuration
