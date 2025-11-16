@@ -224,12 +224,18 @@ export function TerminalApp({
     '--terminal-system': theme.yellow,
   } as React.CSSProperties;
 
+  // Determine which prompt to show
+  const isWaitingForInput = session.isWaitingForReadLine();
+  const currentPrompt = isWaitingForInput
+    ? session.getReadLinePrompt()
+    : session.getPrompt();
+
   return (
     <div className="terminal-app" style={themeStyle}>
       <TerminalOutput lines={outputLines} currentApp={currentApp} />
       {!currentApp && (
         <TerminalInput
-          prompt={session.getPrompt()}
+          prompt={currentPrompt}
           onSubmit={handleCommand}
           onHistoryUp={handleHistoryUp}
           onHistoryDown={handleHistoryDown}
