@@ -293,6 +293,49 @@ describe('CompletionEngine - Nested Directories with Spaces', () => {
 
       // NOT: 'Documents My 'Documents/My Folder/Another Folder/'
     });
+
+    it('should handle Tab cycling through multiple suggestions correctly', async () => {
+      // This tests the bug where Tab cycling duplicates the prefix
+      // Scenario: cd Documents/<TAB> shows both "My Folder/" and "Simple/"
+      // Pressing Tab again should cycle, not duplicate
+
+      const input = 'cd Documents/';
+      const result = await engine.complete(session, input, input.length);
+
+      // Should show both directories
+      expect(result.completions).toContain("'Documents/My Folder/'");
+      expect(result.completions).toContain('Documents/Simple/');
+      expect(result.completions.length).toBe(2);
+
+      // Get replace indices
+      const replaceStart = result.replaceStart ?? (input.length - result.prefix.length);
+      const replaceEnd = result.replaceEnd ?? input.length;
+
+      // First Tab: complete to common prefix (should be "Documents/")
+      const completed1 = result.commonPrefix.length > result.prefix.length
+        ? input.substring(0, replaceStart) + result.commonPrefix + input.substring(replaceEnd)
+        : input;
+
+      // Simulate cycling to first suggestion
+      const cycled1 =
+        completed1.substring(0, replaceStart) +
+        result.completions[0] +
+        completed1.substring(replaceEnd);
+
+      // Should NOT have duplicate prefix
+      expect(cycled1).not.toContain("Documents Documents");
+      expect(cycled1).not.toContain("'Documents/'Documents/");
+
+      // Simulate cycling to second suggestion
+      const cycled2 =
+        completed1.substring(0, replaceStart) +
+        result.completions[1] +
+        completed1.substring(replaceEnd);
+
+      // Should NOT have duplicate prefix
+      expect(cycled2).not.toContain("Documents Documents");
+      expect(cycled2).toBe("cd Documents/Simple/");
+    });
   });
 
   describe('ReplaceStart and ReplaceEnd indices', () => {

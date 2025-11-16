@@ -158,7 +158,7 @@ export function TerminalApp({
 
         if (result.completions.length === 0) {
           // No completions
-          return { completed: input, showSuggestions: [] };
+          return { completed: input, showSuggestions: [], replaceStart: cursorPos, replaceEnd: cursorPos };
         }
 
         // Use replaceStart/replaceEnd if provided, otherwise use prefix-based replacement
@@ -175,7 +175,7 @@ export function TerminalApp({
             completion +
             (shouldAddSpace ? ' ' : '') +
             input.substring(replaceEnd);
-          return { completed, showSuggestions: [] };
+          return { completed, showSuggestions: [], replaceStart, replaceEnd };
         } else {
           // Multiple completions - show them and complete to common prefix
           let completed = input;
@@ -187,11 +187,11 @@ export function TerminalApp({
               input.substring(replaceEnd);
           }
 
-          return { completed, showSuggestions: result.completions };
+          return { completed, showSuggestions: result.completions, replaceStart, replaceEnd };
         }
       } catch (error) {
         console.error('Tab completion error:', error);
-        return { completed: input, showSuggestions: [] };
+        return { completed: input, showSuggestions: [], replaceStart: cursorPos, replaceEnd: cursorPos };
       }
     },
     [session, completionEngine]

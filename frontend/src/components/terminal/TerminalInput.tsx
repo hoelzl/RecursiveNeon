@@ -10,7 +10,12 @@ interface TerminalInputProps {
   onSubmit: (command: string) => void;
   onHistoryUp: () => string | null;
   onHistoryDown: () => string | null;
-  onTabComplete: (input: string, cursorPos: number) => Promise<{ completed: string; showSuggestions: string[] }>;
+  onTabComplete: (input: string, cursorPos: number) => Promise<{
+    completed: string;
+    showSuggestions: string[];
+    replaceStart?: number;
+    replaceEnd?: number;
+  }>;
   disabled?: boolean;
 }
 
@@ -31,6 +36,8 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
   const [cursorPosition, setCursorPosition] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Store replace indices for suggestion cycling
+  const [replaceIndices, setReplaceIndices] = useState<{ start: number; end: number } | null>(null);
 
   // Expose focus method to parent
   useImperativeHandle(ref, () => ({
@@ -78,6 +85,7 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
         e.preventDefault();
         setSuggestions([]);
         setSelectedSuggestionIndex(-1);
+        setReplaceIndices(null);
         return;
       }
 
@@ -99,15 +107,16 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
       // Tab - Cycle through suggestions
       if (e.key === 'Tab') {
         e.preventDefault();
-        if (suggestions.length > 0) {
+        if (suggestions.length > 0 && replaceIndices) {
           // Cycle to next suggestion
           const nextIndex = (selectedSuggestionIndex + 1) % suggestions.length;
           setSelectedSuggestionIndex(nextIndex);
-          // Update input with selected suggestion
+          // Update input with selected suggestion using stored replace indices
           const selected = suggestions[nextIndex];
-          const parts = input.split(/\s+/);
-          parts[parts.length - 1] = selected;
-          const newInput = parts.join(' ');
+          const newInput =
+            input.substring(0, replaceIndices.start) +
+            selected +
+            input.substring(replaceIndices.end);
           setInput(newInput);
           setCursorPosition(newInput.length);
         }
@@ -118,6 +127,7 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
       if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
         setSuggestions([]);
         setSelectedSuggestionIndex(-1);
+        setReplaceIndices(null);
       }
     }
 
@@ -125,6 +135,7 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
     if (e.key !== 'Tab' && suggestions.length === 0) {
       setSuggestions([]);
       setSelectedSuggestionIndex(-1);
+      setReplaceIndices(null);
     }
 
     // Enter - Submit command
@@ -136,6 +147,7 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
         setCursorPosition(0);
         setSuggestions([]);
         setSelectedSuggestionIndex(-1);
+        setReplaceIndices(null);
       }
       return;
     }
@@ -154,9 +166,17 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
       if (result.showSuggestions.length > 1) {
         setSuggestions(result.showSuggestions);
         setSelectedSuggestionIndex(0); // Start with first suggestion selected
+        // Store the replace indices for cycling through suggestions
+        if (result.replaceStart !== undefined && result.replaceEnd !== undefined) {
+          setReplaceIndices({ start: result.replaceStart, end: result.replaceEnd });
+        } else {
+          // Fallback: assume we replace from where completion started to end of input
+          setReplaceIndices({ start: result.completed.length - result.showSuggestions[0].length, end: result.completed.length });
+        }
       } else {
         setSuggestions([]);
         setSelectedSuggestionIndex(-1);
+        setReplaceIndices(null);
       }
 
       return;
@@ -190,6 +210,7 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
       setInput('');
       setCursorPosition(0);
       setSuggestions([]);
+      setReplaceIndices(null);
       return;
     }
 
