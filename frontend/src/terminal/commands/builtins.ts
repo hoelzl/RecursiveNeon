@@ -3,6 +3,8 @@
  */
 
 import { Command } from '../types';
+import { codebreakerCommand } from './minigames/codebreaker-command';
+import { memorydumpCommand } from './minigames/memorydump-command';
 
 // ============================================================================
 // Helper Functions
@@ -498,4 +500,6 @@ export const builtinCommands: Command[] = [
   hostnameCommand,
   dateCommand,
   envCommand,
+  codebreakerCommand,
+  memorydumpCommand,
 ];
