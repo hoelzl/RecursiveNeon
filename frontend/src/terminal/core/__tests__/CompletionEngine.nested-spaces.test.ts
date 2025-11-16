@@ -295,9 +295,9 @@ describe('CompletionEngine - Nested Directories with Spaces', () => {
     });
 
     it('should handle Tab cycling through multiple suggestions correctly', async () => {
-      // This tests the bug where Tab cycling duplicates the prefix
+      // This tests the bug where Tab cycling duplicates or accumulates suggestions
       // Scenario: cd Documents/<TAB> shows both "My Folder/" and "Simple/"
-      // Pressing Tab again should cycle, not duplicate
+      // Pressing Tab again should cycle, not accumulate
 
       const input = 'cd Documents/';
       const result = await engine.complete(session, input, input.length);
@@ -316,25 +316,40 @@ describe('CompletionEngine - Nested Directories with Spaces', () => {
         ? input.substring(0, replaceStart) + result.commonPrefix + input.substring(replaceEnd)
         : input;
 
-      // Simulate cycling to first suggestion
+      // IMPORTANT: After completing, replaceEnd should be updated to completed1.length
+      // This simulates what TerminalInput does
+      const updatedReplaceEnd = completed1.length;
+
+      // Simulate cycling to first suggestion (using updated indices)
       const cycled1 =
         completed1.substring(0, replaceStart) +
         result.completions[0] +
-        completed1.substring(replaceEnd);
+        completed1.substring(updatedReplaceEnd);
 
-      // Should NOT have duplicate prefix
+      // Should NOT have duplicate prefix or accumulated text
       expect(cycled1).not.toContain("Documents Documents");
       expect(cycled1).not.toContain("'Documents/'Documents/");
+      expect(cycled1).not.toContain("sample.txtreadme.txt");
+      expect(cycled1).toBe("cd 'Documents/My Folder/'");
 
-      // Simulate cycling to second suggestion
+      // Simulate cycling to second suggestion (from the first cycled result)
       const cycled2 =
-        completed1.substring(0, replaceStart) +
+        cycled1.substring(0, replaceStart) +
         result.completions[1] +
-        completed1.substring(replaceEnd);
+        cycled1.substring(cycled1.length); // End is at the end of current input
 
-      // Should NOT have duplicate prefix
+      // Should NOT have duplicate prefix or accumulated text
       expect(cycled2).not.toContain("Documents Documents");
+      expect(cycled2).not.toContain("My Folder/Simple");
       expect(cycled2).toBe("cd Documents/Simple/");
+
+      // Cycle back to first (from second)
+      const cycled3 =
+        cycled2.substring(0, replaceStart) +
+        result.completions[0] +
+        cycled2.substring(cycled2.length);
+
+      expect(cycled3).toBe("cd 'Documents/My Folder/'");
     });
   });
 

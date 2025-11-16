@@ -119,6 +119,8 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
             input.substring(replaceIndices.end);
           setInput(newInput);
           setCursorPosition(newInput.length);
+          // Update replaceEnd to reflect the new input length for the next cycle
+          setReplaceIndices({ start: replaceIndices.start, end: newInput.length });
         }
         return;
       }
@@ -167,8 +169,10 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
         setSuggestions(result.showSuggestions);
         setSelectedSuggestionIndex(0); // Start with first suggestion selected
         // Store the replace indices for cycling through suggestions
+        // IMPORTANT: These indices must reflect the COMPLETED input, not the original input
         if (result.replaceStart !== undefined && result.replaceEnd !== undefined) {
-          setReplaceIndices({ start: result.replaceStart, end: result.replaceEnd });
+          // After completing to common prefix, the end position is now at the end of completed input
+          setReplaceIndices({ start: result.replaceStart, end: result.completed.length });
         } else {
           // Fallback: assume we replace from where completion started to end of input
           setReplaceIndices({ start: result.completed.length - result.showSuggestions[0].length, end: result.completed.length });
