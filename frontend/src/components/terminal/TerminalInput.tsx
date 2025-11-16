@@ -63,22 +63,31 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
   }, [cursorPosition, input]);
 
   const handleKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
-    console.log('[TerminalInput.handleKeyDown] key:', e.key, 'suggestions.length:', suggestions.length, 'selectedIndex:', selectedSuggestionIndex, 'input:', JSON.stringify(input), 'cursorPos:', cursorPosition);
-
     // Handle suggestions interactions first
     if (suggestions.length > 0) {
       // Enter - Select highlighted suggestion
       if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
         e.preventDefault();
         const selected = suggestions[selectedSuggestionIndex];
-        // Replace the last word in input with the selected suggestion
-        const parts = input.split(/\s+/);
-        parts[parts.length - 1] = selected;
-        const newInput = parts.join(' ');
-        setInput(newInput);
-        setCursorPosition(newInput.length);
+        // Use replaceIndices to properly replace the completion
+        if (replaceIndices) {
+          const newInput =
+            input.substring(0, replaceIndices.start) +
+            selected +
+            input.substring(replaceIndices.end);
+          setInput(newInput);
+          setCursorPosition(newInput.length);
+        } else {
+          // Fallback to naive replacement (shouldn't happen with proper state)
+          const parts = input.split(/\s+/);
+          parts[parts.length - 1] = selected;
+          const newInput = parts.join(' ');
+          setInput(newInput);
+          setCursorPosition(newInput.length);
+        }
         setSuggestions([]);
         setSelectedSuggestionIndex(-1);
+        setReplaceIndices(null);
         return;
       }
 
@@ -115,12 +124,10 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
           setSelectedSuggestionIndex(nextIndex);
           // Update input with selected suggestion using stored replace indices
           const selected = suggestions[nextIndex];
-          console.log('[TerminalInput] Cycling - input:', JSON.stringify(input), 'replaceIndices:', replaceIndices, 'selected:', JSON.stringify(selected));
           const newInput =
             input.substring(0, replaceIndices.start) +
             selected +
             input.substring(replaceIndices.end);
-          console.log('[TerminalInput] Cycling - newInput:', JSON.stringify(newInput));
           setInput(newInput);
           setCursorPosition(newInput.length);
           // Update replaceEnd to reflect the new input length for the next cycle
@@ -270,14 +277,25 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
   };
 
   const handleSuggestionClick = (suggestion: string, index: number) => {
-    // Replace the last word in input with the selected suggestion
-    const parts = input.split(/\s+/);
-    parts[parts.length - 1] = suggestion;
-    const newInput = parts.join(' ');
-    setInput(newInput);
-    setCursorPosition(newInput.length);
+    // Use replaceIndices to properly replace the completion
+    if (replaceIndices) {
+      const newInput =
+        input.substring(0, replaceIndices.start) +
+        suggestion +
+        input.substring(replaceIndices.end);
+      setInput(newInput);
+      setCursorPosition(newInput.length);
+    } else {
+      // Fallback to naive replacement (shouldn't happen with proper state)
+      const parts = input.split(/\s+/);
+      parts[parts.length - 1] = suggestion;
+      const newInput = parts.join(' ');
+      setInput(newInput);
+      setCursorPosition(newInput.length);
+    }
     setSuggestions([]);
     setSelectedSuggestionIndex(-1);
+    setReplaceIndices(null);
     // Refocus input
     if (inputRef.current) {
       inputRef.current.focus();

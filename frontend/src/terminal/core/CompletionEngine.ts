@@ -24,7 +24,6 @@ export class CompletionEngine {
     // Trim the line up to cursor
     const lineBeforeCursor = commandLine.substring(0, cursorPosition);
 
-    console.log('[CompletionEngine.complete] commandLine:', JSON.stringify(commandLine), 'cursorPosition:', cursorPosition);
 
     if (lineBeforeCursor.trim() === '') {
       // Empty line - complete command names
@@ -35,8 +34,6 @@ export class CompletionEngine {
     const parsed = this.argParser.parseCommandLine(lineBeforeCursor);
     const partialArg = this.argParser.getPartialArg(commandLine, cursorPosition);
 
-    console.log('[CompletionEngine.complete] parsed:', parsed);
-    console.log('[CompletionEngine.complete] partialArg:', partialArg);
 
     // Check if we're completing the command name (first word)
     const isFirstWord = parsed.args.length === 0 && !lineBeforeCursor.endsWith(' ');
@@ -118,7 +115,6 @@ export class CompletionEngine {
     const fs = session.getFileSystem();
     const cwd = session.getWorkingDirectory();
 
-    console.log('[completePath] INPUT - partial:', JSON.stringify(partial), 'replaceStart:', replaceStart, 'replaceEnd:', replaceEnd);
 
     try {
       // Determine the directory to search
@@ -155,12 +151,10 @@ export class CompletionEngine {
       const basePath = partial.substring(0, partial.length - filePrefix.length);
       const fullPaths = matches.map((match) => basePath + match);
 
-      console.log('[completePath] basePath:', JSON.stringify(basePath), 'matches:', matches, 'fullPaths:', fullPaths);
 
       // Quote full paths if needed (don't quote individual components)
       const quotedPaths = fullPaths.map((path) => this.argParser.quoteIfNeeded(path));
 
-      console.log('[completePath] quotedPaths:', quotedPaths);
 
       // Build the completion result
       if (quotedPaths.length === 0) {
