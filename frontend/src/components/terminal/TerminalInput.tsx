@@ -113,10 +113,12 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
           setSelectedSuggestionIndex(nextIndex);
           // Update input with selected suggestion using stored replace indices
           const selected = suggestions[nextIndex];
+          console.log('[TerminalInput] Cycling - input:', JSON.stringify(input), 'replaceIndices:', replaceIndices, 'selected:', JSON.stringify(selected));
           const newInput =
             input.substring(0, replaceIndices.start) +
             selected +
             input.substring(replaceIndices.end);
+          console.log('[TerminalInput] Cycling - newInput:', JSON.stringify(newInput));
           setInput(newInput);
           setCursorPosition(newInput.length);
           // Update replaceEnd to reflect the new input length for the next cycle

@@ -153,8 +153,17 @@ export function TerminalApp({
   // Handle tab completion
   const handleTabComplete = useCallback(
     async (input: string, cursorPos: number) => {
+      console.log('[handleTabComplete] input:', JSON.stringify(input), 'cursorPos:', cursorPos);
       try {
         const result = await completionEngine.complete(session, input, cursorPos);
+
+        console.log('[handleTabComplete] result:', {
+          completions: result.completions,
+          prefix: result.prefix,
+          commonPrefix: result.commonPrefix,
+          replaceStart: result.replaceStart,
+          replaceEnd: result.replaceEnd
+        });
 
         if (result.completions.length === 0) {
           // No completions
@@ -164,6 +173,8 @@ export function TerminalApp({
         // Use replaceStart/replaceEnd if provided, otherwise use prefix-based replacement
         const replaceStart = result.replaceStart ?? (cursorPos - result.prefix.length);
         const replaceEnd = result.replaceEnd ?? cursorPos;
+
+        console.log('[handleTabComplete] replaceStart:', replaceStart, 'replaceEnd:', replaceEnd);
 
         if (result.completions.length === 1) {
           // Single completion - complete it
@@ -175,6 +186,7 @@ export function TerminalApp({
             completion +
             (shouldAddSpace ? ' ' : '') +
             input.substring(replaceEnd);
+          console.log('[handleTabComplete] Single completion - completed:', JSON.stringify(completed));
           return { completed, showSuggestions: [], replaceStart, replaceEnd };
         } else {
           // Multiple completions - show them and complete to common prefix
@@ -187,6 +199,7 @@ export function TerminalApp({
               input.substring(replaceEnd);
           }
 
+          console.log('[handleTabComplete] Multiple completions - completed:', JSON.stringify(completed), 'suggestions:', result.completions);
           return { completed, showSuggestions: result.completions, replaceStart, replaceEnd };
         }
       } catch (error) {

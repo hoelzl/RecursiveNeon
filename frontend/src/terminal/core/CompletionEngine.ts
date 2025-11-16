@@ -113,6 +113,8 @@ export class CompletionEngine {
     const fs = session.getFileSystem();
     const cwd = session.getWorkingDirectory();
 
+    console.log('[completePath] INPUT - partial:', JSON.stringify(partial), 'replaceStart:', replaceStart, 'replaceEnd:', replaceEnd);
+
     try {
       // Determine the directory to search
       let searchDir = cwd;
@@ -148,8 +150,12 @@ export class CompletionEngine {
       const basePath = partial.substring(0, partial.length - filePrefix.length);
       const fullPaths = matches.map((match) => basePath + match);
 
+      console.log('[completePath] basePath:', JSON.stringify(basePath), 'matches:', matches, 'fullPaths:', fullPaths);
+
       // Quote full paths if needed (don't quote individual components)
       const quotedPaths = fullPaths.map((path) => this.argParser.quoteIfNeeded(path));
+
+      console.log('[completePath] quotedPaths:', quotedPaths);
 
       // Build the completion result
       if (quotedPaths.length === 0) {
