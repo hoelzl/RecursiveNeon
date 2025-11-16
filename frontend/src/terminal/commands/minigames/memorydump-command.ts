@@ -157,7 +157,7 @@ export const memorydumpCommand: Command = {
 
     // Game loop
     while (game.getState().gameStatus === 'playing') {
-      const input = await session.readLine('\x1b[32m>\x1b[0m ');
+      const input = await session.readLine('\x1b[32m[MEMORYDUMP]>\x1b[0m ');
 
       const trimmed = input.trim();
       const normalized = trimmed.toUpperCase();
@@ -170,6 +170,9 @@ export const memorydumpCommand: Command = {
 
       if (trimmed.toLowerCase() === 'help') {
         displayHelp(context);
+        // Re-display grid and status after help
+        displayGrid(context, game.getState().grid, colsPerSide);
+        displayStatus(context, game);
         continue;
       }
 
@@ -186,6 +189,10 @@ export const memorydumpCommand: Command = {
 
         if (result.alreadyRemoved) {
           session.writeLine('\x1b[33m> Dud removed.\x1b[0m');
+          session.writeLine('');
+          // Re-display grid and status
+          displayGrid(context, game.getState().grid, colsPerSide);
+          displayStatus(context, game);
           continue;
         }
 
@@ -206,13 +213,15 @@ export const memorydumpCommand: Command = {
             break;
           }
 
-          // Display updated status
+          // Re-display grid and status so they're always visible
+          displayGrid(context, game.getState().grid, colsPerSide);
           displayStatus(context, game);
         }
       } else {
         // Not a valid word, maybe trying to use dud remover?
         session.writeLine('\x1b[31m> Error: Not a valid word.\x1b[0m');
         session.writeLine('  Type one of the \x1b[32mgreen\x1b[0m words from the grid.');
+        session.writeLine('');
       }
     }
 

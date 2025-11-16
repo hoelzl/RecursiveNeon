@@ -63,7 +63,7 @@ function displayGuessResult(
   session.writeLine('');
   session.write(`Guess ${guessNumber}: `);
 
-  // Display feedback with colors
+  // Display feedback with colors (both character and symbol)
   guess.feedback.forEach((fb) => {
     let colorCode: string;
     let symbol: string;
@@ -79,6 +79,7 @@ function displayGuessResult(
       symbol = '✗';
     }
 
+    // Color both the character and the symbol
     session.write(`${colorCode}[${fb.char}${symbol}]\x1b[0m`);
   });
 
@@ -133,7 +134,7 @@ export const codebreakerCommand: Command = {
 
     // Game loop
     while (game.getState().gameStatus === 'playing') {
-      const input = await session.readLine('Enter your guess: ');
+      const input = await session.readLine('\x1b[36m[CODEBREAKER]\x1b[0m ');
 
       // Check for quit
       if (input.toLowerCase().trim() === 'quit' || input.toLowerCase().trim() === 'exit') {

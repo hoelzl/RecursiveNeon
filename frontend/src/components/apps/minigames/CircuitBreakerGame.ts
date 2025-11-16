@@ -270,12 +270,14 @@ export class CircuitBreakerGame {
     const rotations = rotation / 90;
     let current = base;
 
+    // Rotate clockwise to match CSS transform rotation
+    // Clockwise: right→bottom, bottom→left, left→top, top→right
     for (let i = 0; i < rotations; i++) {
       current = {
-        top: current.left,
-        right: current.top,
-        bottom: current.right,
-        left: current.bottom,
+        top: current.left,        // What was on left is now on top
+        right: current.top,        // What was on top is now on right
+        bottom: current.right,     // What was on right is now on bottom
+        left: current.bottom,      // What was on bottom is now on left
       };
     }
 
