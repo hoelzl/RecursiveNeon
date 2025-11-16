@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TerminalSession } from '../../terminal/core/TerminalSession';
 import { CommandRegistry } from '../../terminal/core/CommandRegistry';
 import { CompletionEngine } from '../../terminal/core/CompletionEngine';
+import { ArgumentParser } from '../../terminal/core/ArgumentParser';
 import { builtinCommands } from '../../terminal/commands/builtins';
 import { Command, TerminalTheme } from '../../terminal/types';
 import { TerminalOutput } from '../terminal/TerminalOutput';
@@ -38,7 +39,8 @@ export function TerminalApp({
     reg.registerAll(customCommands);
     return reg;
   });
-  const [completionEngine] = useState(() => new CompletionEngine(registry));
+  const [argParser] = useState(() => new ArgumentParser());
+  const [completionEngine] = useState(() => new CompletionEngine(registry, argParser));
 
   const [outputLines, setOutputLines] = useState(session.outputBuffer);
   const [currentApp, setCurrentApp] = useState(session.getCurrentApp());
@@ -112,10 +114,10 @@ export function TerminalApp({
       // Add to history
       session.addToHistory(command);
 
-      // Parse command
-      const parts = command.trim().split(/\s+/);
-      const commandName = parts[0];
-      const args = parts.slice(1);
+      // Parse command using ArgumentParser
+      const parsed = argParser.parseCommandLine(command);
+      const commandName = parsed.command;
+      const args = parsed.args;
 
       try {
         // Execute the command
@@ -156,16 +158,29 @@ export function TerminalApp({
         if (result.completions.length === 0) {
           // No completions
           return { completed: input, showSuggestions: [] };
-        } else if (result.completions.length === 1) {
-          // Single completion - complete it
-          const completed = input.substring(0, cursorPos - result.prefix.length) + result.completions[0];
+        }
+
+        // Use replaceStart/replaceEnd if provided, otherwise use prefix-based replacement
+        const replaceStart = result.replaceStart ?? (cursorPos - result.prefix.length);
+        const replaceEnd = result.replaceEnd ?? cursorPos;
+
+        if (result.completions.length === 1) {
+          // Single completion - complete it and add a space
+          const completed =
+            input.substring(0, replaceStart) +
+            result.completions[0] +
+            ' ' +
+            input.substring(replaceEnd);
           return { completed, showSuggestions: [] };
         } else {
           // Multiple completions - show them and complete to common prefix
           let completed = input;
 
           if (result.commonPrefix.length > result.prefix.length) {
-            completed = input.substring(0, cursorPos - result.prefix.length) + result.commonPrefix;
+            completed =
+              input.substring(0, replaceStart) +
+              result.commonPrefix +
+              input.substring(replaceEnd);
           }
 
           return { completed, showSuggestions: result.completions };

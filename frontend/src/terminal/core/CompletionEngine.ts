@@ -6,12 +6,15 @@
 import { CompletionResult, CompletionContext } from '../types';
 import { CommandRegistry } from './CommandRegistry';
 import { TerminalSession } from './TerminalSession';
+import { ArgumentParser } from './ArgumentParser';
 
 export class CompletionEngine {
   private registry: CommandRegistry;
+  private argParser: ArgumentParser;
 
-  constructor(registry: CommandRegistry) {
+  constructor(registry: CommandRegistry, argParser: ArgumentParser) {
     this.registry = registry;
+    this.argParser = argParser;
   }
 
   /**
@@ -20,31 +23,33 @@ export class CompletionEngine {
   async complete(session: TerminalSession, commandLine: string, cursorPosition: number): Promise<CompletionResult> {
     // Trim the line up to cursor
     const lineBeforeCursor = commandLine.substring(0, cursorPosition);
-    const parts = lineBeforeCursor.split(/\s+/);
 
-    if (parts.length === 0 || lineBeforeCursor.trim() === '') {
+    if (lineBeforeCursor.trim() === '') {
       // Empty line - complete command names
       return this.completeCommand('');
     }
 
-    const commandName = parts[0];
-    const isFirstWord = parts.length === 1 && !lineBeforeCursor.endsWith(' ');
+    // Parse the command line using ArgumentParser
+    const parsed = this.argParser.parseCommandLine(lineBeforeCursor);
+    const partialArg = this.argParser.getPartialArg(commandLine, cursorPosition);
+
+    // Check if we're completing the command name (first word)
+    const isFirstWord = parsed.args.length === 0 && !lineBeforeCursor.endsWith(' ');
 
     if (isFirstWord) {
       // Completing the command name
-      return this.completeCommand(commandName);
+      return this.completeCommand(parsed.command);
     }
 
-    // Get the partial argument being completed
-    const partialArg = lineBeforeCursor.endsWith(' ') ? '' : parts[parts.length - 1];
+    const commandName = parsed.command;
     const command = this.registry.get(commandName);
 
     // If it's an option (starts with -)
-    if (partialArg.startsWith('-')) {
+    if (partialArg.value.startsWith('-')) {
       if (command && command.options) {
-        return this.completeOption(partialArg, command.options);
+        return this.completeOption(partialArg.value, command.options, partialArg.startIndex, cursorPosition);
       }
-      return { completions: [], prefix: '', commonPrefix: '' };
+      return { completions: [], prefix: '', commonPrefix: '', replaceStart: cursorPosition, replaceEnd: cursorPosition };
     }
 
     // Try command-specific completion
@@ -54,19 +59,19 @@ export class CompletionEngine {
         commandLine,
         cursorPosition,
         api: session.getAPI(),
-        partialArg,
+        partialArg: partialArg.value,
       };
 
       try {
         const completions = await command.complete(context);
-        return this.buildCompletionResult(partialArg, completions);
+        return this.buildCompletionResult(partialArg.value, completions, partialArg.startIndex, cursorPosition, true);
       } catch (error) {
         console.error('Command completion error:', error);
       }
     }
 
     // Default: try path completion
-    return await this.completePath(session, partialArg);
+    return await this.completePath(session, partialArg.value, partialArg.startIndex, cursorPosition);
   }
 
   /**
@@ -79,22 +84,32 @@ export class CompletionEngine {
 
     const matches = allNames.filter((name) => name.startsWith(partial));
 
-    return this.buildCompletionResult(partial, matches);
+    return this.buildCompletionResult(partial, matches, 0, partial.length, false);
   }
 
   /**
    * Complete command options
    */
-  private completeOption(partial: string, options: Array<{ flag: string; description: string }>): CompletionResult {
+  private completeOption(
+    partial: string,
+    options: Array<{ flag: string; description: string }>,
+    replaceStart: number,
+    replaceEnd: number
+  ): CompletionResult {
     const matches = options.map((opt) => opt.flag).filter((flag) => flag.startsWith(partial));
 
-    return this.buildCompletionResult(partial, matches);
+    return this.buildCompletionResult(partial, matches, replaceStart, replaceEnd, false);
   }
 
   /**
    * Complete file/directory paths
    */
-  private async completePath(session: TerminalSession, partial: string): Promise<CompletionResult> {
+  private async completePath(
+    session: TerminalSession,
+    partial: string,
+    replaceStart: number,
+    replaceEnd: number
+  ): Promise<CompletionResult> {
     const fs = session.getFileSystem();
     const cwd = session.getWorkingDirectory();
 
@@ -126,7 +141,7 @@ export class CompletionEngine {
 
       // Build the result with proper prefix
       const basePath = partial.substring(0, partial.length - filePrefix.length);
-      const result = this.buildCompletionResult(filePrefix, matches);
+      const result = this.buildCompletionResult(filePrefix, matches, replaceStart, replaceEnd, true);
 
       // Adjust prefix, commonPrefix, and completions to include the base path
       result.prefix = basePath + result.prefix;
@@ -136,37 +151,60 @@ export class CompletionEngine {
       return result;
     } catch (error) {
       // Directory doesn't exist or error occurred
-      return { completions: [], prefix: partial, commonPrefix: partial };
+      return {
+        completions: [],
+        prefix: partial,
+        commonPrefix: partial,
+        replaceStart,
+        replaceEnd,
+      };
     }
   }
 
   /**
    * Build completion result from matches
    */
-  private buildCompletionResult(partial: string, matches: string[]): CompletionResult {
+  private buildCompletionResult(
+    partial: string,
+    matches: string[],
+    replaceStart: number,
+    replaceEnd: number,
+    quoteIfNeeded: boolean
+  ): CompletionResult {
     if (matches.length === 0) {
       return {
         completions: [],
         prefix: partial,
         commonPrefix: partial,
+        replaceStart,
+        replaceEnd,
       };
     }
 
-    if (matches.length === 1) {
+    // Quote matches if needed (for filenames with spaces)
+    const quotedMatches = quoteIfNeeded
+      ? matches.map((m) => this.argParser.quoteIfNeeded(m))
+      : matches;
+
+    if (quotedMatches.length === 1) {
       return {
-        completions: matches,
+        completions: quotedMatches,
         prefix: partial,
-        commonPrefix: matches[0],
+        commonPrefix: quotedMatches[0],
+        replaceStart,
+        replaceEnd,
       };
     }
 
     // Find common prefix among all matches
-    const commonPrefix = this.findCommonPrefix(matches);
+    const commonPrefix = this.findCommonPrefix(quotedMatches);
 
     return {
-      completions: matches.sort(),
+      completions: quotedMatches.sort(),
       prefix: partial,
       commonPrefix,
+      replaceStart,
+      replaceEnd,
     };
   }
 

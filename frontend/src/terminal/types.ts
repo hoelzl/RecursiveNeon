@@ -83,6 +83,8 @@ export interface CompletionResult {
   completions: string[];
   prefix: string;
   commonPrefix: string;
+  replaceStart?: number;
+  replaceEnd?: number;
 }
 
 // ============================================================================
