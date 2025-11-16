@@ -165,11 +165,14 @@ export function TerminalApp({
         const replaceEnd = result.replaceEnd ?? cursorPos;
 
         if (result.completions.length === 1) {
-          // Single completion - complete it and add a space
+          // Single completion - complete it
+          // Don't add space if it's a directory (ends with /)
+          const completion = result.completions[0];
+          const shouldAddSpace = !completion.endsWith('/');
           const completed =
             input.substring(0, replaceStart) +
-            result.completions[0] +
-            ' ' +
+            completion +
+            (shouldAddSpace ? ' ' : '') +
             input.substring(replaceEnd);
           return { completed, showSuggestions: [] };
         } else {

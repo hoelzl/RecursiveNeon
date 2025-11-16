@@ -139,16 +139,44 @@ export class CompletionEngine {
           return node.type === 'directory' ? node.name + '/' : node.name;
         });
 
-      // Build the result with proper prefix
+      // Build full paths by combining basePath with matches
       const basePath = partial.substring(0, partial.length - filePrefix.length);
-      const result = this.buildCompletionResult(filePrefix, matches, replaceStart, replaceEnd, true);
+      const fullPaths = matches.map((match) => basePath + match);
 
-      // Adjust prefix, commonPrefix, and completions to include the base path
-      result.prefix = basePath + result.prefix;
-      result.commonPrefix = basePath + result.commonPrefix;
-      result.completions = result.completions.map((c) => basePath + c);
+      // Quote full paths if needed (don't quote individual components)
+      const quotedPaths = fullPaths.map((path) => this.argParser.quoteIfNeeded(path));
 
-      return result;
+      // Build the completion result
+      if (quotedPaths.length === 0) {
+        return {
+          completions: [],
+          prefix: partial,
+          commonPrefix: partial,
+          replaceStart,
+          replaceEnd,
+        };
+      }
+
+      if (quotedPaths.length === 1) {
+        return {
+          completions: quotedPaths,
+          prefix: partial,
+          commonPrefix: quotedPaths[0],
+          replaceStart,
+          replaceEnd,
+        };
+      }
+
+      // Find common prefix among all quoted paths
+      const commonPrefix = this.findCommonPrefix(quotedPaths);
+
+      return {
+        completions: quotedPaths.sort(),
+        prefix: partial,
+        commonPrefix,
+        replaceStart,
+        replaceEnd,
+      };
     } catch (error) {
       // Directory doesn't exist or error occurred
       return {

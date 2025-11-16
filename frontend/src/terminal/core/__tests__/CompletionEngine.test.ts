@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CompletionEngine } from '../CompletionEngine';
 import { CommandRegistry } from '../CommandRegistry';
+import { ArgumentParser } from '../ArgumentParser';
 import { TerminalSession } from '../TerminalSession';
 import { FileSystemAdapter, FileSystemNode } from '../FileSystemAdapter';
 import { AppAPI } from '../../../utils/appApi';
@@ -38,14 +39,16 @@ function createMockAPI(): AppAPI {
 describe('CompletionEngine', () => {
   let engine: CompletionEngine;
   let registry: CommandRegistry;
+  let argParser: ArgumentParser;
   let session: TerminalSession;
   let mockAPI: AppAPI;
 
   beforeEach(async () => {
     mockAPI = createMockAPI();
     registry = new CommandRegistry();
+    argParser = new ArgumentParser();
     session = new TerminalSession(mockAPI, '/');
-    engine = new CompletionEngine(registry);
+    engine = new CompletionEngine(registry, argParser);
 
     // Setup file system structure:
     // /
@@ -382,24 +385,24 @@ describe('CompletionEngine', () => {
     it('should complete paths with spaces and wrap in quotes', async () => {
       const result = await engine.complete(session, 'cd My', 5);
 
-      // Should complete to "My Documents/" with quotes
-      expect(result.completions).toContain('"My Documents/"');
+      // Should complete to 'My Documents/' with quotes (single quotes preferred)
+      expect(result.completions).toContain("'My Documents/'");
       expect(result.completions).not.toContain('My Documents/');
     });
 
     it('should complete partial quoted path', async () => {
       const result = await engine.complete(session, 'cd "My Doc', 10);
 
-      // Should complete the quoted path
-      expect(result.completions).toContain('"My Documents/"');
+      // Should complete the quoted path (single quotes preferred)
+      expect(result.completions).toContain("'My Documents/'");
     });
 
     it('should handle multiple directories with spaces', async () => {
       const result = await engine.complete(session, 'cd ', 3);
 
-      // Should include both directories with spaces, quoted
-      expect(result.completions).toContain('"My Documents/"');
-      expect(result.completions).toContain('"Important Files/"');
+      // Should include both directories with spaces, quoted (single quotes preferred)
+      expect(result.completions).toContain("'My Documents/'");
+      expect(result.completions).toContain("'Important Files/'");
       expect(result.completions).toContain('Documents/');
       expect(result.completions).toContain('Pictures/');
     });
@@ -407,15 +410,17 @@ describe('CompletionEngine', () => {
     it('should complete files with spaces inside quoted directory path', async () => {
       const result = await engine.complete(session, 'cat "My Documents/', 18);
 
-      expect(result.completions).toContain('"My Documents/my notes.txt"');
-      expect(result.completions).toContain('"My Documents/project plan.md"');
+      // Should quote entire path with single quotes
+      expect(result.completions).toContain("'My Documents/my notes.txt'");
+      expect(result.completions).toContain("'My Documents/project plan.md'");
     });
 
     it('should filter files with spaces by prefix', async () => {
       const result = await engine.complete(session, 'cat "My Documents/my', 20);
 
-      expect(result.completions).toContain('"My Documents/my notes.txt"');
-      expect(result.completions).not.toContain('"My Documents/project plan.md"');
+      // Should quote entire path with single quotes
+      expect(result.completions).toContain("'My Documents/my notes.txt'");
+      expect(result.completions).not.toContain("'My Documents/project plan.md'");
     });
   });
 });
