@@ -118,13 +118,18 @@ export class CompletionEngine {
       let searchDir = cwd;
       let filePrefix = partial;
 
-      if (partial.includes('/')) {
+      // Special handling for . and .. (current and parent directory references)
+      // These need to be resolved even without a trailing slash
+      if (partial === '.' || partial === '..') {
+        searchDir = fs.resolvePath(partial, cwd);
+        filePrefix = '';
+      } else if (partial.includes('/')) {
         // Path contains directory separator
         const lastSlash = partial.lastIndexOf('/');
         const dirPart = partial.substring(0, lastSlash + 1);
         filePrefix = partial.substring(lastSlash + 1);
 
-        // Resolve the directory part
+        // Resolve the directory part (which may contain . or ..)
         searchDir = fs.resolvePath(dirPart, cwd);
       }
 

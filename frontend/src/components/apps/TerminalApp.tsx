@@ -11,7 +11,7 @@ import { ArgumentParser } from '../../terminal/core/ArgumentParser';
 import { builtinCommands } from '../../terminal/commands/builtins';
 import { Command, TerminalTheme } from '../../terminal/types';
 import { TerminalOutput } from '../terminal/TerminalOutput';
-import { TerminalInput } from '../terminal/TerminalInput';
+import { TerminalInput, TerminalInputRef } from '../terminal/TerminalInput';
 import { defaultTheme } from '../../terminal/themes/presets';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { AppAPI } from '../../utils/appApi';
@@ -46,6 +46,7 @@ export function TerminalApp({
   const [currentApp, setCurrentApp] = useState(session.getCurrentApp());
   const [forceUpdate, setForceUpdate] = useState(0);
   const initRef = useRef(false);
+  const inputRef = useRef<TerminalInputRef>(null);
 
   // Initialize session
   useEffect(() => {
@@ -248,11 +249,19 @@ export function TerminalApp({
     ? session.getReadLinePrompt()
     : session.getPrompt();
 
+  // Handle clicks on terminal to focus input
+  const handleTerminalClick = useCallback(() => {
+    if (!currentApp && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [currentApp]);
+
   return (
-    <div className="terminal-app" style={themeStyle}>
+    <div className="terminal-app" style={themeStyle} onClick={handleTerminalClick}>
       <TerminalOutput lines={outputLines} currentApp={currentApp} />
       {!currentApp && (
         <TerminalInput
+          ref={inputRef}
           prompt={currentPrompt}
           onSubmit={handleCommand}
           onHistoryUp={handleHistoryUp}

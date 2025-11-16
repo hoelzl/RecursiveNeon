@@ -3,7 +3,7 @@
  * Handles command input, history navigation, and tab completion
  */
 
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent, forwardRef, useImperativeHandle } from 'react';
 
 interface TerminalInputProps {
   prompt: string;
@@ -14,19 +14,32 @@ interface TerminalInputProps {
   disabled?: boolean;
 }
 
-export function TerminalInput({
+export interface TerminalInputRef {
+  focus: () => void;
+}
+
+export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
   prompt,
   onSubmit,
   onHistoryUp,
   onHistoryDown,
   onTabComplete,
   disabled = false,
-}: TerminalInputProps) {
+}, ref) => {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
   const [cursorPosition, setCursorPosition] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Expose focus method to parent
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    },
+  }));
 
   // Focus input on mount
   useEffect(() => {
@@ -278,4 +291,4 @@ export function TerminalInput({
       )}
     </div>
   );
-}
+});
