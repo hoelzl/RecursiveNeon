@@ -136,6 +136,50 @@ describe('CompletionEngine - Quoted Filenames', () => {
       expect(result.completions).toContain("'my other folder/'");
     });
 
+    it('should quote entire path when completing nested paths with spaces', async () => {
+      // First, setup the filesystem to return nested directory contents
+      mockFs.resolvePath.mockImplementation((path: string) => {
+        if (path === 'Documents/') return '/Documents';
+        return path;
+      });
+
+      const nestedFiles: FileNode[] = [
+        { id: '1', name: 'My Folder', type: 'directory' } as FileNode,
+        { id: '2', name: 'My File.txt', type: 'file' } as FileNode,
+      ];
+
+      mockFs.listDirectory.mockResolvedValue(nestedFiles);
+
+      // Complete "cat Documents/My"
+      const result = await completionEngine.complete(session, 'cat Documents/My', 17);
+
+      // Should have two completions, both with the entire path quoted
+      expect(result.completions).toHaveLength(2);
+      // The entire path should be quoted, not just the last component
+      expect(result.completions).toContain("'Documents/My Folder/'");
+      expect(result.completions).toContain("'Documents/My File.txt'");
+      // Should NOT be Docs/'My Folder/' (wrong!)
+      expect(result.completions).not.toContain("Documents/'My Folder/'");
+      expect(result.completions).not.toContain("Documents/'My File.txt'");
+    });
+
+    it('should not add extra space after directory completion', async () => {
+      const dirs: FileNode[] = [
+        { id: '1', name: 'Documents', type: 'directory' } as FileNode,
+      ];
+
+      mockFs.listDirectory.mockResolvedValue(dirs);
+
+      const result = await completionEngine.complete(session, 'cd Doc', 6);
+
+      // Directory should end with / and NOT have an extra space
+      expect(result.completions).toHaveLength(1);
+      expect(result.completions[0]).toBe('Documents/');
+      // The completion should end with / not with / followed by space
+      expect(result.completions[0].endsWith('/ ')).toBe(false);
+      expect(result.completions[0].endsWith('/')).toBe(true);
+    });
+
     it('should use double quotes for filenames with single quotes', async () => {
       const files: FileNode[] = [
         { id: '1', name: "it's a file.txt", type: 'file' } as FileNode,
