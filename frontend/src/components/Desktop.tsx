@@ -20,6 +20,9 @@ import { NotificationDemoApp } from './apps/NotificationDemoApp';
 import { ClockWidget } from './ClockWidget';
 import { SettingsApp } from './apps/SettingsApp';
 import { MediaViewerApp } from './apps/MediaViewerApp';
+import { PortScannerApp } from './apps/minigames/PortScannerApp';
+import { CircuitBreakerApp } from './apps/minigames/CircuitBreakerApp';
+import { MinigameErrorBoundary } from './apps/minigames/MinigameErrorBoundary';
 
 interface DesktopIcon {
   id: string;
@@ -249,6 +252,44 @@ export function Desktop() {
           content: <TerminalApp />,
           position: { x: 240, y: 240 },
           size: { width: 900, height: 650 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'portscanner',
+      label: 'PortScanner',
+      emoji: '🔍',
+      action: () => {
+        openWindow({
+          title: 'PortScanner',
+          type: 'portscanner',
+          content: (
+            <MinigameErrorBoundary gameName="PortScanner">
+              <PortScannerApp />
+            </MinigameErrorBoundary>
+          ),
+          position: { x: 250, y: 250 },
+          size: { width: 700, height: 700 },
+          minimized: false,
+        });
+      },
+    },
+    {
+      id: 'circuitbreaker',
+      label: 'CircuitBreaker',
+      emoji: '⚡',
+      action: () => {
+        openWindow({
+          title: 'CircuitBreaker',
+          type: 'circuitbreaker',
+          content: (
+            <MinigameErrorBoundary gameName="CircuitBreaker">
+              <CircuitBreakerApp />
+            </MinigameErrorBoundary>
+          ),
+          position: { x: 270, y: 270 },
+          size: { width: 700, height: 750 },
           minimized: false,
         });
       },
