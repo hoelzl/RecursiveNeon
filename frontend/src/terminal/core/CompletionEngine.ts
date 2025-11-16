@@ -24,6 +24,8 @@ export class CompletionEngine {
     // Trim the line up to cursor
     const lineBeforeCursor = commandLine.substring(0, cursorPosition);
 
+    console.log('[CompletionEngine.complete] commandLine:', JSON.stringify(commandLine), 'cursorPosition:', cursorPosition);
+
     if (lineBeforeCursor.trim() === '') {
       // Empty line - complete command names
       return this.completeCommand('');
@@ -32,6 +34,9 @@ export class CompletionEngine {
     // Parse the command line using ArgumentParser
     const parsed = this.argParser.parseCommandLine(lineBeforeCursor);
     const partialArg = this.argParser.getPartialArg(commandLine, cursorPosition);
+
+    console.log('[CompletionEngine.complete] parsed:', parsed);
+    console.log('[CompletionEngine.complete] partialArg:', partialArg);
 
     // Check if we're completing the command name (first word)
     const isFirstWord = parsed.args.length === 0 && !lineBeforeCursor.endsWith(' ');
