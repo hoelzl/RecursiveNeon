@@ -348,9 +348,15 @@ export class TerminalSession {
   /**
    * Read a line of input (for interactive commands)
    */
-  async readLine(): Promise<string> {
-    // This will be implemented in the React component
-    // For now, return empty string
+  async readLine(prompt?: string): Promise<string> {
+    // Display the prompt if provided
+    if (prompt) {
+      this.write(prompt);
+    }
+
+    // Store the prompt for UI to use
+    (this as any)._readLinePrompt = prompt || '';
+
     return new Promise((resolve) => {
       // Store the resolve function for the UI to call
       (this as any)._readLineResolve = resolve;
@@ -358,12 +364,30 @@ export class TerminalSession {
   }
 
   /**
+   * Check if we're waiting for readline input
+   */
+  isWaitingForReadLine(): boolean {
+    return !!(this as any)._readLineResolve;
+  }
+
+  /**
+   * Get the current readline prompt
+   */
+  getReadLinePrompt(): string {
+    return (this as any)._readLinePrompt || '';
+  }
+
+  /**
    * Resolve the pending readLine promise
    */
   resolveReadLine(value: string): void {
     if ((this as any)._readLineResolve) {
+      // Write the input to the output
+      this.writeLine(value);
+
       (this as any)._readLineResolve(value);
       delete (this as any)._readLineResolve;
+      delete (this as any)._readLinePrompt;
     }
   }
 

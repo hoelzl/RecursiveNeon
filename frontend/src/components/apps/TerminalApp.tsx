@@ -89,6 +89,15 @@ export function TerminalApp({
   // Handle command execution
   const handleCommand = useCallback(
     async (command: string) => {
+      // Check if we're waiting for readline input (interactive command)
+      if (session.isWaitingForReadLine()) {
+        // Resolve the readline promise with the input
+        session.resolveReadLine(command);
+        // Update output to show the input was received
+        setOutputLines([...session.outputBuffer]);
+        return;
+      }
+
       if (!command.trim()) {
         session.writeLine('');
         setOutputLines([...session.outputBuffer]);

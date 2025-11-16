@@ -38,7 +38,9 @@ interface TileConnections {
 }
 
 const TILE_CONNECTIONS: Record<TileType, TileConnections> = {
-  straight: { top: true, right: false, bottom: true, left: false },
+  // Straight piece (═) is horizontal, connects left and right
+  straight: { top: false, right: true, bottom: false, left: true },
+  // Corner piece (╔) connects top and right
   corner: { top: true, right: true, bottom: false, left: false },
   empty: { top: false, right: false, bottom: false, left: false },
   start: { top: false, right: true, bottom: false, left: false },
@@ -128,20 +130,136 @@ export class CircuitBreakerGame {
     endRow: number,
     endCol: number
   ): void {
+    // Create a more interesting path with multiple turns
+    const path: { row: number; col: number }[] = [];
     let currentRow = startRow;
-    let currentCol = startCol + 1;
+    let currentCol = startCol;
 
-    // Simple right-then-down path
-    while (currentCol < endCol) {
-      grid[currentRow][currentCol].type = 'straight';
-      currentCol++;
+    path.push({ row: currentRow, col: currentCol });
+
+    // Direction: 0=right, 1=down, 2=left, 3=up
+    let direction = 0; // Start going right
+
+    const rows = grid.length;
+    const cols = grid[0].length;
+
+    // Create a snake-like path
+    while (currentRow !== endRow || currentCol !== endCol) {
+      let moved = false;
+
+      // Try to move in current direction
+      for (let attempt = 0; attempt < 4 && !moved; attempt++) {
+        const dr = [0, 1, 0, -1][direction];
+        const dc = [1, 0, -1, 0][direction];
+        const nextRow = currentRow + dr;
+        const nextCol = currentCol + dc;
+
+        // Check if we can move in this direction
+        if (
+          nextRow >= 0 &&
+          nextRow < rows &&
+          nextCol >= 0 &&
+          nextCol < cols &&
+          !path.some((p) => p.row === nextRow && p.col === nextCol)
+        ) {
+          // Move in this direction
+          currentRow = nextRow;
+          currentCol = nextCol;
+          path.push({ row: currentRow, col: currentCol });
+          moved = true;
+
+          // Randomly change direction sometimes to create more interesting paths
+          if (Math.random() < 0.3 && path.length < rows * cols * 0.8) {
+            direction = (direction + (Math.random() < 0.5 ? 1 : 3)) % 4;
+          }
+        } else {
+          // Try next direction
+          direction = (direction + 1) % 4;
+        }
+      }
+
+      // If we couldn't move anywhere, break to avoid infinite loop
+      if (!moved) {
+        break;
+      }
+
+      // If we're close to the end, try to reach it
+      if (
+        Math.abs(currentRow - endRow) + Math.abs(currentCol - endCol) <= 2 &&
+        path.length > 10
+      ) {
+        // Pathfind directly to end
+        while (currentRow !== endRow || currentCol !== endCol) {
+          if (currentRow < endRow) {
+            currentRow++;
+          } else if (currentRow > endRow) {
+            currentRow--;
+          } else if (currentCol < endCol) {
+            currentCol++;
+          } else if (currentCol > endCol) {
+            currentCol--;
+          }
+
+          if (!path.some((p) => p.row === currentRow && p.col === currentCol)) {
+            path.push({ row: currentRow, col: currentCol });
+          }
+        }
+        break;
+      }
     }
 
-    while (currentRow < endRow) {
-      if (currentRow + 1 < endRow || currentCol === endCol) {
-        grid[currentRow][currentCol].type = currentRow === startRow ? 'corner' : 'straight';
+    // Now set tile types based on the path
+    for (let i = 1; i < path.length - 1; i++) {
+      const prev = path[i - 1];
+      const curr = path[i];
+      const next = path[i + 1];
+
+      // Determine if this is a corner or straight piece
+      const inDir = { row: curr.row - prev.row, col: curr.col - prev.col };
+      const outDir = { row: next.row - curr.row, col: next.col - curr.col };
+
+      if (inDir.row === outDir.row && inDir.col === outDir.col) {
+        // Same direction - straight piece
+        grid[curr.row][curr.col].type = 'straight';
+        // Set rotation based on direction
+        if (inDir.row === 0) {
+          // Horizontal
+          grid[curr.row][curr.col].rotation = 0; // Already correct
+        } else {
+          // Vertical
+          grid[curr.row][curr.col].rotation = 90;
+        }
+      } else {
+        // Direction changed - corner piece
+        grid[curr.row][curr.col].type = 'corner';
+        // Set initial rotation based on turn direction
+        // This will be randomized later, but set correct initial orientation
+        if (inDir.col === 1 && outDir.row === 1) {
+          // Right -> Down: ╔ rotated 0
+          grid[curr.row][curr.col].rotation = 0;
+        } else if (inDir.row === 1 && outDir.col === -1) {
+          // Down -> Left: ╔ rotated 90
+          grid[curr.row][curr.col].rotation = 90;
+        } else if (inDir.col === -1 && outDir.row === -1) {
+          // Left -> Up: ╔ rotated 180
+          grid[curr.row][curr.col].rotation = 180;
+        } else if (inDir.row === -1 && outDir.col === 1) {
+          // Up -> Right: ╔ rotated 270
+          grid[curr.row][curr.col].rotation = 270;
+        } else if (inDir.col === 1 && outDir.row === -1) {
+          // Right -> Up: ╚ (╔ rotated 270)
+          grid[curr.row][curr.col].rotation = 270;
+        } else if (inDir.row === -1 && outDir.col === -1) {
+          // Up -> Left: ╗ (╔ rotated 90)
+          grid[curr.row][curr.col].rotation = 90;
+        } else if (inDir.col === -1 && outDir.row === 1) {
+          // Left -> Down: ╗ (╔ rotated 180)
+          grid[curr.row][curr.col].rotation = 180;
+        } else if (inDir.row === 1 && outDir.col === 1) {
+          // Down -> Right: ╚ (╔ rotated 0)
+          grid[curr.row][curr.col].rotation = 0;
+        }
       }
-      currentRow++;
     }
   }
 
