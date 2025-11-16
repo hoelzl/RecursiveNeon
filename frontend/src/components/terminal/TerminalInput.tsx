@@ -63,6 +63,8 @@ export const TerminalInput = forwardRef<TerminalInputRef, TerminalInputProps>(({
   }, [cursorPosition, input]);
 
   const handleKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+    console.log('[TerminalInput.handleKeyDown] key:', e.key, 'suggestions.length:', suggestions.length, 'selectedIndex:', selectedSuggestionIndex, 'input:', JSON.stringify(input), 'cursorPos:', cursorPosition);
+
     // Handle suggestions interactions first
     if (suggestions.length > 0) {
       // Enter - Select highlighted suggestion
