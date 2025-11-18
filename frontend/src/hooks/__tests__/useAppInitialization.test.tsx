@@ -180,7 +180,8 @@ describe('useAppInitialization', () => {
 
   it('should provide retryConnection function', async () => {
     const wsClient = createMockWebSocketClient();
-    wsClient.connect = vi.fn().mockRejectedValue(new Error('Connection failed'));
+    const originalConnectMock = vi.fn().mockRejectedValue(new Error('Connection failed'));
+    wsClient.connect = originalConnectMock;
     const store = createMockGameStore();
     const wrapper = createWrapper(wsClient, store);
 
@@ -193,14 +194,14 @@ describe('useAppInitialization', () => {
     // Retry should be a function
     expect(typeof result.current.retryConnection).toBe('function');
 
-    // Make connection succeed on retry
-    wsClient.connect = vi.fn().mockResolvedValue(undefined);
+    // Make connection succeed on retry (update the same mock)
+    originalConnectMock.mockResolvedValue(undefined);
 
     // Call retry
     result.current.retryConnection();
 
     await waitFor(() => {
-      expect(wsClient.connect).toHaveBeenCalledTimes(2); // Initial + retry
+      expect(originalConnectMock).toHaveBeenCalledTimes(2); // Initial + retry
     });
   });
 });

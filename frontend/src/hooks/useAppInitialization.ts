@@ -58,6 +58,12 @@ export function useAppInitialization(): UseAppInitializationResult {
 
   useEffect(() => {
     initialize();
+
+    // Cleanup: disconnect WebSocket on unmount
+    return () => {
+      wsClient.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
 
   const retryConnection = () => {
