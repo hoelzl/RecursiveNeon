@@ -876,6 +876,56 @@ const handleClick = useCallback(() => {
 
 ## Testing Guidelines
 
+### Test Success Rate Requirement
+
+**CRITICAL**: We always aim for 100% test success rate. When tests fail:
+
+1. **Fix the root cause** - Don't skip or ignore failing tests without investigation
+2. **Investigate thoroughly** - Understand why the test is failing before making changes
+3. **Proper mocking** - Ensure mocks are properly configured and cleaned up, especially for async code
+4. **Async cleanup** - Always clean up async tasks in integration tests to avoid resource warnings
+5. **Test isolation** - Each test should be independent and not affect other tests
+
+### Common Test Issues and Solutions
+
+#### Async Task Cleanup in Integration Tests
+When creating async tasks in tests, always ensure they're properly cleaned up:
+```python
+@pytest.mark.asyncio
+async def test_with_async_task():
+    # Create a real async task for proper cleanup
+    async def dummy_monitor():
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            pass
+
+    task = asyncio.create_task(dummy_monitor())
+
+    try:
+        # Test logic here
+        pass
+    finally:
+        # Always clean up async tasks
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+```
+
+#### Proper AsyncMock Usage
+- Use `AsyncMock()` for async methods that will be awaited
+- Create real `asyncio.Task` objects when mocking `asyncio.create_task()`
+- Ensure all mock attributes needed by shutdown/cleanup code are configured
+
+#### Handling Flaky Tests
+If tests pass individually but fail when run together:
+1. Check for shared state or global variables
+2. Add proper cleanup fixtures (see `tests/integration/conftest.py`)
+3. Ensure async operations complete before test ends
+4. Consider adding explicit synchronization points
+
 ### Backend Testing Patterns
 
 #### Fixture-Based Testing

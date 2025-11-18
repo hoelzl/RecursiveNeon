@@ -83,9 +83,19 @@ class TestLifespanStartup:
 
         mock_container.process_manager = AsyncMock()
         mock_container.process_manager.start.return_value = False  # Failure
+        mock_container.process_manager.stop = AsyncMock()
+
+        mock_container.ollama_client = AsyncMock()
+        mock_container.ollama_client.close = AsyncMock()
 
         mock_container.system_state = Mock()
         mock_container.system_state.status = SystemStatus.INITIALIZING
+
+        mock_container.app_service = Mock()
+        mock_container.app_service.save_filesystem_to_disk = Mock()
+
+        mock_container.calendar_service = Mock()
+        mock_container.calendar_service.save_to_disk = Mock()
 
         with patch.object(ServiceFactory, 'create_production_container', return_value=mock_container):
             with patch('recursive_neon.main.initialize_container'):
@@ -129,6 +139,7 @@ class TestLifespanStartup:
 
         mock_container.process_manager = AsyncMock()
         mock_container.process_manager.start.return_value = True
+        mock_container.process_manager.stop = AsyncMock()
 
         mock_container.ollama_client = AsyncMock()
         mock_container.ollama_client.wait_for_ready.return_value = True
@@ -140,8 +151,20 @@ class TestLifespanStartup:
             Mock(), Mock(), Mock()
         ]
 
+        # Track status changes
+        status_values = []
+
+        def track_status(value):
+            status_values.append(value)
+
         mock_container.system_state = Mock()
-        mock_container.system_state.status = SystemStatus.INITIALIZING
+        type(mock_container.system_state).status = property(
+            lambda self: status_values[-1] if status_values else SystemStatus.INITIALIZING,
+            lambda self, value: track_status(value)
+        )
+        mock_container.system_state.ollama_running = None
+        mock_container.system_state.ollama_models_loaded = None
+        mock_container.system_state.npcs_loaded = None
 
         mock_container.app_service = Mock()
         mock_container.app_service.save_filesystem_to_disk = Mock()
@@ -158,11 +181,13 @@ class TestLifespanStartup:
                 with TestClient(test_app):
                     pass
 
-                # Verify system state was updated
+                # Verify system state was updated during startup
                 assert mock_container.system_state.ollama_running is True
                 assert mock_container.system_state.ollama_models_loaded == ["model1", "model2"]
                 assert mock_container.system_state.npcs_loaded == 3
-                assert mock_container.system_state.status == SystemStatus.READY
+                # Status should have been READY at some point, then SHUTTING_DOWN
+                assert SystemStatus.READY in status_values
+                assert SystemStatus.SHUTTING_DOWN in status_values
 
 
 @pytest.mark.integration
@@ -379,9 +404,36 @@ class TestLifespanErrorHandling:
 
         mock_container.process_manager = AsyncMock()
         mock_container.process_manager.start.side_effect = Exception("Startup failed")
+        mock_container.process_manager.stop = AsyncMock()
+
+        mock_container.ollama_client = AsyncMock()
+        mock_container.ollama_client.close = AsyncMock()
+
+        # Track status changes
+        status_values = []
+        last_error_value = [None]
+
+        def track_status(value):
+            status_values.append(value)
+
+        def track_last_error(value):
+            last_error_value[0] = value
 
         mock_container.system_state = Mock()
-        mock_container.system_state.status = SystemStatus.INITIALIZING
+        type(mock_container.system_state).status = property(
+            lambda self: status_values[-1] if status_values else SystemStatus.INITIALIZING,
+            lambda self, value: track_status(value)
+        )
+        type(mock_container.system_state).last_error = property(
+            lambda self: last_error_value[0],
+            lambda self, value: track_last_error(value)
+        )
+
+        mock_container.app_service = Mock()
+        mock_container.app_service.save_filesystem_to_disk = Mock()
+
+        mock_container.calendar_service = Mock()
+        mock_container.calendar_service.save_to_disk = Mock()
 
         with patch.object(ServiceFactory, 'create_production_container', return_value=mock_container):
             with patch('recursive_neon.main.initialize_container'):
@@ -393,9 +445,10 @@ class TestLifespanErrorHandling:
                     with TestClient(test_app):
                         pass
 
-                # Verify error state was set
-                assert mock_container.system_state.status == SystemStatus.ERROR
-                assert mock_container.system_state.last_error is not None
+                # Verify error state was set during startup (before shutdown)
+                assert SystemStatus.ERROR in status_values
+                assert SystemStatus.SHUTTING_DOWN in status_values
+                assert last_error_value[0] is not None
 
     @pytest.mark.asyncio
     async def test_shutdown_runs_even_on_startup_failure(self):
@@ -483,6 +536,9 @@ class TestLifespanIntegrationWithEndpoints:
     @pytest.mark.asyncio
     async def test_health_endpoint_after_startup(self):
         """Test that health endpoint works after successful startup."""
+        from datetime import datetime
+        from recursive_neon.models.game_state import SystemState
+
         mock_container = Mock(spec=ServiceContainer)
 
         mock_container.process_manager = AsyncMock()
@@ -497,11 +553,12 @@ class TestLifespanIntegrationWithEndpoints:
         mock_container.npc_manager = Mock()
         mock_container.npc_manager.create_default_npcs.return_value = []
 
-        mock_container.system_state = Mock()
+        # Create a real SystemState instance for Pydantic validation
+        mock_container.system_state = SystemState()
         mock_container.system_state.status = SystemStatus.READY
         mock_container.system_state.uptime_seconds = 0
 
-        mock_container.start_time = Mock()
+        mock_container.start_time = datetime.now()
 
         mock_container.app_service = Mock()
         mock_container.app_service.save_filesystem_to_disk = Mock()
@@ -509,22 +566,26 @@ class TestLifespanIntegrationWithEndpoints:
         mock_container.calendar_service = Mock()
         mock_container.calendar_service.save_to_disk = Mock()
 
+        # Mock the global initialize_container to actually set the container
+        def mock_initialize(container):
+            import recursive_neon.dependencies as deps
+            deps._container = container
+
         with patch.object(ServiceFactory, 'create_production_container', return_value=mock_container):
-            with patch('recursive_neon.main.initialize_container'):
-                with patch('recursive_neon.main.get_container', return_value=mock_container):
-                    from fastapi import FastAPI
-                    from recursive_neon.main import health_check
+            with patch('recursive_neon.main.initialize_container', side_effect=mock_initialize):
+                from fastapi import FastAPI
+                from recursive_neon.main import health_check
 
-                    test_app = FastAPI(lifespan=lifespan)
-                    test_app.get("/health")(health_check)
+                test_app = FastAPI(lifespan=lifespan)
+                test_app.get("/health")(health_check)
 
-                    with TestClient(test_app) as client:
-                        # Call health endpoint
-                        response = client.get("/health")
+                with TestClient(test_app) as client:
+                    # Call health endpoint
+                    response = client.get("/health")
 
-                        assert response.status_code == 200
-                        data = response.json()
-                        assert data["status"] == "healthy"
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["status"] == "healthy"
 
 
 @pytest.mark.integration

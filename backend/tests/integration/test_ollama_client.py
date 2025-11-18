@@ -111,20 +111,13 @@ class TestOllamaClientWaitForReady:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_wait_for_ready_timeout(self, httpx_mock):
+    async def test_wait_for_ready_timeout(self):
         """Test wait_for_ready timeout when server never becomes ready."""
-        # Add exception for multiple retry attempts
-        # Allow extra mocks that may not be used
-        httpx_mock.can_send_already_matched_responses = True
-
-        for _ in range(10):  # More than enough retries
-            httpx_mock.add_exception(
-                httpx.ConnectError("Connection refused"),
-                url="http://127.0.0.1:11434/api/tags"
-            )
-
         client = OllamaClient()
-        is_ready = await client.wait_for_ready(max_wait=1, check_interval=0.2)
+
+        # Mock health_check to always return False
+        with patch.object(client, 'health_check', return_value=False):
+            is_ready = await client.wait_for_ready(max_wait=1, check_interval=0.2)
 
         assert is_ready is False
         await client.close()

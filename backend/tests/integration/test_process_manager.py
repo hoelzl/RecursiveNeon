@@ -152,17 +152,22 @@ class TestProcessManagerStartStop:
 
         manager.process = mock_process
 
-        # Mock the monitoring task (must be async-compatible)
-        mock_task = AsyncMock()
-        mock_task.cancel = Mock()
-        manager._monitor_task = mock_task
+        # Create a real asyncio task that we can cancel
+        async def dummy_monitor():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                pass
+
+        manager._monitor_task = asyncio.create_task(dummy_monitor())
 
         with patch.object(manager, 'is_running', side_effect=[True, False]):
             success = await manager.stop(timeout=5)
 
             assert success is True
             mock_process.terminate.assert_called_once()
-            mock_task.cancel.assert_called_once()
+            # Verify task was cancelled
+            assert manager._monitor_task.cancelled() or manager._monitor_task.done()
 
     @pytest.mark.asyncio
     async def test_stop_process_force_kill(self):
@@ -391,19 +396,24 @@ class TestProcessManagerLifecycle:
         mock_process.terminate = Mock()
         mock_process.wait = Mock()
 
+        # Create a real async task for monitoring
+        async def dummy_monitor():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                pass
+
+        real_task = asyncio.create_task(dummy_monitor())
+
         with patch.object(manager, '_get_ollama_binary', return_value=Path('/fake/ollama')):
             with patch('subprocess.Popen', return_value=mock_process):
-                with patch('asyncio.create_task', return_value=AsyncMock()):
+                with patch('asyncio.create_task', return_value=real_task):
                     # Start
                     start_success = await manager.start()
                     assert start_success is True
                     assert manager.process is not None
 
                     # Stop
-                    mock_task = AsyncMock()
-                    mock_task.cancel = Mock()
-                    manager._monitor_task = mock_task
-
                     with patch.object(manager, 'is_running', side_effect=[True, False]):
                         stop_success = await manager.stop()
                         assert stop_success is True
@@ -450,9 +460,18 @@ class TestProcessManagerEnvironmentConfiguration:
         mock_process = Mock(spec=subprocess.Popen)
         mock_process.pid = 12345
 
+        # Create a real async task
+        async def dummy_monitor():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                pass
+
+        real_task = asyncio.create_task(dummy_monitor())
+
         with patch.object(manager, '_get_ollama_binary', return_value=Path('/fake/ollama')):
             with patch('subprocess.Popen', return_value=mock_process) as mock_popen:
-                with patch('asyncio.create_task', return_value=AsyncMock()):
+                with patch('asyncio.create_task', return_value=real_task):
                     await manager.start()
 
                     # Check that Popen was called with correct environment
@@ -460,6 +479,13 @@ class TestProcessManagerEnvironmentConfiguration:
                     assert 'env' in call_kwargs
                     env = call_kwargs['env']
                     assert env['OLLAMA_HOST'] == "192.168.1.100:8888"
+
+                    # Clean up task
+                    real_task.cancel()
+                    try:
+                        await real_task
+                    except asyncio.CancelledError:
+                        pass
 
     @pytest.mark.asyncio
     @patch('platform.system')
@@ -471,15 +497,35 @@ class TestProcessManagerEnvironmentConfiguration:
         mock_process = Mock(spec=subprocess.Popen)
         mock_process.pid = 12345
 
+        # Create a real async task
+        async def dummy_monitor():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                pass
+
+        real_task = asyncio.create_task(dummy_monitor())
+
+        # Mock CREATE_NO_WINDOW constant (it doesn't exist on Linux)
+        CREATE_NO_WINDOW = 0x08000000
+
         with patch.object(manager, '_get_ollama_binary', return_value=Path('/fake/ollama')):
             with patch('subprocess.Popen', return_value=mock_process) as mock_popen:
-                with patch('asyncio.create_task', return_value=AsyncMock()):
-                    await manager.start()
+                with patch('subprocess.CREATE_NO_WINDOW', CREATE_NO_WINDOW, create=True):
+                    with patch('asyncio.create_task', return_value=real_task):
+                        await manager.start()
 
-                    # Check that creation flags were set
-                    call_kwargs = mock_popen.call_args.kwargs
-                    assert 'creationflags' in call_kwargs
-                    assert call_kwargs['creationflags'] == subprocess.CREATE_NO_WINDOW
+                        # Check that creation flags were set
+                        call_kwargs = mock_popen.call_args.kwargs
+                        assert 'creationflags' in call_kwargs
+                        assert call_kwargs['creationflags'] == CREATE_NO_WINDOW
+
+                        # Clean up task
+                        real_task.cancel()
+                        try:
+                            await real_task
+                        except asyncio.CancelledError:
+                            pass
 
 
 @pytest.mark.integration
