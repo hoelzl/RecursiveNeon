@@ -28,14 +28,14 @@ const mockTaskLists: TaskList[] = [
   },
 ];
 
-// Mock WebSocket client with event handling
+// Mock WebSocket client implementing IWebSocketClient interface
 const eventHandlers = new Map<string, Set<Function>>();
 
 const mockWebSocketClient = {
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  sendMessage: vi.fn(),
-  readyState: 1,
+  connect: vi.fn().mockResolvedValue(undefined),
+  disconnect: vi.fn(),
+  isConnected: vi.fn().mockReturnValue(true),
+  
   on: vi.fn((event: string, handler: Function) => {
     if (!eventHandlers.has(event)) {
       eventHandlers.set(event, new Set());
@@ -45,7 +45,7 @@ const mockWebSocketClient = {
   off: vi.fn((event: string, handler: Function) => {
     eventHandlers.get(event)?.delete(handler);
   }),
-  send: vi.fn((type: string, data: any) => {
+  send: vi.fn((type: string, data: any = {}) => {
     // Simulate async response
     queueMicrotask(() => {
       const handlers = eventHandlers.get('app_response');
@@ -62,11 +62,11 @@ const mockWebSocketClient = {
 } as any;
 
 function getMockResponse(operation: string, payload: any): any {
-  if (operation === 'get_task_lists') {
-    return { task_lists: mockTaskLists };
-  } else if (operation === 'create_task_list') {
+  if (operation === 'tasks.lists') {
+    return { lists: mockTaskLists };
+  } else if (operation === 'tasks.list.create') {
     return {
-      task_list: {
+      list: {
         id: 'list-3',
         name: payload.name || 'New List',
         tasks: [],
@@ -74,7 +74,18 @@ function getMockResponse(operation: string, payload: any): any {
         updatedAt: new Date().toISOString(),
       },
     };
-  } else if (operation === 'create_task') {
+  } else if (operation === 'tasks.list.update') {
+    const list = mockTaskLists.find((l) => l.id === payload.id);
+    return {
+      list: {
+        ...list,
+        name: payload.name,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } else if (operation === 'tasks.list.delete') {
+    return { success: true };
+  } else if (operation === 'tasks.create') {
     return {
       task: {
         id: `task-${Date.now()}`,
@@ -83,7 +94,14 @@ function getMockResponse(operation: string, payload: any): any {
         parent_id: null,
       },
     };
-  } else if (operation === 'update_task' || operation === 'delete_task' || operation === 'update_task_list' || operation === 'delete_task_list') {
+  } else if (operation === 'tasks.update') {
+    return {
+      task: {
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } else if (operation === 'tasks.delete') {
     return { success: true };
   }
   return {};
@@ -131,7 +149,7 @@ describe('TaskListApp', () => {
 
       // Wait for getTaskLists API call
       await waitFor(() => {
-        expect(mockWebSocketClient.sendMessage).toHaveBeenCalledWith(
+        expect(mockWebSocketClient.send).toHaveBeenCalledWith(
           expect.objectContaining({
             type: 'app',
             data: expect.objectContaining({
@@ -147,7 +165,7 @@ describe('TaskListApp', () => {
 
       // Simulate successful lists load
       await waitFor(() => {
-        const calls = mockWebSocketClient.sendMessage.mock.calls;
+        const calls = mockWebSocketClient.send.mock.calls;
         if (calls.length > 0) {
           simulateApiResponse({
             type: 'app_response',
@@ -324,7 +342,7 @@ describe('TaskListApp', () => {
 
       // Should call create_task_list API
       await waitFor(() => {
-        const createCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const createCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'create_task_list'
         );
         expect(createCall).toBeTruthy();
@@ -378,7 +396,7 @@ describe('TaskListApp', () => {
 
       // Should call create_task API
       await waitFor(() => {
-        const createCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const createCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'create_task'
         );
         expect(createCall).toBeTruthy();
@@ -407,7 +425,7 @@ describe('TaskListApp', () => {
 
       // Should call create_task API
       await waitFor(() => {
-        const createCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const createCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'create_task'
         );
         expect(createCall).toBeTruthy();
@@ -482,7 +500,7 @@ describe('TaskListApp', () => {
 
         // Should call update_task API
         await waitFor(() => {
-          const updateCall = mockWebSocketClient.sendMessage.mock.calls.find(
+          const updateCall = mockWebSocketClient.send.mock.calls.find(
             (call: any) => call[0]?.data?.action === 'update_task'
           );
           expect(updateCall).toBeTruthy();
@@ -513,7 +531,7 @@ describe('TaskListApp', () => {
 
         // Should call delete_task API
         await waitFor(() => {
-          const deleteCall = mockWebSocketClient.sendMessage.mock.calls.find(
+          const deleteCall = mockWebSocketClient.send.mock.calls.find(
             (call: any) => call[0]?.data?.action === 'delete_task'
           );
           expect(deleteCall).toBeTruthy();

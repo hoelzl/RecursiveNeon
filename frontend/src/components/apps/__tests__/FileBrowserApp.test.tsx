@@ -51,14 +51,14 @@ const mockFiles: FileNode[] = [
   },
 ];
 
-// Mock WebSocket client with event handling
+// Mock WebSocket client implementing IWebSocketClient interface
 const eventHandlers = new Map<string, Set<Function>>();
 
 const mockWebSocketClient = {
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  sendMessage: vi.fn(),
-  readyState: 1,
+  connect: vi.fn().mockResolvedValue(undefined),
+  disconnect: vi.fn(),
+  isConnected: vi.fn().mockReturnValue(true),
+  
   on: vi.fn((event: string, handler: Function) => {
     if (!eventHandlers.has(event)) {
       eventHandlers.set(event, new Set());
@@ -68,7 +68,7 @@ const mockWebSocketClient = {
   off: vi.fn((event: string, handler: Function) => {
     eventHandlers.get(event)?.delete(handler);
   }),
-  send: vi.fn((type: string, data: any) => {
+  send: vi.fn((type: string, data: any = {}) => {
     // Simulate async response
     queueMicrotask(() => {
       const handlers = eventHandlers.get('app_response');
@@ -85,22 +85,58 @@ const mockWebSocketClient = {
 } as any;
 
 function getMockResponse(operation: string, payload: any): any {
-  if (operation === 'init_filesystem') {
+  if (operation === 'fs.init') {
     return { root: mockRootNode };
-  } else if (operation === 'list_directory') {
+  } else if (operation === 'fs.list') {
     return { nodes: mockFiles };
-  } else if (operation === 'create_directory' || operation === 'create_file') {
+  } else if (operation === 'fs.get') {
+    return { node: mockFiles.find(f => f.id === payload.id) };
+  } else if (operation === 'fs.create.dir') {
     return {
       node: {
         id: `new-${Date.now()}`,
-        name: payload.name || 'New Item',
-        type: operation === 'create_directory' ? 'directory' : 'file',
+        name: payload.name || 'New Folder',
+        type: 'directory',
         parent_id: payload.parent_id || 'root-id',
-        mime_type: payload.mime_type || null,
-        content: payload.content || null,
+        mime_type: null,
+        content: null,
       },
     };
-  } else if (operation === 'copy_file' || operation === 'move_file' || operation === 'update_file' || operation === 'delete_file') {
+  } else if (operation === 'fs.create.file') {
+    return {
+      node: {
+        id: `new-${Date.now()}`,
+        name: payload.name || 'New File',
+        type: 'file',
+        parent_id: payload.parent_id || 'root-id',
+        mime_type: payload.mime_type || 'text/plain',
+        content: payload.content || '',
+      },
+    };
+  } else if (operation === 'fs.update') {
+    return {
+      node: {
+        ...mockFiles.find(f => f.id === payload.id),
+        ...payload,
+      },
+    };
+  } else if (operation === 'fs.copy') {
+    return {
+      node: {
+        ...mockFiles.find(f => f.id === payload.id),
+        id: `copy-${Date.now()}`,
+        name: payload.new_name || 'Copy',
+        parent_id: payload.target_parent_id,
+      },
+    };
+  } else if (operation === 'fs.move') {
+    return {
+      node: {
+        ...mockFiles.find(f => f.id === payload.id),
+        parent_id: payload.target_parent_id,
+      },
+    };
+  } else if (operation === 'fs.delete') {
     return { success: true };
   }
   return {};
@@ -149,7 +185,7 @@ describe('FileBrowserApp', () => {
 
       // Wait for initFilesystem API call
       await waitFor(() => {
-        expect(mockWebSocketClient.sendMessage).toHaveBeenCalledWith(
+        expect(mockWebSocketClient.send).toHaveBeenCalledWith(
           expect.objectContaining({
             type: 'app',
             data: expect.objectContaining({
@@ -165,7 +201,7 @@ describe('FileBrowserApp', () => {
 
       // Simulate successful filesystem init
       await waitFor(() => {
-        const calls = mockWebSocketClient.sendMessage.mock.calls;
+        const calls = mockWebSocketClient.send.mock.calls;
         if (calls.length > 0) {
           simulateApiResponse({
             type: 'app_response',
@@ -179,7 +215,7 @@ describe('FileBrowserApp', () => {
 
       // Should call list_directory for root
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         expect(listCall).toBeTruthy();
@@ -200,7 +236,7 @@ describe('FileBrowserApp', () => {
 
       // Wait for list_directory call
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -233,7 +269,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -265,7 +301,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -293,7 +329,7 @@ describe('FileBrowserApp', () => {
 
       // Should call list_directory for the directory
       await waitFor(() => {
-        const listCalls = mockWebSocketClient.sendMessage.mock.calls.filter(
+        const listCalls = mockWebSocketClient.send.mock.calls.filter(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         // Should have at least 2 calls: initial root + opened directory
@@ -356,7 +392,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -436,7 +472,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -504,7 +540,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -568,7 +604,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
@@ -664,7 +700,7 @@ describe('FileBrowserApp', () => {
       });
 
       await waitFor(() => {
-        const listCall = mockWebSocketClient.sendMessage.mock.calls.find(
+        const listCall = mockWebSocketClient.send.mock.calls.find(
           (call: any) => call[0]?.data?.action === 'list_directory'
         );
         if (listCall) {
