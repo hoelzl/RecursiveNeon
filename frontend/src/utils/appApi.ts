@@ -6,45 +6,80 @@
 import { WebSocketClient } from '../services/websocket';
 import { Note, Task, TaskList, FileNode, BrowserPage, MediaViewerConfig, TextMessage } from '../types';
 
+interface QueuedRequest {
+  operation: string;
+  payload: any;
+  resolve: (data: any) => void;
+  reject: (error: Error) => void;
+}
+
 export class AppAPI {
-  private requestQueue: Promise<any> = Promise.resolve();
+  private queue: QueuedRequest[] = [];
+  private processing = false;
 
   constructor(private ws: WebSocketClient) {}
 
   private async send(operation: string, payload: any = {}): Promise<any> {
     // Queue requests to prevent race conditions with WebSocket event handlers
-    // Each request waits for the previous one to complete
-    const request = async () => {
-      return new Promise((resolve, reject) => {
-        const handleResponse = (msg: any) => {
-          if (msg.type === 'app_response') {
-            this.ws.off('app_response', handleResponse);
-            this.ws.off('error', handleResponse);
-            resolve(msg.data);
-          } else if (msg.type === 'error') {
-            this.ws.off('app_response', handleResponse);
-            this.ws.off('error', handleResponse);
-            reject(new Error(msg.data.message));
-          }
-        };
+    // Requests are processed sequentially to ensure responses match requests
+    return new Promise((resolve, reject) => {
+      this.queue.push({ operation, payload, resolve, reject });
+      this.processQueue();
+    });
+  }
 
-        this.ws.on('app_response', handleResponse);
-        this.ws.on('error', handleResponse);
+  private async processQueue(): Promise<void> {
+    // If already processing or queue is empty, return
+    if (this.processing || this.queue.length === 0) {
+      return;
+    }
 
-        this.ws.send('app', { operation, payload });
+    this.processing = true;
 
-        // Timeout after 10 seconds
-        setTimeout(() => {
+    while (this.queue.length > 0) {
+      const request = this.queue.shift()!;
+
+      try {
+        const data = await this.executeRequest(request.operation, request.payload);
+        request.resolve(data);
+      } catch (error) {
+        request.reject(error as Error);
+      }
+    }
+
+    this.processing = false;
+  }
+
+  private async executeRequest(operation: string, payload: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+
+      const handleResponse = (msg: any) => {
+        if (msg.type === 'app_response') {
+          clearTimeout(timeoutId);
           this.ws.off('app_response', handleResponse);
           this.ws.off('error', handleResponse);
-          reject(new Error('Request timeout'));
-        }, 10000);
-      });
-    };
+          resolve(msg.data);
+        } else if (msg.type === 'error') {
+          clearTimeout(timeoutId);
+          this.ws.off('app_response', handleResponse);
+          this.ws.off('error', handleResponse);
+          reject(new Error(msg.data.message));
+        }
+      };
 
-    // Chain this request after the previous one
-    this.requestQueue = this.requestQueue.then(request, request);
-    return this.requestQueue;
+      this.ws.on('app_response', handleResponse);
+      this.ws.on('error', handleResponse);
+
+      this.ws.send('app', { operation, payload });
+
+      // Timeout after 10 seconds
+      timeoutId = setTimeout(() => {
+        this.ws.off('app_response', handleResponse);
+        this.ws.off('error', handleResponse);
+        reject(new Error('Request timeout'));
+      }, 10000);
+    });
   }
 
   // Notes API
