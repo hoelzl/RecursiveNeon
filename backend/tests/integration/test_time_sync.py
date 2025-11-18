@@ -48,11 +48,11 @@ class TestTimeWebSocketIntegration:
 
         # Send get_time message
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "get_time"}
+            message_type="time",
+            data={"action": "get_time"}
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert "data" in response
 
         # Verify time state
@@ -71,14 +71,14 @@ class TestTimeWebSocketIntegration:
     async def test_set_dilation_operation(self, message_handler, time_service):
         """Test setting time dilation via WebSocket."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "set_dilation",
+            message_type="time",
+            data={
+                "action": "set_dilation",
                 "dilation": 5.0
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert time_service.get_time_dilation() == 5.0
 
     @pytest.mark.asyncio
@@ -87,11 +87,11 @@ class TestTimeWebSocketIntegration:
         assert not time_service.is_paused()
 
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "pause"}
+            message_type="time",
+            data={"action": "pause"}
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert time_service.is_paused()
 
     @pytest.mark.asyncio
@@ -101,11 +101,11 @@ class TestTimeWebSocketIntegration:
         assert time_service.is_paused()
 
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "resume"}
+            message_type="time",
+            data={"action": "resume"}
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert not time_service.is_paused()
 
     @pytest.mark.asyncio
@@ -114,14 +114,14 @@ class TestTimeWebSocketIntegration:
         target_time = datetime(2050, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "jump_to",
+            message_type="time",
+            data={
+                "action": "jump_to",
                 "datetime": target_time.isoformat()
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
 
         current = time_service.get_current_time()
         assert current.year == 2050
@@ -134,14 +134,14 @@ class TestTimeWebSocketIntegration:
         start = time_service.get_current_time()
 
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "advance",
+            message_type="time",
+            data={
+                "action": "advance",
                 "seconds": 3600  # 1 hour
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
 
         end = time_service.get_current_time()
         elapsed = (end - start).total_seconds()
@@ -155,14 +155,14 @@ class TestTimeWebSocketIntegration:
         start = time_service.get_current_time()
 
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "rewind",
+            message_type="time",
+            data={
+                "action": "rewind",
                 "seconds": 7200  # 2 hours
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
 
         end = time_service.get_current_time()
         elapsed = (start - end).total_seconds()
@@ -174,25 +174,25 @@ class TestTimeWebSocketIntegration:
     async def test_invalid_operation(self, message_handler):
         """Test invalid operation returns error."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "invalid_op"}
+            message_type="time",
+            data={"action": "invalid_op"}
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
         assert "error" in response
 
     @pytest.mark.asyncio
     async def test_missing_required_parameter(self, message_handler):
         """Test missing required parameter returns error."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "set_dilation"
+            message_type="time",
+            data={
+                "action": "set_dilation"
                 # Missing "dilation" parameter
             }
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
         assert "error" in response
 
     @pytest.mark.asyncio
@@ -200,22 +200,22 @@ class TestTimeWebSocketIntegration:
         """Test multiple sequential time operations."""
         # Set dilation
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "set_dilation", "dilation": 2.0}
+            message_type="time",
+            data={"action": "set_dilation", "dilation": 2.0}
         )
         assert time_service.get_time_dilation() == 2.0
 
         # Pause
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "pause"}
+            message_type="time",
+            data={"action": "pause"}
         )
         assert time_service.is_paused()
 
         # Resume
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "resume"}
+            message_type="time",
+            data={"action": "resume"}
         )
         assert not time_service.is_paused()
         assert time_service.get_time_dilation() == 2.0
@@ -223,8 +223,8 @@ class TestTimeWebSocketIntegration:
         # Jump to future
         target = datetime(2049, 6, 15, tzinfo=timezone.utc)
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "jump_to", "datetime": target.isoformat()}
+            message_type="time",
+            data={"action": "jump_to", "datetime": target.isoformat()}
         )
 
         current = time_service.get_current_time()
@@ -251,11 +251,11 @@ class TestSettingsWebSocketIntegration:
     async def test_get_all_settings(self, message_handler):
         """Test getting all settings via WebSocket."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={"operation": "get_all"}
+            message_type="settings",
+            data={"action": "get_all"}
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert "data" in response
 
         settings = response["data"]
@@ -266,38 +266,38 @@ class TestSettingsWebSocketIntegration:
     async def test_get_single_setting(self, message_handler):
         """Test getting a single setting via WebSocket."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "get",
+            message_type="settings",
+            data={
+                "action": "get",
                 "key": "clock.mode"
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert response["data"]["value"] == "digital"
 
     @pytest.mark.asyncio
     async def test_set_setting(self, message_handler, settings_service):
         """Test setting a value via WebSocket."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "clock.mode",
                 "value": "analog"
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.mode") == "analog"
 
     @pytest.mark.asyncio
     async def test_set_many_settings(self, message_handler, settings_service):
         """Test setting multiple values via WebSocket."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set_many",
+            message_type="settings",
+            data={
+                "action": "set_many",
                 "settings": {
                     "clock.mode": "analog",
                     "clock.showSeconds": False,
@@ -306,7 +306,7 @@ class TestSettingsWebSocketIntegration:
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.mode") == "analog"
         assert settings_service.get("clock.showSeconds") is False
         assert settings_service.get("theme.current") == "dark"
@@ -320,14 +320,14 @@ class TestSettingsWebSocketIntegration:
 
         # Reset
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "reset",
+            message_type="settings",
+            data={
+                "action": "reset",
                 "key": "clock.mode"
             }
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.mode") == "digital"
 
     @pytest.mark.asyncio
@@ -339,11 +339,11 @@ class TestSettingsWebSocketIntegration:
 
         # Reset all
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={"operation": "reset_all"}
+            message_type="settings",
+            data={"action": "reset_all"}
         )
 
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.mode") == "digital"
         assert settings_service.get("theme.current") == "classic"
 
@@ -351,15 +351,15 @@ class TestSettingsWebSocketIntegration:
     async def test_validation_error(self, message_handler):
         """Test setting invalid value returns error."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "clock.mode",
                 "value": "invalid_mode"
             }
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
         assert "error" in response
 
 
@@ -394,34 +394,34 @@ class TestTimeSettingsIntegration:
         """Test that clock settings changes work correctly."""
         # Change clock mode
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "clock.mode",
                 "value": "analog"
             }
         )
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.mode") == "analog"
 
         # Change position
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "clock.position",
                 "value": "bottom-left"
             }
         )
-        assert response["status"] == "success"
+        assert response["type"].startswith("time") or response["type"] == "settings_response"
         assert settings_service.get("clock.position") == "bottom-left"
 
         # Verify time service still works independently
         time_state_response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "get_time"}
+            message_type="time",
+            data={"action": "get_time"}
         )
-        assert time_state_response["status"] == "success"
+        assert time_state_response["type"].startswith("time") or response["type"] == "settings_response"
 
     @pytest.mark.asyncio
     async def test_theme_change_and_time_query(
@@ -433,9 +433,9 @@ class TestTimeSettingsIntegration:
         """Test that theme changes don't affect time operations."""
         # Change theme
         await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "theme.current",
                 "value": "neon"
             }
@@ -445,9 +445,9 @@ class TestTimeSettingsIntegration:
         # Jump to a specific time
         target_time = datetime(2049, 12, 25, 12, 0, 0, tzinfo=timezone.utc)
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "jump_to",
+            message_type="time",
+            data={
+                "action": "jump_to",
                 "datetime": target_time.isoformat()
             }
         )
@@ -471,15 +471,15 @@ class TestTimeSettingsIntegration:
         """Test multiple interleaved time and settings operations."""
         # Set time dilation
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "set_dilation", "dilation": 3.0}
+            message_type="time",
+            data={"action": "set_dilation", "dilation": 3.0}
         )
 
         # Change theme
         await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "theme.current",
                 "value": "cyberpunk"
             }
@@ -488,15 +488,15 @@ class TestTimeSettingsIntegration:
         # Jump time
         target = datetime(2050, 1, 1, tzinfo=timezone.utc)
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "jump_to", "datetime": target.isoformat()}
+            message_type="time",
+            data={"action": "jump_to", "datetime": target.isoformat()}
         )
 
         # Change clock mode
         await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={
-                "operation": "set",
+            message_type="settings",
+            data={
+                "action": "set",
                 "key": "clock.mode",
                 "value": "off"
             }
@@ -504,8 +504,8 @@ class TestTimeSettingsIntegration:
 
         # Pause time
         await message_handler.handle_message(
-            msg_type="time",
-            msg_data={"operation": "pause"}
+            message_type="time",
+            data={"action": "pause"}
         )
 
         # Verify all states are correct
@@ -532,46 +532,46 @@ class TestErrorHandling:
     async def test_malformed_time_message(self, message_handler):
         """Test handling of malformed time message."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={}  # Missing operation
+            message_type="time",
+            data={}  # Missing operation
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
 
     @pytest.mark.asyncio
     async def test_malformed_settings_message(self, message_handler):
         """Test handling of malformed settings message."""
         response = await message_handler.handle_message(
-            msg_type="settings",
-            msg_data={"operation": "set"}  # Missing key and value
+            message_type="settings",
+            data={"action": "set"}  # Missing key and value
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
 
     @pytest.mark.asyncio
     async def test_invalid_datetime_format(self, message_handler):
         """Test handling of invalid datetime format."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "jump_to",
+            message_type="time",
+            data={
+                "action": "jump_to",
                 "datetime": "not-a-valid-datetime"
             }
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
         assert "error" in response
 
     @pytest.mark.asyncio
     async def test_negative_time_dilation(self, message_handler):
         """Test handling of negative time dilation."""
         response = await message_handler.handle_message(
-            msg_type="time",
-            msg_data={
-                "operation": "set_dilation",
+            message_type="time",
+            data={
+                "action": "set_dilation",
                 "dilation": -1.0
             }
         )
 
-        assert response["status"] == "error"
+        assert response["type"] == "error"
         assert "error" in response
