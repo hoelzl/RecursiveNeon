@@ -7,14 +7,6 @@ import { GameStoreContext } from '../../../contexts/GameStoreContext';
 import { useGameStore } from '../../../stores/gameStore';
 import type { FileNode } from '../../../types';
 
-// Mock WebSocket client
-const mockWebSocketClient = {
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  sendMessage: vi.fn(),
-  readyState: 1,
-} as any;
-
 // Mock game store
 const mockOpenWindow = vi.fn();
 const mockGameStore = {
@@ -59,6 +51,61 @@ const mockFiles: FileNode[] = [
   },
 ];
 
+// Mock WebSocket client with event handling
+const eventHandlers = new Map<string, Set<Function>>();
+
+const mockWebSocketClient = {
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  sendMessage: vi.fn(),
+  readyState: 1,
+  on: vi.fn((event: string, handler: Function) => {
+    if (!eventHandlers.has(event)) {
+      eventHandlers.set(event, new Set());
+    }
+    eventHandlers.get(event)!.add(handler);
+  }),
+  off: vi.fn((event: string, handler: Function) => {
+    eventHandlers.get(event)?.delete(handler);
+  }),
+  send: vi.fn((type: string, data: any) => {
+    // Simulate async response
+    queueMicrotask(() => {
+      const handlers = eventHandlers.get('app_response');
+      if (handlers) {
+        handlers.forEach(handler => {
+          handler({
+            type: 'app_response',
+            data: getMockResponse(data.operation, data.payload),
+          });
+        });
+      }
+    });
+  }),
+} as any;
+
+function getMockResponse(operation: string, payload: any): any {
+  if (operation === 'init_filesystem') {
+    return { root: mockRootNode };
+  } else if (operation === 'list_directory') {
+    return { nodes: mockFiles };
+  } else if (operation === 'create_directory' || operation === 'create_file') {
+    return {
+      node: {
+        id: `new-${Date.now()}`,
+        name: payload.name || 'New Item',
+        type: operation === 'create_directory' ? 'directory' : 'file',
+        parent_id: payload.parent_id || 'root-id',
+        mime_type: payload.mime_type || null,
+        content: payload.content || null,
+      },
+    };
+  } else if (operation === 'copy_file' || operation === 'move_file' || operation === 'update_file' || operation === 'delete_file') {
+    return { success: true };
+  }
+  return {};
+}
+
 // Helper to render with contexts
 const renderFileBrowserApp = () => {
   return render(
@@ -84,6 +131,7 @@ const simulateApiResponse = (data: any) => {
 describe('FileBrowserApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    eventHandlers.clear();
   });
 
   afterEach(() => {

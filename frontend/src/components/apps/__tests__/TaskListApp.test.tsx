@@ -5,14 +5,6 @@ import { TaskListApp } from '../TaskListApp';
 import { WebSocketProvider } from '../../../contexts/WebSocketContext';
 import type { TaskList, Task } from '../../../types';
 
-// Mock WebSocket client
-const mockWebSocketClient = {
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  sendMessage: vi.fn(),
-  readyState: 1,
-} as any;
-
 // Mock task lists
 const mockTaskLists: TaskList[] = [
   {
@@ -35,6 +27,67 @@ const mockTaskLists: TaskList[] = [
     updatedAt: '2024-01-02',
   },
 ];
+
+// Mock WebSocket client with event handling
+const eventHandlers = new Map<string, Set<Function>>();
+
+const mockWebSocketClient = {
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  sendMessage: vi.fn(),
+  readyState: 1,
+  on: vi.fn((event: string, handler: Function) => {
+    if (!eventHandlers.has(event)) {
+      eventHandlers.set(event, new Set());
+    }
+    eventHandlers.get(event)!.add(handler);
+  }),
+  off: vi.fn((event: string, handler: Function) => {
+    eventHandlers.get(event)?.delete(handler);
+  }),
+  send: vi.fn((type: string, data: any) => {
+    // Simulate async response
+    queueMicrotask(() => {
+      const handlers = eventHandlers.get('app_response');
+      if (handlers) {
+        handlers.forEach(handler => {
+          handler({
+            type: 'app_response',
+            data: getMockResponse(data.operation, data.payload),
+          });
+        });
+      }
+    });
+  }),
+} as any;
+
+function getMockResponse(operation: string, payload: any): any {
+  if (operation === 'get_task_lists') {
+    return { task_lists: mockTaskLists };
+  } else if (operation === 'create_task_list') {
+    return {
+      task_list: {
+        id: 'list-3',
+        name: payload.name || 'New List',
+        tasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } else if (operation === 'create_task') {
+    return {
+      task: {
+        id: `task-${Date.now()}`,
+        title: payload.title || 'New Task',
+        completed: payload.completed || false,
+        parent_id: null,
+      },
+    };
+  } else if (operation === 'update_task' || operation === 'delete_task' || operation === 'update_task_list' || operation === 'delete_task_list') {
+    return { success: true };
+  }
+  return {};
+}
 
 // Helper to render with WebSocket context
 const renderTaskListApp = () => {
@@ -59,6 +112,7 @@ const simulateApiResponse = (data: any) => {
 describe('TaskListApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    eventHandlers.clear();
   });
 
   afterEach(() => {
