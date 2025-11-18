@@ -3,13 +3,24 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TerminalApp } from '../TerminalApp';
 import { WebSocketProvider } from '../../../contexts/WebSocketContext';
-import { TerminalSession } from '../../../terminal/core/TerminalSession';
+import type { TerminalSession } from '../../../terminal/core/TerminalSession';
+import type { CommandRegistry } from '../../../terminal/core/CommandRegistry';
+import type { CompletionEngine } from '../../../terminal/core/CompletionEngine';
+import type { ArgumentParser } from '../../../terminal/core/ArgumentParser';
 
 // Mock terminal modules
-vi.mock('../../../terminal/core/TerminalSession');
-vi.mock('../../../terminal/core/CommandRegistry');
-vi.mock('../../../terminal/core/CompletionEngine');
-vi.mock('../../../terminal/core/ArgumentParser');
+vi.mock('../../../terminal/core/TerminalSession', () => ({
+  TerminalSession: vi.fn(),
+}));
+vi.mock('../../../terminal/core/CommandRegistry', () => ({
+  CommandRegistry: vi.fn(),
+}));
+vi.mock('../../../terminal/core/CompletionEngine', () => ({
+  CompletionEngine: vi.fn(),
+}));
+vi.mock('../../../terminal/core/ArgumentParser', () => ({
+  ArgumentParser: vi.fn(),
+}));
 
 // Mock WebSocket client
 const mockWebSocketClient = {
@@ -83,14 +94,16 @@ describe('TerminalApp', () => {
       })),
     };
 
-    // Setup mocks
-    (TerminalSession as any).mockImplementation(() => mockSession);
-    const CommandRegistry = require('../../../terminal/core/CommandRegistry').CommandRegistry;
-    CommandRegistry.mockImplementation(() => mockRegistry);
-    const CompletionEngine = require('../../../terminal/core/CompletionEngine').CompletionEngine;
-    CompletionEngine.mockImplementation(() => mockCompletionEngine);
-    const ArgumentParser = require('../../../terminal/core/ArgumentParser').ArgumentParser;
-    ArgumentParser.mockImplementation(() => mockArgParser);
+    // Setup mocks using vi.mocked
+    const { TerminalSession: MockTerminalSession } = await import('../../../terminal/core/TerminalSession');
+    const { CommandRegistry: MockCommandRegistry } = await import('../../../terminal/core/CommandRegistry');
+    const { CompletionEngine: MockCompletionEngine } = await import('../../../terminal/core/CompletionEngine');
+    const { ArgumentParser: MockArgumentParser } = await import('../../../terminal/core/ArgumentParser');
+
+    vi.mocked(MockTerminalSession).mockImplementation(() => mockSession as any);
+    vi.mocked(MockCommandRegistry).mockImplementation(() => mockRegistry as any);
+    vi.mocked(MockCompletionEngine).mockImplementation(() => mockCompletionEngine as any);
+    vi.mocked(MockArgumentParser).mockImplementation(() => mockArgParser as any);
 
     vi.clearAllMocks();
   });

@@ -5,13 +5,57 @@ import { NotesApp } from '../NotesApp';
 import { WebSocketProvider } from '../../../contexts/WebSocketContext';
 import type { Note } from '../../../types';
 
-// Mock WebSocket client
+// Mock WebSocket client with event handling
+const eventHandlers = new Map<string, Set<Function>>();
+
 const mockWebSocketClient = {
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
   sendMessage: vi.fn(),
   readyState: 1,
+  on: vi.fn((event: string, handler: Function) => {
+    if (!eventHandlers.has(event)) {
+      eventHandlers.set(event, new Set());
+    }
+    eventHandlers.get(event)!.add(handler);
+  }),
+  off: vi.fn((event: string, handler: Function) => {
+    eventHandlers.get(event)?.delete(handler);
+  }),
+  send: vi.fn((type: string, data: any) => {
+    // Simulate async response using queueMicrotask to ensure handlers are registered
+    queueMicrotask(() => {
+      const handlers = eventHandlers.get('app_response');
+      if (handlers) {
+        handlers.forEach(handler => {
+          handler({
+            type: 'app_response',
+            data: getMockResponse(data.operation, data.payload),
+          });
+        });
+      }
+    });
+  }),
 } as any;
+
+function getMockResponse(operation: string, payload: any): any {
+  if (operation === 'get_notes') {
+    return { notes: mockNotes };
+  } else if (operation === 'create_note') {
+    return {
+      note: {
+        id: '3',
+        title: payload.title || 'New Note',
+        content: payload.content || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } else if (operation === 'update_note') {
+    return { success: true };
+  }
+  return {};
+}
 
 // Mock AppAPI responses
 const mockNotes: Note[] = [
@@ -42,6 +86,7 @@ const simulateApiResponse = (data: any) => {
 describe('NotesApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    eventHandlers.clear();
   });
 
   afterEach(() => {
