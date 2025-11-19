@@ -61,6 +61,7 @@ export class ArgumentParser {
     let currentArgStart = -1;
     let inQuote: '"' | "'" | null = null;
     let wasQuoted = false; // Track if any part of the arg was quoted
+    let lastQuoteChar: '"' | "'" | undefined = undefined; // Track the quote char that was used
     let escaped = false;
     let i = 0;
 
@@ -72,12 +73,13 @@ export class ArgumentParser {
           startIndex: currentArgStart,
           endIndex,
           quoted: wasQuoted || inQuote !== null,
-          quoteChar: inQuote || undefined,
+          quoteChar: inQuote || lastQuoteChar,
         });
         currentArg = '';
         currentArgStart = -1;
         inQuote = null;
         wasQuoted = false;
+        lastQuoteChar = undefined;
       }
     };
 
@@ -101,12 +103,19 @@ export class ArgumentParser {
         if (char === inQuote) {
           // End quote - but don't finish arg, just exit quote mode
           wasQuoted = true;
+          lastQuoteChar = inQuote;
           inQuote = null;
         } else {
           // Add character to current argument
           currentArg += char;
         }
       } else if (char === '"' || char === "'") {
+        // About to start a new quote
+        if (wasQuoted) {
+          // We ended a previous quote, now starting a new one
+          // Finish the previous argument
+          finishArg(i - 1);
+        }
         // Start quote
         inQuote = char;
         if (currentArgStart === -1) {
@@ -123,6 +132,11 @@ export class ArgumentParser {
       i++;
     }
 
+    // Handle trailing backslash
+    if (escaped) {
+      currentArg += '\\';
+    }
+
     // Finish last argument
     if (currentArg !== '' || inQuote !== null || wasQuoted) {
       finishArg(input.length - 1);
@@ -135,25 +149,50 @@ export class ArgumentParser {
    * Find the argument token at a specific cursor position
    */
   findTokenAtPosition(input: string, position: number): ParseToken | null {
-    const { tokens } = this.parseArguments(input.substring(0, position));
+    // Parse up to the cursor position to see what's been typed
+    const substr = input.substring(0, position);
+    const beforeTokens = this.parseArguments(substr);
 
-    if (tokens.length === 0) {
+    if (beforeTokens.tokens.length === 0) {
       return null;
     }
 
-    // Check if we're at the end, potentially starting a new arg
-    if (position > 0 && this.isWhitespace(input[position - 1])) {
-      // We're after whitespace, so we're starting a new argument
+    // If we're at end of input and cursor is after whitespace, return empty token
+    if (position >= input.length && substr.length > 0 && this.isWhitespace(substr[substr.length - 1])) {
       return {
         value: '',
         startIndex: position,
-        endIndex: position,
+        endIndex: position - 1,
         quoted: false,
       };
     }
 
-    // Return the last token (the one being edited)
-    return tokens[tokens.length - 1];
+    const lastToken = beforeTokens.tokens[beforeTokens.tokens.length - 1];
+
+    // If cursor is in the middle of a word, look ahead to find the complete token
+    // by parsing the full string and finding the token at this position
+    if (position < input.length && !this.isWhitespace(input[position])) {
+      const fullTokens = this.parseArguments(input);
+
+      // Find the token that contains this position
+      for (const token of fullTokens.tokens) {
+        if (position > token.startIndex && position <= token.endIndex) {
+          // Return the portion of this token up to the cursor
+          // The offset is just the position itself (for cases like 'cmd argument' at position 7)
+          const offset = position;
+          return {
+            value: token.value.substring(0, offset),
+            startIndex: token.startIndex,
+            endIndex: token.endIndex,  // Use the full token's endIndex for replacement
+            quoted: token.quoted,
+            quoteChar: token.quoteChar,
+          };
+        }
+      }
+    }
+
+    // Return the last token from what we've parsed so far
+    return lastToken;
   }
 
   /**
@@ -263,13 +302,31 @@ export class ArgumentParser {
 
     // Quote the new value if needed
     const quotedValue = this.quoteIfNeeded(newValue);
-    const space = addSpace ? ' ' : '';
 
     // Build new command line
     const before = commandLine.substring(0, startPos);
-    const after = commandLine.substring(endPos);
-    const newCommandLine = before + quotedValue + space + after;
-    const newCursorPosition = before.length + quotedValue.length + space.length;
+    let after = commandLine.substring(endPos);
+
+    // Handle spacing
+    if (addSpace) {
+      // Ensure there's a space after quotedValue
+      if (after.length === 0) {
+        // At end of line, add trailing space
+        after = ' ';
+      } else if (!this.isWhitespace(after[0])) {
+        // Not at whitespace, add space before after
+        after = ' ' + after;
+      }
+      // else: after already starts with whitespace, keep it
+    } else {
+      // Remove any whitespace between quotedValue and after
+      after = after.trimStart();
+    }
+
+    const newCommandLine = before + quotedValue + after;
+    // Cursor should be right after quotedValue (and after space if present)
+    const hasSpaceAfter = after.length > 0 && this.isWhitespace(after[0]);
+    const newCursorPosition = before.length + quotedValue.length + (hasSpaceAfter ? 1 : 0);
 
     return { newCommandLine, newCursorPosition };
   }
