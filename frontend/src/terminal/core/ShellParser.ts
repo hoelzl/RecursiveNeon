@@ -24,6 +24,7 @@ export class ShellParser {
     let currentArg = '';
     let inQuote: '"' | "'" | null = null;
     let escaped = false;
+    let hasQuotedContent = false;
 
     for (let i = 0; i < commandLine.length; i++) {
       const char = commandLine[i];
@@ -54,11 +55,13 @@ export class ShellParser {
         if (char === '"' || char === "'") {
           // Opening quote
           inQuote = char;
+          hasQuotedContent = true;
         } else if (char === ' ' || char === '\t') {
           // Whitespace - end current argument
-          if (currentArg.length > 0) {
+          if (currentArg.length > 0 || hasQuotedContent) {
             args.push(currentArg);
             currentArg = '';
+            hasQuotedContent = false;
           }
         } else {
           currentArg += char;
@@ -67,7 +70,7 @@ export class ShellParser {
     }
 
     // Add final argument (even if empty, to handle trailing space)
-    if (currentArg.length > 0 || (commandLine.length > 0 && /\s$/.test(commandLine))) {
+    if (currentArg.length > 0 || hasQuotedContent || (commandLine.length > 0 && /\s$/.test(commandLine))) {
       args.push(currentArg);
     }
 
@@ -103,6 +106,7 @@ export class ShellParser {
 
       if (inQuote) {
         if (char === inQuote) {
+          // Closing quote - this argument is complete, not partial
           inQuote = null;
         } else {
           currentArg += char;
@@ -117,7 +121,7 @@ export class ShellParser {
           }
           argStartIndex = i + 1; // Next argument starts after space
         } else {
-          if (currentArg.length === 0) {
+          if (currentArg.length === 0 && argStartIndex < i) {
             argStartIndex = i;
           }
           currentArg += char;

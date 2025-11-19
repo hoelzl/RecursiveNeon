@@ -26,6 +26,13 @@ const mockTaskLists: TaskList[] = [
     createdAt: '2024-01-02',
     updatedAt: '2024-01-02',
   },
+  {
+    id: 'list-3',
+    name: 'Empty List',
+    tasks: [],
+    createdAt: '2024-01-03',
+    updatedAt: '2024-01-03',
+  },
 ];
 
 // Mock WebSocket client implementing IWebSocketClient interface
@@ -67,7 +74,7 @@ function getMockResponse(operation: string, payload: any): any {
   } else if (operation === 'tasks.list.create') {
     return {
       list: {
-        id: 'list-3',
+        id: `list-${Date.now()}`,  // Use unique ID to avoid collision with list-3
         name: payload.name || 'New List',
         tasks: [],
         createdAt: new Date().toISOString(),
@@ -162,8 +169,11 @@ describe('TaskListApp', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/Work Tasks/)).toBeInTheDocument();
-        expect(screen.getByText(/Personal/)).toBeInTheDocument();
+        // Use heading role to target the main title, avoiding duplicates in sidebar
+        expect(screen.getByRole('heading', { name: /Work Tasks/ })).toBeInTheDocument();
+        // Check sidebar shows both lists (they include task counts)
+        expect(screen.getByText(/Work Tasks \(/)).toBeInTheDocument();
+        expect(screen.getByText(/Personal \(/)).toBeInTheDocument();
       });
     });
 
@@ -235,10 +245,10 @@ describe('TaskListApp', () => {
 
 
       await waitFor(() => {
-        expect(screen.getByText(/Work Tasks/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Work Tasks/ })).toBeInTheDocument();
       });
 
-      // Click new list button
+      // Click new list button in sidebar
       const newButtons = screen.getAllByText('+');
       await user.click(newButtons[0]);
 
@@ -254,7 +264,7 @@ describe('TaskListApp', () => {
 
 
       await waitFor(() => {
-        expect(screen.getByText(/Work Tasks/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Work Tasks/ })).toBeInTheDocument();
       });
 
       // Click new list button
@@ -283,10 +293,12 @@ describe('TaskListApp', () => {
         expect(createCall).toBeTruthy();
       });
 
-      // Simulate successful creation
-
+      // New list should appear in the sidebar and be selected
       await waitFor(() => {
-        expect(screen.getByText(/Shopping List/)).toBeInTheDocument();
+        // Check heading shows the new list (selected by default)
+        expect(screen.getByRole('heading', { name: /Shopping List/ })).toBeInTheDocument();
+        // Check sidebar shows the new list
+        expect(screen.getByText(/Shopping List \(/)).toBeInTheDocument();
       });
     });
   });
@@ -373,21 +385,22 @@ describe('TaskListApp', () => {
         expect(screen.getByText('Complete report')).toBeInTheDocument();
       });
 
-      // Find checkbox for incomplete task
+      // Find checkbox for incomplete task "Complete report"
       const checkboxes = screen.getAllByRole('checkbox');
       const incompleteCheckbox = checkboxes.find((cb) => !(cb as HTMLInputElement).checked);
 
-      if (incompleteCheckbox) {
-        await user.click(incompleteCheckbox);
+      // Assert we found the checkbox
+      expect(incompleteCheckbox).toBeDefined();
 
-        // Should call update_task API
-        await waitFor(() => {
-          const updateCall = mockWebSocketClient.send.mock.calls.find(
-            (call: any) => call[0]?.data?.action === 'update_task'
-          );
-          expect(updateCall).toBeTruthy();
-        });
-      }
+      await user.click(incompleteCheckbox!);
+
+      // Should call tasks.update API
+      await waitFor(() => {
+        const updateCall = mockWebSocketClient.send.mock.calls.find(
+          (call: any) => call[0] === 'app' && call[1]?.operation === 'tasks.update'
+        );
+        expect(updateCall).toBeTruthy();
+      });
     });
 
     it('should delete task when clicking delete button', async () => {
@@ -425,9 +438,19 @@ describe('TaskListApp', () => {
     });
 
     it('should show empty state when no tasks', async () => {
+      const user = userEvent.setup();
       renderTaskListApp();
 
+      // Wait for lists to load
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Work Tasks/ })).toBeInTheDocument();
+      });
 
+      // Click on the empty list
+      const emptyListItem = screen.getByText(/Empty List \(/);
+      await user.click(emptyListItem);
+
+      // Should show empty state
       await waitFor(() => {
         expect(screen.getByText('No tasks yet')).toBeInTheDocument();
       });

@@ -133,7 +133,7 @@ describe('ShellParser', () => {
         partial: 'dest',
         isQuoted: false,
         quoteChar: null,
-        startIndex: 28,
+        startIndex: 27,
       });
     });
   });

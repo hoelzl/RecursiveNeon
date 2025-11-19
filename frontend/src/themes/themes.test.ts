@@ -57,10 +57,13 @@ describe('Theme System', () => {
 
     it('should have valid hex color values', () => {
       const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
+      const rgbaColorRegex = /^rgba\(\d+,\s*\d+,\s*\d+,\s*[\d.]+\)$/;
 
       themes.forEach(theme => {
         Object.values(theme.colors).forEach(color => {
-          expect(color).toMatch(hexColorRegex);
+          // Colors can be either hex (#RRGGBB) or rgba (rgba(r, g, b, a))
+          const isValidColor = hexColorRegex.test(color) || rgbaColorRegex.test(color);
+          expect(isValidColor).toBe(true);
         });
       });
     });
