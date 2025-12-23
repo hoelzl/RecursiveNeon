@@ -1,15 +1,11 @@
 """
 Desktop App Service
 
-Manages state for desktop applications (notes, tasks, filesystem, browser).
+Manages state for desktop applications using composition of smaller services.
+This is the main facade that delegates to specialized domain services.
 """
-import uuid
-import json
-import os
-import base64
-from datetime import datetime
 from typing import List, Dict, Any, Optional
-from pathlib import Path
+
 from recursive_neon.models.game_state import GameState
 from recursive_neon.models.app_models import (
     Note,
@@ -17,813 +13,234 @@ from recursive_neon.models.app_models import (
     TaskList,
     FileNode,
     BrowserPage,
-    FileSystemState,
     MediaViewerConfig,
     TextMessage,
 )
 from recursive_neon.services.interfaces import IAppService
+from recursive_neon.services.notes_service import NotesService
+from recursive_neon.services.task_service import TaskService
+from recursive_neon.services.filesystem_service import FileSystemService
+from recursive_neon.services.browser_service import BrowserService
+from recursive_neon.services.media_viewer_service import MediaViewerService
 
 
 class AppService(IAppService):
     """
-    Service for managing desktop app data.
+    Facade service for managing desktop app data.
 
-    This service provides CRUD operations for:
-    - Notes (note-taking app)
-    - Tasks and TaskLists (task management app)
-    - FileSystem (file browser, text editor, image viewer)
-    - Browser pages and bookmarks (web browser app)
-    - Media Viewer (hypnotic spiral display with text overlays)
+    This service delegates to specialized domain services:
+    - NotesService: Note-taking app
+    - TaskService: Task management app
+    - FileSystemService: File browser, text editor, image viewer
+    - BrowserService: Web browser pages and bookmarks
+    - MediaViewerService: Hypnotic spiral display with text overlays
+
+    This composition pattern improves:
+    - Single Responsibility: Each service handles one domain
+    - Testability: Services can be tested in isolation
+    - Maintainability: Changes are localized to specific services
     """
 
     def __init__(self, game_state: GameState):
         """
-        Initialize the app service.
+        Initialize the app service with composed domain services.
 
         Args:
             game_state: The game state instance to manage
         """
         self.game_state = game_state
 
+        # Compose domain services
+        self._notes = NotesService(game_state.notes)
+        self._tasks = TaskService(game_state.tasks)
+        self._filesystem = FileSystemService(game_state.filesystem)
+        self._browser = BrowserService(game_state.browser)
+        self._media_viewer = MediaViewerService(game_state.media_viewer)
+
     # ============================================================================
-    # Notes Service
+    # Notes Service (delegated)
     # ============================================================================
 
     def get_notes(self) -> List[Note]:
-        """Get all notes"""
-        return self.game_state.notes.notes
+        """Get all notes."""
+        return self._notes.get_all()
 
     def get_note(self, note_id: str) -> Note:
-        """Get a specific note by ID"""
-        for note in self.game_state.notes.notes:
-            if note.id == note_id:
-                return note
-        raise ValueError(f"Note not found: {note_id}")
+        """Get a specific note by ID."""
+        return self._notes.get(note_id)
 
     def create_note(self, data: Dict[str, Any]) -> Note:
-        """Create a new note"""
-        timestamp = datetime.now().isoformat()
-        note = Note(
-            id=str(uuid.uuid4()),
-            title=data.get("title", "Untitled"),
-            content=data.get("content", ""),
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        self.game_state.notes.notes.append(note)
-        return note
+        """Create a new note."""
+        return self._notes.create(data)
 
     def update_note(self, note_id: str, data: Dict[str, Any]) -> Note:
-        """Update an existing note"""
-        note = self.get_note(note_id)
-        timestamp = datetime.now().isoformat()
-
-        # Update note in the list
-        for i, n in enumerate(self.game_state.notes.notes):
-            if n.id == note_id:
-                updated = Note(
-                    id=note.id,
-                    title=data.get("title", note.title),
-                    content=data.get("content", note.content),
-                    created_at=note.created_at,
-                    updated_at=timestamp,
-                )
-                self.game_state.notes.notes[i] = updated
-                return updated
-        raise ValueError(f"Note not found: {note_id}")
+        """Update an existing note."""
+        return self._notes.update(note_id, data)
 
     def delete_note(self, note_id: str) -> None:
-        """Delete a note"""
-        self.game_state.notes.notes = [
-            note for note in self.game_state.notes.notes if note.id != note_id
-        ]
+        """Delete a note."""
+        self._notes.delete(note_id)
 
     # ============================================================================
-    # Tasks Service
+    # Tasks Service (delegated)
     # ============================================================================
 
     def get_task_lists(self) -> List[TaskList]:
-        """Get all task lists"""
-        return self.game_state.tasks.lists
+        """Get all task lists."""
+        return self._tasks.get_lists()
 
     def get_task_list(self, list_id: str) -> TaskList:
-        """Get a specific task list by ID"""
-        for task_list in self.game_state.tasks.lists:
-            if task_list.id == list_id:
-                return task_list
-        raise ValueError(f"Task list not found: {list_id}")
+        """Get a specific task list by ID."""
+        return self._tasks.get_list(list_id)
 
     def create_task_list(self, data: Dict[str, Any]) -> TaskList:
-        """Create a new task list"""
-        task_list = TaskList(
-            id=str(uuid.uuid4()),
-            name=data.get("name", "Untitled List"),
-            tasks=[],
-        )
-        self.game_state.tasks.lists.append(task_list)
-        return task_list
+        """Create a new task list."""
+        return self._tasks.create_list(data)
 
     def update_task_list(self, list_id: str, data: Dict[str, Any]) -> TaskList:
-        """Update a task list"""
-        task_list = self.get_task_list(list_id)
-        for i, tl in enumerate(self.game_state.tasks.lists):
-            if tl.id == list_id:
-                updated = TaskList(
-                    id=task_list.id,
-                    name=data.get("name", task_list.name),
-                    tasks=task_list.tasks,
-                )
-                self.game_state.tasks.lists[i] = updated
-                return updated
-        raise ValueError(f"Task list not found: {list_id}")
+        """Update a task list."""
+        return self._tasks.update_list(list_id, data)
 
     def delete_task_list(self, list_id: str) -> None:
-        """Delete a task list"""
-        self.game_state.tasks.lists = [
-            tl for tl in self.game_state.tasks.lists if tl.id != list_id
-        ]
+        """Delete a task list."""
+        self._tasks.delete_list(list_id)
 
     def create_task(self, list_id: str, data: Dict[str, Any]) -> Task:
-        """Create a new task in a list"""
-        task_list = self.get_task_list(list_id)
-        task = Task(
-            id=str(uuid.uuid4()),
-            title=data.get("title", "Untitled Task"),
-            completed=data.get("completed", False),
-            parent_id=data.get("parent_id"),
-        )
-
-        # Update the task list with the new task
-        for i, tl in enumerate(self.game_state.tasks.lists):
-            if tl.id == list_id:
-                updated_tasks = list(tl.tasks)
-                updated_tasks.append(task)
-                self.game_state.tasks.lists[i] = TaskList(
-                    id=tl.id,
-                    name=tl.name,
-                    tasks=updated_tasks,
-                )
-                break
-
-        return task
+        """Create a new task in a list."""
+        return self._tasks.create_task(list_id, data)
 
     def update_task(self, list_id: str, task_id: str, data: Dict[str, Any]) -> Task:
-        """Update a task"""
-        task_list = self.get_task_list(list_id)
-
-        # Find and update the task
-        for i, tl in enumerate(self.game_state.tasks.lists):
-            if tl.id == list_id:
-                updated_tasks = []
-                updated_task = None
-                for task in tl.tasks:
-                    if task.id == task_id:
-                        updated_task = Task(
-                            id=task.id,
-                            title=data.get("title", task.title),
-                            completed=data.get("completed", task.completed),
-                            parent_id=data.get("parent_id", task.parent_id),
-                        )
-                        updated_tasks.append(updated_task)
-                    else:
-                        updated_tasks.append(task)
-
-                if updated_task:
-                    self.game_state.tasks.lists[i] = TaskList(
-                        id=tl.id,
-                        name=tl.name,
-                        tasks=updated_tasks,
-                    )
-                    return updated_task
-
-        raise ValueError(f"Task not found: {task_id}")
+        """Update a task."""
+        return self._tasks.update_task(list_id, task_id, data)
 
     def delete_task(self, list_id: str, task_id: str) -> None:
-        """Delete a task"""
-        task_list = self.get_task_list(list_id)
-
-        for i, tl in enumerate(self.game_state.tasks.lists):
-            if tl.id == list_id:
-                self.game_state.tasks.lists[i] = TaskList(
-                    id=tl.id,
-                    name=tl.name,
-                    tasks=[t for t in tl.tasks if t.id != task_id],
-                )
-                break
+        """Delete a task."""
+        self._tasks.delete_task(list_id, task_id)
 
     # ============================================================================
-    # FileSystem Service
+    # FileSystem Service (delegated)
     # ============================================================================
 
     def init_filesystem(self) -> FileNode:
-        """Initialize filesystem with root directory"""
-        if self.game_state.filesystem.root_id:
-            # Already initialized
-            return self.get_file(self.game_state.filesystem.root_id)
-
-        timestamp = datetime.now().isoformat()
-        root = FileNode(
-            id=str(uuid.uuid4()),
-            name="/",
-            type="directory",
-            parent_id=None,
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        self.game_state.filesystem.nodes.append(root)
-        self.game_state.filesystem.root_id = root.id
-        return root
+        """Initialize filesystem with root directory."""
+        return self._filesystem.init()
 
     def get_file(self, file_id: str) -> FileNode:
-        """Get a file or directory by ID"""
-        for node in self.game_state.filesystem.nodes:
-            if node.id == file_id:
-                return node
-        raise ValueError(f"File not found: {file_id}")
+        """Get a file or directory by ID."""
+        return self._filesystem.get(file_id)
 
     def create_directory(self, data: Dict[str, Any]) -> FileNode:
-        """Create a new directory"""
-        timestamp = datetime.now().isoformat()
-        directory = FileNode(
-            id=str(uuid.uuid4()),
-            name=data.get("name", "Untitled Folder"),
-            type="directory",
-            parent_id=data.get("parent_id"),
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        self.game_state.filesystem.nodes.append(directory)
-        return directory
+        """Create a new directory."""
+        return self._filesystem.create_directory(data)
 
     def create_file(self, data: Dict[str, Any]) -> FileNode:
-        """Create a new file"""
-        timestamp = datetime.now().isoformat()
-        file = FileNode(
-            id=str(uuid.uuid4()),
-            name=data.get("name", "untitled.txt"),
-            type="file",
-            parent_id=data.get("parent_id"),
-            content=data.get("content", ""),
-            mime_type=data.get("mime_type", "text/plain"),
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        self.game_state.filesystem.nodes.append(file)
-        return file
+        """Create a new file."""
+        return self._filesystem.create_file(data)
 
     def update_file(self, file_id: str, data: Dict[str, Any]) -> FileNode:
-        """Update a file"""
-        file = self.get_file(file_id)
-        timestamp = datetime.now().isoformat()
-
-        for i, node in enumerate(self.game_state.filesystem.nodes):
-            if node.id == file_id:
-                updated = FileNode(
-                    id=file.id,
-                    name=data.get("name", file.name),
-                    type=file.type,
-                    parent_id=file.parent_id,
-                    content=data.get("content", file.content),
-                    mime_type=data.get("mime_type", file.mime_type),
-                    created_at=file.created_at,
-                    updated_at=timestamp,
-                )
-                self.game_state.filesystem.nodes[i] = updated
-                return updated
-        raise ValueError(f"File not found: {file_id}")
+        """Update a file."""
+        return self._filesystem.update(file_id, data)
 
     def delete_file(self, file_id: str) -> None:
-        """Delete a file or directory (with cascade for directories)"""
-        node = self.get_file(file_id)
+        """Delete a file or directory (with cascade for directories)."""
+        self._filesystem.delete(file_id)
 
-        # If it's a directory, recursively delete all children
-        if node.type == "directory":
-            children = self.list_directory(file_id)
-            for child in children:
-                self.delete_file(child.id)
-
-        # Delete the node itself
-        self.game_state.filesystem.nodes = [
-            n for n in self.game_state.filesystem.nodes if n.id != file_id
-        ]
-
-    def copy_file(self, file_id: str, target_parent_id: str, new_name: Optional[str] = None) -> FileNode:
-        """
-        Copy a file or directory to a new location.
-
-        Args:
-            file_id: ID of the file/directory to copy
-            target_parent_id: ID of the destination parent directory
-            new_name: Optional new name for the copy
-
-        Returns:
-            The newly created copy
-        """
-        source = self.get_file(file_id)
-        timestamp = datetime.now().isoformat()
-
-        # Create the copy with a new ID
-        copy = FileNode(
-            id=str(uuid.uuid4()),
-            name=new_name if new_name else source.name,
-            type=source.type,
-            parent_id=target_parent_id,
-            content=source.content,
-            mime_type=source.mime_type,
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        self.game_state.filesystem.nodes.append(copy)
-
-        # If it's a directory, recursively copy children
-        if source.type == "directory":
-            children = self.list_directory(file_id)
-            for child in children:
-                self.copy_file(child.id, copy.id)
-
-        return copy
+    def copy_file(
+        self,
+        file_id: str,
+        target_parent_id: str,
+        new_name: Optional[str] = None
+    ) -> FileNode:
+        """Copy a file or directory to a new location."""
+        return self._filesystem.copy(file_id, target_parent_id, new_name)
 
     def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
-        """
-        Move a file or directory to a new location.
-
-        Args:
-            file_id: ID of the file/directory to move
-            target_parent_id: ID of the destination parent directory
-
-        Returns:
-            The updated file node
-        """
-        file = self.get_file(file_id)
-        timestamp = datetime.now().isoformat()
-
-        # Prevent moving a directory into itself or its descendants
-        if file.type == "directory":
-            current = target_parent_id
-            while current:
-                if current == file_id:
-                    raise ValueError("Cannot move a directory into itself or its descendants")
-                parent = self.get_file(current)
-                current = parent.parent_id
-
-        # Update the parent_id
-        for i, node in enumerate(self.game_state.filesystem.nodes):
-            if node.id == file_id:
-                updated = FileNode(
-                    id=file.id,
-                    name=file.name,
-                    type=file.type,
-                    parent_id=target_parent_id,
-                    content=file.content,
-                    mime_type=file.mime_type,
-                    created_at=file.created_at,
-                    updated_at=timestamp,
-                )
-                self.game_state.filesystem.nodes[i] = updated
-                return updated
-
-        raise ValueError(f"File not found: {file_id}")
+        """Move a file or directory to a new location."""
+        return self._filesystem.move(file_id, target_parent_id)
 
     def list_directory(self, dir_id: str) -> List[FileNode]:
-        """List contents of a directory"""
-        # Verify directory exists
-        self.get_file(dir_id)
-
-        # Return all nodes with this directory as parent
-        return [
-            node
-            for node in self.game_state.filesystem.nodes
-            if node.parent_id == dir_id
-        ]
+        """List contents of a directory."""
+        return self._filesystem.list_directory(dir_id)
 
     def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        """
-        Save the entire filesystem state to disk.
-
-        Args:
-            data_dir: Directory to save the filesystem state (default: backend/game_data)
-
-        This saves to a single JSON file, ensuring complete isolation from the user's
-        real file system.
-        """
-        # Create the data directory if it doesn't exist
-        Path(data_dir).mkdir(parents=True, exist_ok=True)
-
-        # Save filesystem state to JSON
-        filepath = Path(data_dir) / "filesystem.json"
-        filesystem_dict = {
-            "nodes": [node.model_dump() for node in self.game_state.filesystem.nodes],
-            "root_id": self.game_state.filesystem.root_id,
-        }
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(filesystem_dict, f, indent=2, ensure_ascii=False)
+        """Save the entire filesystem state to disk."""
+        self._filesystem.save_to_disk(data_dir)
 
     def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        """
-        Load the filesystem state from disk.
-
-        Args:
-            data_dir: Directory to load the filesystem state from
-
-        Returns:
-            True if loaded successfully, False if file doesn't exist
-
-        This only reads from the controlled game_data directory.
-        """
-        filepath = Path(data_dir) / "filesystem.json"
-
-        if not filepath.exists():
-            return False
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            filesystem_dict = json.load(f)
-
-        # Replace the current filesystem state
-        self.game_state.filesystem = FileSystemState(
-            nodes=[FileNode(**node) for node in filesystem_dict["nodes"]],
-            root_id=filesystem_dict.get("root_id"),
-        )
-
-        return True
+        """Load the filesystem state from disk."""
+        return self._filesystem.load_from_disk(data_dir)
 
     def load_initial_filesystem(self, initial_fs_dir: str = "backend/initial_fs") -> None:
-        """
-        Load initial filesystem state from a directory structure.
-
-        Args:
-            initial_fs_dir: Directory containing the initial file structure
-
-        This reads files from the source code directory and populates the in-game
-        filesystem. This is a one-way read operation - the source directory is never
-        modified by the game.
-        """
-        initial_path = Path(initial_fs_dir)
-
-        if not initial_path.exists():
-            # No initial filesystem provided, just create empty root
-            self.init_filesystem()
-            return
-
-        # Clear existing filesystem
-        self.game_state.filesystem.nodes.clear()
-        self.game_state.filesystem.root_id = None
-
-        # Create root directory
-        root = self.init_filesystem()
-
-        # Recursively load directory structure
-        self._load_directory_recursive(initial_path, root.id)
-
-    def _load_directory_recursive(self, source_path: Path, parent_id: str) -> None:
-        """
-        Recursively load files and directories from a real directory into the virtual filesystem.
-
-        Args:
-            source_path: Path to the real directory to load from
-            parent_id: ID of the parent node in the virtual filesystem
-        """
-        if not source_path.exists() or not source_path.is_dir():
-            return
-
-        # Process all items in the directory
-        for item in sorted(source_path.iterdir()):
-            # Skip hidden files and system files
-            if item.name.startswith('.'):
-                continue
-
-            timestamp = datetime.now().isoformat()
-
-            if item.is_dir():
-                # Create directory node
-                dir_node = FileNode(
-                    id=str(uuid.uuid4()),
-                    name=item.name,
-                    type="directory",
-                    parent_id=parent_id,
-                    created_at=timestamp,
-                    updated_at=timestamp,
-                )
-                self.game_state.filesystem.nodes.append(dir_node)
-
-                # Recursively load subdirectory
-                self._load_directory_recursive(item, dir_node.id)
-
-            elif item.is_file():
-                # Determine MIME type based on extension
-                mime_type = self._get_mime_type(item.suffix)
-
-                # Read file content
-                content = self._read_file_content(item, mime_type)
-
-                # Create file node
-                file_node = FileNode(
-                    id=str(uuid.uuid4()),
-                    name=item.name,
-                    type="file",
-                    parent_id=parent_id,
-                    content=content,
-                    mime_type=mime_type,
-                    created_at=timestamp,
-                    updated_at=timestamp,
-                )
-                self.game_state.filesystem.nodes.append(file_node)
-
-    def _get_mime_type(self, extension: str) -> str:
-        """
-        Determine MIME type from file extension.
-
-        Args:
-            extension: File extension (including the dot)
-
-        Returns:
-            MIME type string
-        """
-        mime_types = {
-            '.txt': 'text/plain',
-            '.md': 'text/plain',
-            '.json': 'application/json',
-            '.html': 'text/html',
-            '.css': 'text/css',
-            '.js': 'text/javascript',
-            '.py': 'text/x-python',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.gif': 'image/gif',
-            '.svg': 'image/svg+xml',
-            '.pdf': 'application/pdf',
-        }
-        return mime_types.get(extension.lower(), 'application/octet-stream')
-
-    def _read_file_content(self, file_path: Path, mime_type: str) -> str:
-        """
-        Read file content, encoding binary files as base64.
-
-        Args:
-            file_path: Path to the file to read
-            mime_type: MIME type of the file
-
-        Returns:
-            File content (text or base64 encoded)
-        """
-        # Text MIME types
-        if mime_type.startswith('text/') or mime_type in ['application/json']:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            except UnicodeDecodeError:
-                # Fall back to binary if can't decode as text
-                pass
-
-        # Binary files - encode as base64
-        with open(file_path, 'rb') as f:
-            return base64.b64encode(f.read()).decode('ascii')
+        """Load initial filesystem state from a directory structure."""
+        self._filesystem.load_initial(initial_fs_dir)
 
     # ============================================================================
-    # Browser Service
+    # Browser Service (delegated)
     # ============================================================================
 
     def get_browser_pages(self) -> List[BrowserPage]:
-        """Get all browser pages"""
-        return self.game_state.browser.pages
+        """Get all browser pages."""
+        return self._browser.get_pages()
 
     def get_browser_page_by_url(self, url: str) -> Optional[BrowserPage]:
-        """Get a browser page by URL"""
-        for page in self.game_state.browser.pages:
-            if page.url == url:
-                return page
-        return None
+        """Get a browser page by URL."""
+        return self._browser.get_page_by_url(url)
 
     def create_browser_page(self, data: Dict[str, Any]) -> BrowserPage:
-        """Create a new browser page"""
-        page = BrowserPage(
-            id=str(uuid.uuid4()),
-            url=data.get("url", ""),
-            title=data.get("title", "Untitled"),
-            content=data.get("content", ""),
-        )
-        self.game_state.browser.pages.append(page)
-        return page
+        """Create a new browser page."""
+        return self._browser.create_page(data)
 
     def get_bookmarks(self) -> List[str]:
-        """Get all bookmarks"""
-        return self.game_state.browser.bookmarks
+        """Get all bookmarks."""
+        return self._browser.get_bookmarks()
 
     def add_bookmark(self, url: str) -> None:
-        """Add a bookmark"""
-        if url not in self.game_state.browser.bookmarks:
-            self.game_state.browser.bookmarks.append(url)
+        """Add a bookmark."""
+        self._browser.add_bookmark(url)
 
     def remove_bookmark(self, url: str) -> None:
-        """Remove a bookmark"""
-        self.game_state.browser.bookmarks = [
-            b for b in self.game_state.browser.bookmarks if b != url
-        ]
+        """Remove a bookmark."""
+        self._browser.remove_bookmark(url)
 
     # ============================================================================
-    # Media Viewer Service
+    # Media Viewer Service (delegated)
     # ============================================================================
 
     def get_media_viewer_config(self) -> MediaViewerConfig:
-        """Get the media viewer configuration"""
-        return self.game_state.media_viewer.config
+        """Get the media viewer configuration."""
+        return self._media_viewer.get_config()
 
     def update_media_viewer_config(self, data: Dict[str, Any]) -> MediaViewerConfig:
-        """
-        Update the media viewer configuration.
-
-        Args:
-            data: Configuration data including spiral_style, rotation_speed, messages, loop
-
-        Returns:
-            Updated MediaViewerConfig
-        """
-        current = self.game_state.media_viewer.config
-
-        # Parse messages if provided
-        messages = current.messages
-        if "messages" in data:
-            messages = [
-                TextMessage(**msg) if isinstance(msg, dict) else msg
-                for msg in data["messages"]
-            ]
-
-        # Create updated config
-        updated_config = MediaViewerConfig(
-            spiral_style=data.get("spiral_style", current.spiral_style),
-            rotation_speed=data.get("rotation_speed", current.rotation_speed),
-            messages=messages,
-            loop=data.get("loop", current.loop),
-        )
-
-        self.game_state.media_viewer.config = updated_config
-        return updated_config
+        """Update the media viewer configuration."""
+        return self._media_viewer.update_config(data)
 
     def add_media_viewer_message(self, message_data: Dict[str, Any]) -> TextMessage:
-        """
-        Add a text message to the media viewer sequence.
-
-        Args:
-            message_data: Message data (text, duration, size, color, position, etc.)
-
-        Returns:
-            The created TextMessage
-        """
-        message = TextMessage(**message_data)
-        current_messages = list(self.game_state.media_viewer.config.messages)
-        current_messages.append(message)
-
-        self.game_state.media_viewer.config = MediaViewerConfig(
-            spiral_style=self.game_state.media_viewer.config.spiral_style,
-            rotation_speed=self.game_state.media_viewer.config.rotation_speed,
-            messages=current_messages,
-            loop=self.game_state.media_viewer.config.loop,
-        )
-
-        return message
+        """Add a text message to the media viewer sequence."""
+        return self._media_viewer.add_message(message_data)
 
     def set_media_viewer_style(self, style: str) -> MediaViewerConfig:
-        """
-        Set the spiral style for the media viewer.
-
-        Args:
-            style: Spiral style ("blackwhite" or "colorful")
-
-        Returns:
-            Updated MediaViewerConfig
-        """
-        self.game_state.media_viewer.config = MediaViewerConfig(
-            spiral_style=style,
-            rotation_speed=self.game_state.media_viewer.config.rotation_speed,
-            messages=self.game_state.media_viewer.config.messages,
-            loop=self.game_state.media_viewer.config.loop,
-        )
-
-        return self.game_state.media_viewer.config
+        """Set the spiral style for the media viewer."""
+        return self._media_viewer.set_style(style)
 
     def initialize_default_media_viewer_messages(self) -> None:
-        """
-        Initialize the media viewer with default corporate "wellness" messages.
+        """Initialize the media viewer with default corporate messages."""
+        self._media_viewer.initialize_default_messages()
 
-        This creates a dystopian sequence of messages that appears to be for
-        health and relaxation but subtly reinforces corporate/government messaging.
-        """
-        default_messages = [
-            # Opening relaxation
-            TextMessage(
-                text="Welcome to MindSync Wellness",
-                duration=3.0,
-                size=48,
-                color="#00FFFF",
-                x=50,
-                y=30,
-                font_weight="bold"
-            ),
-            TextMessage(
-                text="Take a deep breath...",
-                duration=4.0,
-                size=36,
-                color="#FFFFFF",
-                x=50,
-                y=50,
-                font_weight="normal"
-            ),
-            # Pause for breathing
-            TextMessage(
-                text=None,  # Pause
-                duration=2.0,
-                size=32,
-                color="#FFFFFF",
-                x=50,
-                y=50
-            ),
-            # Subtle corporate messaging
-            TextMessage(
-                text="You are valued.",
-                duration=3.0,
-                size=40,
-                color="#00FF00",
-                x=50,
-                y=45,
-                font_weight="normal"
-            ),
-            TextMessage(
-                text="Your productivity matters.",
-                duration=3.0,
-                size=32,
-                color="#FFFF00",
-                x=50,
-                y=55,
-                font_weight="normal"
-            ),
-            TextMessage(
-                text=None,  # Pause
-                duration=2.0,
-                size=32,
-                color="#FFFFFF",
-                x=50,
-                y=50
-            ),
-            # More relaxation mixed with messaging
-            TextMessage(
-                text="Trust the system.",
-                duration=3.5,
-                size=36,
-                color="#FF00FF",
-                x=50,
-                y=50,
-                font_weight="normal"
-            ),
-            TextMessage(
-                text="Consume responsibly.",
-                duration=3.0,
-                size=28,
-                color="#00FFFF",
-                x=50,
-                y=60,
-                font_weight="normal"
-            ),
-            TextMessage(
-                text=None,  # Pause
-                duration=2.0,
-                size=32,
-                color="#FFFFFF",
-                x=50,
-                y=50
-            ),
-            # Closing
-            TextMessage(
-                text="You are refreshed.",
-                duration=3.0,
-                size=42,
-                color="#00FF00",
-                x=50,
-                y=45,
-                font_weight="bold"
-            ),
-            TextMessage(
-                text="Return to work with renewed focus.",
-                duration=4.0,
-                size=30,
-                color="#FFFFFF",
-                x=50,
-                y=55,
-                font_weight="normal"
-            ),
-            TextMessage(
-                text=None,  # Final pause before loop
-                duration=3.0,
-                size=32,
-                color="#FFFFFF",
-                x=50,
-                y=50
-            ),
-        ]
+    # ============================================================================
+    # Convenience Methods
+    # ============================================================================
 
-        self.game_state.media_viewer.config = MediaViewerConfig(
-            spiral_style="blackwhite",
-            rotation_speed=1.0,
-            messages=default_messages,
-            loop=True,
-        )
+    def load_or_initialize_filesystem(
+        self,
+        data_dir: str = "backend/game_data",
+        initial_fs_dir: str = "backend/initial_fs"
+    ) -> None:
+        """
+        Load filesystem from disk or initialize from initial files.
+
+        Args:
+            data_dir: Directory for saved game data
+            initial_fs_dir: Directory containing initial filesystem template
+        """
+        if not self.load_filesystem_from_disk(data_dir):
+            self.load_initial_filesystem(initial_fs_dir)
