@@ -13,7 +13,7 @@ The RecursiveNeon project demonstrates **strong architectural foundations** with
 | Category | Before | After | Status |
 |----------|--------|-------|--------|
 | Architecture | 8/10 | 9/10 | ✅ Strong (IAppService added) |
-| Cohesion | 7/10 | 7/10 | ⚠️ Some large classes |
+| Cohesion | 7/10 | 9/10 | ✅ AppService split into 5 focused services |
 | Coupling | 8/10 | 9/10 | ✅ All services have interfaces |
 | Test Coverage | 7/10 | 8/10 | ✅ Thresholds enforced |
 | Test Quality | 8/10 | 8/10 | ✅ Behavior-focused |
@@ -41,11 +41,22 @@ The RecursiveNeon project demonstrates **strong architectural foundations** with
 | Prettier formatting | ✅ | `frontend/.prettierrc`, `package.json` |
 | IAppService interface | ✅ | `backend/src/recursive_neon/services/interfaces.py` |
 
+### AppService Refactoring (Completed)
+
+| Task | Status | Files Created/Modified |
+|------|--------|------------------------|
+| Split AppService into domain services | ✅ | 5 new service files |
+| NotesService | ✅ | `services/notes_service.py` |
+| TaskService | ✅ | `services/task_service.py` |
+| FileSystemService | ✅ | `services/filesystem_service.py` |
+| BrowserService | ✅ | `services/browser_service.py` |
+| MediaViewerService | ✅ | `services/media_viewer_service.py` |
+| Refactor AppService to use composition | ✅ | `services/app_service.py` (830→247 lines) |
+
 ### Remaining Tasks
 
 | Task | Priority | Notes |
 |------|----------|-------|
-| Split AppService | Medium | Large refactoring - 700+ lines to split |
 | Command pattern for MessageHandler | Low | Cleaner routing |
 
 ---
@@ -113,26 +124,18 @@ export function AppProviders({ children, webSocketClient, gameStore }) {
 
 ### Areas for Improvement
 
-#### 1. AppService Violates Single Responsibility (High Priority)
+#### 1. ~~AppService Violates Single Responsibility~~ ✅ RESOLVED
 
-**File**: `backend/src/recursive_neon/services/app_service.py` (28.4 KB, 700+ lines)
+**Status**: AppService has been refactored using the composition pattern.
 
-Single class handles 6 different domains:
-- Notes management
-- Task management
-- Filesystem operations
-- Browser pages/bookmarks
-- Media viewer configuration
-- Text messages
+The large 830-line AppService has been split into 5 focused domain services:
+- `NotesService` - Note-taking operations
+- `TaskService` - Task and task list management
+- `FileSystemService` - Virtual filesystem operations
+- `BrowserService` - Browser pages and bookmarks
+- `MediaViewerService` - Hypnotic spiral display configuration
 
-**Recommendation**: Split into focused services:
-```
-app_service.py -> notes_service.py
-                  task_service.py
-                  filesystem_service.py
-                  browser_service.py
-                  media_service.py
-```
+AppService now acts as a **facade** that delegates to these services, reducing its size to 247 lines while maintaining the same public API for backward compatibility.
 
 #### 2. MessageHandler Has Large Routing Chain
 
@@ -140,9 +143,9 @@ app_service.py -> notes_service.py
 
 Uses if/elif chain for message routing. Consider command pattern.
 
-#### 3. Missing Interface for AppService
+#### 3. ~~Missing Interface for AppService~~ ✅ RESOLVED
 
-All other services have interfaces, but `AppService` lacks `IAppService`, creating inconsistency in the DI pattern.
+IAppService interface has been added to `services/interfaces.py` and AppService now implements it.
 
 ---
 
@@ -217,70 +220,44 @@ thresholds: {
 
 ## 3. Tooling Assessment
 
-### Current State
+### Current State (After Improvements)
 
 | Tool | Backend | Frontend |
 |------|---------|----------|
 | Testing | pytest ✅ | Vitest ✅ |
 | Coverage | pytest-cov ✅ | @vitest/coverage-v8 ✅ |
-| Linting | ❌ Missing | ESLint ✅ |
-| Formatting | ❌ Missing | ❌ Missing (Prettier) |
-| Type Checking | ❌ Missing (mypy) | tsc ✅ |
-| Pre-commit | ❌ Missing | ❌ Missing |
+| Linting | Ruff ✅ | ESLint ✅ |
+| Formatting | Ruff ✅ | Prettier ✅ |
+| Type Checking | mypy ✅ | tsc ✅ |
+| Pre-commit | ✅ Configured | ✅ Configured |
 
-### Missing Tools (Critical)
+### Tooling Configuration (Implemented)
 
-#### Python Linting & Formatting
+All critical tooling has been configured:
 
-No `ruff`, `black`, `flake8`, or `pylint` configured.
-
-**Solution**: Add Ruff (fast, covers both):
-
-```toml
-# pyproject.toml
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-select = ["E", "F", "I", "B", "UP", "W"]
-
-[tool.ruff.format]
-quote-style = "double"
-```
-
-#### Python Type Checking
-
-Type hints exist but aren't verified. Add mypy:
-
-```toml
-# pyproject.toml
-[tool.mypy]
-python_version = "3.11"
-strict = true
-```
-
-#### Pre-commit Hooks
-
-No `.pre-commit-config.yaml` or `.husky/` directory.
-
-**Solution**: Add pre-commit configuration.
+- **Ruff** (`backend/pyproject.toml`): Linting and formatting for Python
+- **mypy** (`backend/pyproject.toml`): Type checking for Python
+- **Prettier** (`frontend/.prettierrc`): Formatting for TypeScript/CSS
+- **Pre-commit** (`.pre-commit-config.yaml`): Local quality gates for both frontend and backend
 
 ---
 
 ## 4. CI/CD Assessment
 
-### Current State: Not Configured
+### Current State: ✅ Configured
 
-The `.github/` directory does not exist. No automated testing on PRs.
+GitHub Actions CI pipeline is now configured at `.github/workflows/ci.yml`.
 
-### Required: GitHub Actions Workflow
+### Implemented Pipeline Jobs
 
-A CI pipeline should:
-1. Run Python linting (Ruff)
-2. Run Python type checking (mypy)
-3. Run backend tests with coverage
-4. Run frontend linting (ESLint)
-5. Run frontend build (TypeScript)
-6. Run frontend tests with coverage
+| Job | Description | Status |
+|-----|-------------|--------|
+| `backend-lint` | Ruff linting | ✅ |
+| `backend-typecheck` | mypy type checking | ✅ |
+| `backend-test` | pytest with coverage | ✅ |
+| `frontend-lint` | ESLint + Prettier check | ✅ |
+| `frontend-build` | TypeScript compilation | ✅ |
+| `frontend-test` | Vitest with coverage | ✅ |
 
 ---
 
@@ -295,14 +272,14 @@ A CI pipeline should:
 | Set coverage thresholds | Enforce test coverage | Low |
 | Add pre-commit hooks | Local quality gates | Low |
 
-### Medium Priority
+### Medium Priority (Completed)
 
-| Task | Impact | Effort |
-|------|--------|--------|
-| Add mypy type checking | Catch type errors | Medium |
-| Add Prettier for frontend | Consistent formatting | Low |
-| Split AppService | Better maintainability | High |
-| Add IAppService interface | Complete DI pattern | Medium |
+| Task | Impact | Effort | Status |
+|------|--------|--------|--------|
+| Add mypy type checking | Catch type errors | Medium | ✅ |
+| Add Prettier for frontend | Consistent formatting | Low | ✅ |
+| Split AppService | Better maintainability | High | ✅ |
+| Add IAppService interface | Complete DI pattern | Medium | ✅ |
 
 ### Lower Priority
 
@@ -321,6 +298,15 @@ A CI pipeline should:
 - **Service Interfaces**: `backend/src/recursive_neon/services/interfaces.py`
 - **Frontend Store**: `frontend/src/stores/gameStore.ts`
 - **Frontend DI**: `frontend/src/contexts/AppProviders.tsx`
+
+### Domain Services (AppService Composition)
+
+- **AppService Facade**: `backend/src/recursive_neon/services/app_service.py`
+- **NotesService**: `backend/src/recursive_neon/services/notes_service.py`
+- **TaskService**: `backend/src/recursive_neon/services/task_service.py`
+- **FileSystemService**: `backend/src/recursive_neon/services/filesystem_service.py`
+- **BrowserService**: `backend/src/recursive_neon/services/browser_service.py`
+- **MediaViewerService**: `backend/src/recursive_neon/services/media_viewer_service.py`
 
 ### Configuration
 
