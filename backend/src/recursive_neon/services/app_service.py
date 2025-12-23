@@ -21,9 +21,10 @@ from recursive_neon.models.app_models import (
     MediaViewerConfig,
     TextMessage,
 )
+from recursive_neon.services.interfaces import IAppService
 
 
-class AppService:
+class AppService(IAppService):
     """
     Service for managing desktop app data.
 

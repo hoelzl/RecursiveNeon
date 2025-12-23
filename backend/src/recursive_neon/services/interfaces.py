@@ -22,6 +22,15 @@ from recursive_neon.models.notification import (
     NotificationFilters,
     NotificationConfig
 )
+from recursive_neon.models.app_models import (
+    Note,
+    Task,
+    TaskList,
+    FileNode,
+    BrowserPage,
+    MediaViewerConfig,
+    TextMessage,
+)
 
 
 # ============================================================================
@@ -774,5 +783,505 @@ class ISettingsService(ABC):
 
         Args:
             callback: Function to call when settings change (receives key, value)
+        """
+        pass
+
+
+# ============================================================================
+# App Service Interface
+# ============================================================================
+
+class IAppService(ABC):
+    """
+    Abstract interface for desktop application services.
+
+    This interface defines the contract for managing in-game desktop app data:
+    - Notes (note-taking application)
+    - Tasks and TaskLists (task management)
+    - FileSystem (virtual file browser)
+    - Browser pages and bookmarks
+    - Media Viewer configuration
+
+    Note: This is a large interface that could be split into smaller
+    domain-specific interfaces (INotesService, ITaskService, IFileSystemService,
+    IBrowserService, IMediaViewerService) in a future refactoring.
+    """
+
+    # ============================================================================
+    # Notes Operations
+    # ============================================================================
+
+    @abstractmethod
+    def get_notes(self) -> List[Note]:
+        """
+        Get all notes.
+
+        Returns:
+            List of all notes
+        """
+        pass
+
+    @abstractmethod
+    def get_note(self, note_id: str) -> Note:
+        """
+        Get a specific note by ID.
+
+        Args:
+            note_id: ID of the note to retrieve
+
+        Returns:
+            The note
+
+        Raises:
+            ValueError: If note not found
+        """
+        pass
+
+    @abstractmethod
+    def create_note(self, data: Dict[str, Any]) -> Note:
+        """
+        Create a new note.
+
+        Args:
+            data: Note data (title, content)
+
+        Returns:
+            The created note
+        """
+        pass
+
+    @abstractmethod
+    def update_note(self, note_id: str, data: Dict[str, Any]) -> Note:
+        """
+        Update an existing note.
+
+        Args:
+            note_id: ID of the note to update
+            data: Updated note data
+
+        Returns:
+            The updated note
+
+        Raises:
+            ValueError: If note not found
+        """
+        pass
+
+    @abstractmethod
+    def delete_note(self, note_id: str) -> None:
+        """
+        Delete a note.
+
+        Args:
+            note_id: ID of the note to delete
+        """
+        pass
+
+    # ============================================================================
+    # Task Operations
+    # ============================================================================
+
+    @abstractmethod
+    def get_task_lists(self) -> List[TaskList]:
+        """
+        Get all task lists.
+
+        Returns:
+            List of all task lists
+        """
+        pass
+
+    @abstractmethod
+    def get_task_list(self, list_id: str) -> TaskList:
+        """
+        Get a specific task list by ID.
+
+        Args:
+            list_id: ID of the task list
+
+        Returns:
+            The task list
+
+        Raises:
+            ValueError: If task list not found
+        """
+        pass
+
+    @abstractmethod
+    def create_task_list(self, data: Dict[str, Any]) -> TaskList:
+        """
+        Create a new task list.
+
+        Args:
+            data: Task list data (name)
+
+        Returns:
+            The created task list
+        """
+        pass
+
+    @abstractmethod
+    def update_task_list(self, list_id: str, data: Dict[str, Any]) -> TaskList:
+        """
+        Update a task list.
+
+        Args:
+            list_id: ID of the task list
+            data: Updated data
+
+        Returns:
+            The updated task list
+
+        Raises:
+            ValueError: If task list not found
+        """
+        pass
+
+    @abstractmethod
+    def delete_task_list(self, list_id: str) -> None:
+        """
+        Delete a task list.
+
+        Args:
+            list_id: ID of the task list to delete
+        """
+        pass
+
+    @abstractmethod
+    def create_task(self, list_id: str, data: Dict[str, Any]) -> Task:
+        """
+        Create a new task in a list.
+
+        Args:
+            list_id: ID of the task list
+            data: Task data (title, completed, parent_id)
+
+        Returns:
+            The created task
+        """
+        pass
+
+    @abstractmethod
+    def update_task(self, list_id: str, task_id: str, data: Dict[str, Any]) -> Task:
+        """
+        Update a task.
+
+        Args:
+            list_id: ID of the task list
+            task_id: ID of the task
+            data: Updated task data
+
+        Returns:
+            The updated task
+
+        Raises:
+            ValueError: If task not found
+        """
+        pass
+
+    @abstractmethod
+    def delete_task(self, list_id: str, task_id: str) -> None:
+        """
+        Delete a task.
+
+        Args:
+            list_id: ID of the task list
+            task_id: ID of the task to delete
+        """
+        pass
+
+    # ============================================================================
+    # FileSystem Operations
+    # ============================================================================
+
+    @abstractmethod
+    def init_filesystem(self) -> FileNode:
+        """
+        Initialize the filesystem with a root directory.
+
+        Returns:
+            The root directory node
+        """
+        pass
+
+    @abstractmethod
+    def get_file(self, file_id: str) -> FileNode:
+        """
+        Get a file or directory by ID.
+
+        Args:
+            file_id: ID of the file/directory
+
+        Returns:
+            The file node
+
+        Raises:
+            ValueError: If file not found
+        """
+        pass
+
+    @abstractmethod
+    def create_directory(self, data: Dict[str, Any]) -> FileNode:
+        """
+        Create a new directory.
+
+        Args:
+            data: Directory data (name, parent_id)
+
+        Returns:
+            The created directory node
+        """
+        pass
+
+    @abstractmethod
+    def create_file(self, data: Dict[str, Any]) -> FileNode:
+        """
+        Create a new file.
+
+        Args:
+            data: File data (name, parent_id, content, mime_type)
+
+        Returns:
+            The created file node
+        """
+        pass
+
+    @abstractmethod
+    def update_file(self, file_id: str, data: Dict[str, Any]) -> FileNode:
+        """
+        Update a file.
+
+        Args:
+            file_id: ID of the file
+            data: Updated file data
+
+        Returns:
+            The updated file node
+
+        Raises:
+            ValueError: If file not found
+        """
+        pass
+
+    @abstractmethod
+    def delete_file(self, file_id: str) -> None:
+        """
+        Delete a file or directory.
+
+        Args:
+            file_id: ID of the file/directory to delete
+        """
+        pass
+
+    @abstractmethod
+    def copy_file(
+        self,
+        file_id: str,
+        target_parent_id: str,
+        new_name: Optional[str] = None
+    ) -> FileNode:
+        """
+        Copy a file or directory.
+
+        Args:
+            file_id: ID of the file/directory to copy
+            target_parent_id: ID of destination parent
+            new_name: Optional new name for the copy
+
+        Returns:
+            The created copy
+        """
+        pass
+
+    @abstractmethod
+    def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
+        """
+        Move a file or directory.
+
+        Args:
+            file_id: ID of the file/directory to move
+            target_parent_id: ID of destination parent
+
+        Returns:
+            The updated file node
+
+        Raises:
+            ValueError: If trying to move a directory into itself
+        """
+        pass
+
+    @abstractmethod
+    def list_directory(self, dir_id: str) -> List[FileNode]:
+        """
+        List contents of a directory.
+
+        Args:
+            dir_id: ID of the directory
+
+        Returns:
+            List of file nodes in the directory
+        """
+        pass
+
+    @abstractmethod
+    def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """
+        Save filesystem state to disk.
+
+        Args:
+            data_dir: Directory to save to
+        """
+        pass
+
+    @abstractmethod
+    def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """
+        Load filesystem state from disk.
+
+        Args:
+            data_dir: Directory to load from
+
+        Returns:
+            True if loaded successfully, False if file doesn't exist
+        """
+        pass
+
+    @abstractmethod
+    def load_initial_filesystem(self, initial_fs_dir: str = "backend/initial_fs") -> None:
+        """
+        Load initial filesystem from a source directory.
+
+        Args:
+            initial_fs_dir: Directory containing initial file structure
+        """
+        pass
+
+    # ============================================================================
+    # Browser Operations
+    # ============================================================================
+
+    @abstractmethod
+    def get_browser_pages(self) -> List[BrowserPage]:
+        """
+        Get all browser pages.
+
+        Returns:
+            List of browser pages
+        """
+        pass
+
+    @abstractmethod
+    def get_browser_page_by_url(self, url: str) -> Optional[BrowserPage]:
+        """
+        Get a browser page by URL.
+
+        Args:
+            url: Page URL
+
+        Returns:
+            The browser page, or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def create_browser_page(self, data: Dict[str, Any]) -> BrowserPage:
+        """
+        Create a new browser page.
+
+        Args:
+            data: Page data (url, title, content)
+
+        Returns:
+            The created page
+        """
+        pass
+
+    @abstractmethod
+    def get_bookmarks(self) -> List[str]:
+        """
+        Get all bookmarks.
+
+        Returns:
+            List of bookmarked URLs
+        """
+        pass
+
+    @abstractmethod
+    def add_bookmark(self, url: str) -> None:
+        """
+        Add a bookmark.
+
+        Args:
+            url: URL to bookmark
+        """
+        pass
+
+    @abstractmethod
+    def remove_bookmark(self, url: str) -> None:
+        """
+        Remove a bookmark.
+
+        Args:
+            url: URL to remove from bookmarks
+        """
+        pass
+
+    # ============================================================================
+    # Media Viewer Operations
+    # ============================================================================
+
+    @abstractmethod
+    def get_media_viewer_config(self) -> MediaViewerConfig:
+        """
+        Get media viewer configuration.
+
+        Returns:
+            Current media viewer config
+        """
+        pass
+
+    @abstractmethod
+    def update_media_viewer_config(self, data: Dict[str, Any]) -> MediaViewerConfig:
+        """
+        Update media viewer configuration.
+
+        Args:
+            data: Configuration data
+
+        Returns:
+            Updated configuration
+        """
+        pass
+
+    @abstractmethod
+    def add_media_viewer_message(self, message_data: Dict[str, Any]) -> TextMessage:
+        """
+        Add a text message to the media viewer sequence.
+
+        Args:
+            message_data: Message data
+
+        Returns:
+            The created message
+        """
+        pass
+
+    @abstractmethod
+    def set_media_viewer_style(self, style: str) -> MediaViewerConfig:
+        """
+        Set the media viewer spiral style.
+
+        Args:
+            style: Spiral style ("blackwhite" or "colorful")
+
+        Returns:
+            Updated configuration
+        """
+        pass
+
+    @abstractmethod
+    def initialize_default_media_viewer_messages(self) -> None:
+        """
+        Initialize media viewer with default messages.
         """
         pass

@@ -1,0 +1,19 @@
+# Build outputs
+dist/
+build/
+coverage/
+
+# Dependencies
+node_modules/
+
+# Generated files
+*.d.ts
+
+# Config files (handled separately)
+vite.config.ts
+vitest.config.ts
+tsconfig*.json
+
+# Other
+.git/
+*.md
