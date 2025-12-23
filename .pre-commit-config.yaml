@@ -28,6 +28,16 @@ repos:
       - id: ruff-format
         files: ^backend/
 
+  # Python - Mypy (type checking)
+  - repo: local
+    hooks:
+      - id: mypy
+        name: Mypy Type Check
+        entry: bash -c 'cd backend && mypy src/recursive_neon'
+        language: system
+        files: ^backend/src/.*\.py$
+        pass_filenames: false
+
   # Frontend - ESLint
   - repo: local
     hooks:
@@ -43,6 +53,13 @@ repos:
         entry: bash -c 'cd frontend && npx tsc --noEmit'
         language: system
         files: ^frontend/src/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier
+        name: Prettier
+        entry: bash -c 'cd frontend && npm run format:check'
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx|css)$
         pass_filenames: false
 
 # CI configuration
