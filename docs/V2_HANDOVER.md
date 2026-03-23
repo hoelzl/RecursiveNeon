@@ -2,7 +2,7 @@
 
 > **Date**: 2025-03-23
 > **Status**: Phase 0 complete (branch setup & file curation). Phase 1 not started.
-> **Branch**: `main` (orphan branch, 1 commit: `384e373`)
+> **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
 
@@ -73,7 +73,8 @@ Created a new `main` orphan branch with curated files. The old code is preserved
 ### 3.1 Branch Setup
 - Stashed uncommitted changes on `claude/improve-terminal-input-*`
 - Renamed `master` → `legacy/v1`
-- Created orphan branch `main`
+- Created orphan branch `main`, later renamed to `master`
+- Old `master` (v1 code) renamed to `legacy` on the remote
 - Cleared working tree, selectively restored files from `legacy/v1`
 
 ### 3.2 Files Kept and Cleaned
@@ -148,7 +149,6 @@ All of these are available on `legacy/v1` if needed for reference.
 LICENSE                               # Apache 2.0
 
 backend/
-  .coveragerc                         # Coverage config
   .gitignore                          # Backend-specific ignores
   FILESYSTEM_SECURITY.md              # Security design doc
   pyproject.toml                      # Python package config (hatchling)
@@ -212,17 +212,17 @@ scripts/
 
 ## 5. Known Issues in Current Code
 
-1. **No Python venv exists** — the old `.venv` was stale (referenced Python 3.13 which is no longer installed). System Python is 3.14.3. A new venv needs to be created: `python -m venv .venv && .venv/Scripts/pip install -e "backend[dev]"`
+1. ~~**No Python venv exists**~~ — **Resolved.** A `.venv` is created with `uv venv --python 3.14` and deps installed via `uv pip install -e "backend/.[dev]"`.
 
-2. **CLAUDE.md is outdated** — it describes the v1 architecture extensively. It should be rewritten for v2 once the new architecture stabilizes. For now, this handover document is the primary reference.
+2. ~~**CLAUDE.md is outdated**~~ — **Resolved.** Rewritten for v2 with setup commands, quality tooling, and key entry points.
 
-3. **`npc_manager.py` uses LangChain ConversationChain** — this was marked for potential simplification. ConversationBufferMemory has unbounded growth. Not blocking, but worth noting.
+3. **`npc_manager.py` uses LangChain ConversationChain** — this was marked for potential simplification. ConversationBufferMemory has unbounded growth. Not blocking, but worth noting. (Uses `langchain_classic` compat shim after upgrade to langchain 1.x.)
 
 4. **`app_service.py` uses O(n) list scans** — all get/update operations iterate the full node/note/task lists. Fine for now, but should use dict-based lookup if collections grow large.
 
 5. **`main.py` WebSocket handling is inline** — the `handle_ws_message()` function was inlined when we removed MessageHandler. This should eventually be refactored back into a proper service when the message protocol stabilizes.
 
-6. **Remote `origin/master` still exists** — the remote hasn't been updated. The `main` branch hasn't been pushed yet. When ready: `git push -u origin main` and consider cleaning up old remote branches.
+6. ~~**Remote `origin/master` still exists**~~ — **Resolved.** Remote reorganized: old `master` (v1) → `legacy`, `main` (v2) → `master` (default branch).
 
 ## 6. Implementation Plan (Phases 1-3)
 
@@ -282,7 +282,7 @@ Tasks:
 
 ## 8. Reference: Legacy Branch
 
-The full v1 codebase is available on `legacy/v1` (local) and `origin/master` (remote). Useful for:
+The full v1 codebase is available on `legacy/v1` (local) and `origin/legacy` (remote). Useful for:
 - **CSS styling** — `frontend/src/styles/desktop.css` has the polished cyberpunk theme
 - **Terminal design ideas** — `docs/terminal-design.md`, `docs/terminal-requirements.md`
 - **Minigame designs** — `docs/minigames/` has detailed design docs for 4 games
