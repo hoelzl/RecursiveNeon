@@ -11,6 +11,7 @@ import os
 import platform
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -86,15 +87,17 @@ class OllamaProcessManager(IProcessManager):
             env["OLLAMA_HOST"] = f"{self.host}:{self.port}"
 
             # Start the process
-            self.process = subprocess.Popen(
-                [str(binary), "serve"],
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW
-                if platform.system() == "Windows"
-                else 0,
-            )
+            kwargs: dict[str, Any] = {
+                "env": env,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+            }
+            if platform.system() == "Windows":
+                # CREATE_NO_WINDOW = 0x08000000 (Windows-only constant)
+                kwargs["creationflags"] = getattr(
+                    subprocess, "CREATE_NO_WINDOW", 0x08000000
+                )
+            self.process = subprocess.Popen([str(binary), "serve"], **kwargs)
 
             # Start monitoring
             self._monitor_task = asyncio.create_task(self._monitor_process())

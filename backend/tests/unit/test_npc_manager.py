@@ -272,7 +272,9 @@ class TestNPCManagerWithDependencyInjection:
         """Test the factory method for creating NPCManager with Ollama."""
         # This creates a real ChatOllama instance, so it might fail without Ollama
         # In practice, you'd mock ChatOllama or skip this test
-        with patch("recursive_neon.services.npc_manager.ChatOllama") as mock_ollama_class:
+        with patch(
+            "recursive_neon.services.npc_manager.ChatOllama"
+        ) as mock_ollama_class:
             mock_llm_instance = Mock()
             mock_ollama_class.return_value = mock_llm_instance
 
