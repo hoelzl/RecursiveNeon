@@ -1,0 +1,5 @@
+This is a sample text file.
+
+You can edit this file using the Text Editor app!
+
+Feel free to delete this file if you don't need it.

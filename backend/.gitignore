@@ -1,0 +1,4 @@
+# Python test coverage
+.coverage
+htmlcov/
+*.cover

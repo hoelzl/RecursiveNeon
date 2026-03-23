@@ -1,0 +1,5 @@
+Pictures Folder
+
+Place image files here to view them in the Image Viewer app.
+
+Supported formats: JPG, PNG, GIF, SVG
