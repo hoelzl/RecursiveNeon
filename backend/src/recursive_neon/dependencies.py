@@ -4,20 +4,25 @@ Dependency Injection Container
 Centralized container for managing service dependencies.
 Implements the Service Locator pattern for clean dependency injection.
 """
-from dataclasses import dataclass
-from typing import Optional
+
 import logging
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from langchain_ollama import ChatOllama
 
-from recursive_neon.services.interfaces import INPCManager, IOllamaClient, IProcessManager
+from recursive_neon.config import settings
+from recursive_neon.models.game_state import GameState, SystemState
+from recursive_neon.services.app_service import AppService
+from recursive_neon.services.interfaces import (
+    INPCManager,
+    IOllamaClient,
+    IProcessManager,
+)
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient
 from recursive_neon.services.process_manager import OllamaProcessManager
-from recursive_neon.services.app_service import AppService
-from recursive_neon.models.game_state import SystemState, GameState
-from recursive_neon.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,7 @@ class ServiceContainer:
 
     Holds singleton instances of all services and manages their lifecycle.
     """
+
     process_manager: IProcessManager
     ollama_client: IOllamaClient
     npc_manager: INPCManager
@@ -51,33 +57,33 @@ class ServiceFactory:
 
     @staticmethod
     def create_process_manager(
-        binary_path: str = None,
-        host: str = None,
-        port: int = None
+        binary_path: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
     ) -> IProcessManager:
         return OllamaProcessManager(
             binary_path=binary_path or settings.ollama_binary_path,
             host=host or settings.ollama_host,
-            port=port or settings.ollama_port
+            port=port or settings.ollama_port,
         )
 
     @staticmethod
     def create_ollama_client(
-        host: str = None,
-        port: int = None,
-        timeout: int = None
+        host: str | None = None,
+        port: int | None = None,
+        timeout: int | None = None,
     ) -> IOllamaClient:
         return OllamaClient(
             host=host or settings.ollama_host,
             port=port or settings.ollama_port,
-            timeout=timeout or 60
+            timeout=timeout or 60,
         )
 
     @staticmethod
     def create_npc_manager(
-        llm: Optional[any] = None,
-        ollama_host: str = None,
-        ollama_port: int = None
+        llm: Any | None = None,
+        ollama_host: str | None = None,
+        ollama_port: int | None = None,
     ) -> INPCManager:
         if llm is None:
             host = ollama_host or settings.ollama_host
@@ -108,7 +114,9 @@ class ServiceFactory:
         logger.info("Initializing in-game filesystem...")
         if not app_service.load_filesystem_from_disk():
             initial_fs_path = str(settings.initial_fs_path)
-            logger.info(f"No saved filesystem found, loading initial state from {initial_fs_path}")
+            logger.info(
+                f"No saved filesystem found, loading initial state from {initial_fs_path}"
+            )
             app_service.load_initial_filesystem(initial_fs_path)
         else:
             logger.info("Filesystem loaded from saved state")
@@ -120,7 +128,7 @@ class ServiceFactory:
             system_state=system_state,
             game_state=game_state,
             app_service=app_service,
-            start_time=start_time
+            start_time=start_time,
         )
 
         logger.info(f"Production container created: {container}")
@@ -129,13 +137,13 @@ class ServiceFactory:
     @classmethod
     def create_test_container(
         cls,
-        mock_process_manager: Optional[IProcessManager] = None,
-        mock_ollama_client: Optional[IOllamaClient] = None,
-        mock_npc_manager: Optional[INPCManager] = None,
-        mock_system_state: Optional[SystemState] = None,
-        mock_game_state: Optional[GameState] = None,
-        mock_app_service: Optional[AppService] = None,
-        mock_start_time: Optional[datetime] = None
+        mock_process_manager: IProcessManager | None = None,
+        mock_ollama_client: IOllamaClient | None = None,
+        mock_npc_manager: INPCManager | None = None,
+        mock_system_state: SystemState | None = None,
+        mock_game_state: GameState | None = None,
+        mock_app_service: AppService | None = None,
+        mock_start_time: datetime | None = None,
     ) -> ServiceContainer:
         """Create a service container configured for testing."""
         logger.info("Creating test service container")
@@ -155,7 +163,7 @@ class ServiceFactory:
             system_state=system_state,
             game_state=game_state,
             app_service=app_service,
-            start_time=start_time
+            start_time=start_time,
         )
 
         logger.info(f"Test container created: {container}")
@@ -163,7 +171,7 @@ class ServiceFactory:
 
 
 # Global container instance
-_container: Optional[ServiceContainer] = None
+_container: ServiceContainer | None = None
 
 
 def get_container() -> ServiceContainer:

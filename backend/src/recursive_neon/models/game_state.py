@@ -1,15 +1,19 @@
 """
 Game State Models
 """
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+
 from datetime import datetime
-from enum import Enum
-from recursive_neon.models.app_models import NotesState, TasksState, FileSystemState
+from enum import StrEnum
+from typing import Any, Dict, List
+
+from pydantic import BaseModel, Field
+
+from recursive_neon.models.app_models import FileSystemState, NotesState, TasksState
 
 
-class SystemStatus(str, Enum):
+class SystemStatus(StrEnum):
     """System status states"""
+
     INITIALIZING = "initializing"
     READY = "ready"
     BUSY = "busy"
@@ -19,10 +23,11 @@ class SystemStatus(str, Enum):
 
 class GameState(BaseModel):
     """Overall game state"""
+
     player_id: str = "player_1"
     current_location: str = "main_lobby"
-    active_quests: list = Field(default_factory=list)
-    completed_quests: list = Field(default_factory=list)
+    active_quests: List[str] = Field(default_factory=list)
+    completed_quests: List[str] = Field(default_factory=list)
     inventory: Dict[str, int] = Field(default_factory=dict)
     stats: Dict[str, Any] = Field(default_factory=dict)
 
@@ -34,16 +39,18 @@ class GameState(BaseModel):
 
 class SystemState(BaseModel):
     """Backend system state"""
+
     status: SystemStatus = SystemStatus.INITIALIZING
     ollama_running: bool = False
-    ollama_models_loaded: list = Field(default_factory=list)
+    ollama_models_loaded: List[str] = Field(default_factory=list)
     npcs_loaded: int = 0
     uptime_seconds: float = 0
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
 
 class StatusResponse(BaseModel):
     """Status response for health checks"""
+
     status: str
     system: SystemState
     timestamp: datetime = Field(default_factory=datetime.now)

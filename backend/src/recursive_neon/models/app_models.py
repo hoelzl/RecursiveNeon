@@ -4,9 +4,10 @@ Data models for game applications.
 Core models for the virtual filesystem, notes, and tasks.
 These are presentation-agnostic and work with both CLI and GUI interfaces.
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List
 
+from typing import List
+
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # File System Models (Virtual filesystem - security-critical)
@@ -24,18 +25,18 @@ class FileNode(BaseModel):
     id: str
     name: str
     type: str  # "file" or "directory"
-    parent_id: Optional[str] = None
-    content: Optional[str] = None  # For files: text content or base64 for images
-    mime_type: Optional[str] = None  # For files: "text/plain", "image/jpeg", etc.
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    parent_id: str | None = None
+    content: str | None = None  # For files: text content or base64 for images
+    mime_type: str | None = None  # For files: "text/plain", "image/jpeg", etc.
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class FileSystemState(BaseModel):
     """State for the virtual filesystem"""
 
     nodes: List[FileNode] = Field(default_factory=list)
-    root_id: Optional[str] = None  # ID of the root directory
+    root_id: str | None = None  # ID of the root directory
 
 
 # ============================================================================
@@ -70,7 +71,7 @@ class Task(BaseModel):
     id: str
     title: str
     completed: bool
-    parent_id: Optional[str] = None  # For subtasks, ID of parent task
+    parent_id: str | None = None  # For subtasks, ID of parent task
 
 
 class TaskList(BaseModel):

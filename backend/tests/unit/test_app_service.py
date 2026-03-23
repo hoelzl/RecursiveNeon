@@ -1,11 +1,11 @@
 """
 Tests for desktop app service
 """
+
 import pytest
-from datetime import datetime
-from recursive_neon.services.app_service import AppService
+
 from recursive_neon.models.game_state import GameState
-from recursive_neon.models.app_models import Note, Task, TaskList, FileNode
+from recursive_neon.services.app_service import AppService
 
 
 class TestNotesService:
@@ -24,10 +24,7 @@ class TestNotesService:
 
     def test_create_note(self, app_service):
         """Test creating a new note"""
-        note_data = {
-            "title": "Test Note",
-            "content": "This is a test"
-        }
+        note_data = {"title": "Test Note", "content": "This is a test"}
         note = app_service.create_note(note_data)
         assert note.title == "Test Note"
         assert note.content == "This is a test"
@@ -43,7 +40,9 @@ class TestNotesService:
     def test_update_note(self, app_service):
         """Test updating a note"""
         note = app_service.create_note({"title": "Original", "content": "Old"})
-        updated = app_service.update_note(note.id, {"title": "Updated", "content": "New"})
+        updated = app_service.update_note(
+            note.id, {"title": "Updated", "content": "New"}
+        )
         assert updated.title == "Updated"
         assert updated.content == "New"
 
@@ -88,17 +87,21 @@ class TestTasksService:
     def test_create_subtask(self, app_service):
         """Test creating a subtask"""
         task_list = app_service.create_task_list({"name": "Work"})
-        parent_task = app_service.create_task(task_list.id, {"title": "Project", "completed": False})
+        parent_task = app_service.create_task(
+            task_list.id, {"title": "Project", "completed": False}
+        )
         subtask = app_service.create_task(
             task_list.id,
-            {"title": "Step 1", "completed": False, "parent_id": parent_task.id}
+            {"title": "Step 1", "completed": False, "parent_id": parent_task.id},
         )
         assert subtask.parent_id == parent_task.id
 
     def test_update_task(self, app_service):
         """Test updating a task"""
         task_list = app_service.create_task_list({"name": "Work"})
-        task = app_service.create_task(task_list.id, {"title": "Task", "completed": False})
+        task = app_service.create_task(
+            task_list.id, {"title": "Task", "completed": False}
+        )
         updated = app_service.update_task(task_list.id, task.id, {"completed": True})
         assert updated.completed is True
 
@@ -141,7 +144,7 @@ class TestFileSystemService:
             "name": "readme.txt",
             "parent_id": root_id,
             "content": "Hello, World!",
-            "mime_type": "text/plain"
+            "mime_type": "text/plain",
         }
         file = app_service.create_file(file_data)
         assert file.name == "readme.txt"
@@ -151,12 +154,14 @@ class TestFileSystemService:
         """Test getting a file by ID"""
         app_service.init_filesystem()
         root_id = app_service.game_state.filesystem.root_id
-        file = app_service.create_file({
-            "name": "test.txt",
-            "parent_id": root_id,
-            "content": "test",
-            "mime_type": "text/plain"
-        })
+        file = app_service.create_file(
+            {
+                "name": "test.txt",
+                "parent_id": root_id,
+                "content": "test",
+                "mime_type": "text/plain",
+            }
+        )
         retrieved = app_service.get_file(file.id)
         assert retrieved.id == file.id
 
@@ -164,12 +169,14 @@ class TestFileSystemService:
         """Test updating file content"""
         app_service.init_filesystem()
         root_id = app_service.game_state.filesystem.root_id
-        file = app_service.create_file({
-            "name": "test.txt",
-            "parent_id": root_id,
-            "content": "old",
-            "mime_type": "text/plain"
-        })
+        file = app_service.create_file(
+            {
+                "name": "test.txt",
+                "parent_id": root_id,
+                "content": "old",
+                "mime_type": "text/plain",
+            }
+        )
         updated = app_service.update_file(file.id, {"content": "new"})
         assert updated.content == "new"
 
@@ -177,12 +184,14 @@ class TestFileSystemService:
         """Test deleting a file"""
         app_service.init_filesystem()
         root_id = app_service.game_state.filesystem.root_id
-        file = app_service.create_file({
-            "name": "delete.txt",
-            "parent_id": root_id,
-            "content": "delete me",
-            "mime_type": "text/plain"
-        })
+        file = app_service.create_file(
+            {
+                "name": "delete.txt",
+                "parent_id": root_id,
+                "content": "delete me",
+                "mime_type": "text/plain",
+            }
+        )
         app_service.delete_file(file.id)
         with pytest.raises(ValueError):
             app_service.get_file(file.id)
@@ -191,14 +200,14 @@ class TestFileSystemService:
         """Test listing directory contents"""
         app_service.init_filesystem()
         root_id = app_service.game_state.filesystem.root_id
-        app_service.create_file({
-            "name": "file1.txt",
-            "parent_id": root_id,
-            "content": "1",
-            "mime_type": "text/plain"
-        })
+        app_service.create_file(
+            {
+                "name": "file1.txt",
+                "parent_id": root_id,
+                "content": "1",
+                "mime_type": "text/plain",
+            }
+        )
         app_service.create_directory({"name": "dir1", "parent_id": root_id})
         contents = app_service.list_directory(root_id)
         assert len(contents) == 2
-
-

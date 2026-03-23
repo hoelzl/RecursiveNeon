@@ -24,6 +24,7 @@ venv/
 env/
 ENV/
 .pytest_cache/
+.mypy_cache/
 
 # Node
 node_modules/
@@ -69,6 +70,11 @@ services/ollama/models/*.gguf
 # Logs
 *.log
 logs/
+
+# Coverage reports
+htmlcov/
+coverage.xml
+.coverage
 
 # Build artifacts
 frontend/.vite/

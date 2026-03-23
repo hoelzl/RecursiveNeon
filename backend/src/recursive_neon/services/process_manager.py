@@ -3,14 +3,15 @@ Process Manager - Controls the ollama server process
 
 Refactored to implement IProcessManager interface for better testability.
 """
-import subprocess
-import platform
-import logging
+
 import asyncio
+import contextlib
+import logging
 import os
-import signal
+import platform
+import subprocess
 from pathlib import Path
-from typing import Optional
+
 import psutil
 
 from recursive_neon.services.interfaces import IProcessManager
@@ -34,13 +35,13 @@ class OllamaProcessManager(IProcessManager):
         self,
         binary_path: str = "../services/ollama",
         host: str = "127.0.0.1",
-        port: int = 11434
+        port: int = 11434,
     ):
         self.binary_path = Path(binary_path)
         self.host = host
         self.port = port
-        self.process: Optional[subprocess.Popen] = None
-        self._monitor_task: Optional[asyncio.Task] = None
+        self.process: subprocess.Popen | None = None
+        self._monitor_task: asyncio.Task | None = None
 
     def _get_ollama_binary(self) -> Path:
         """Locate the ollama binary for the current platform"""
@@ -54,6 +55,7 @@ class OllamaProcessManager(IProcessManager):
         if not binary.exists():
             # Try to find in system PATH
             import shutil
+
             if system_binary := shutil.which("ollama"):
                 return Path(system_binary)
 
@@ -89,7 +91,9 @@ class OllamaProcessManager(IProcessManager):
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                creationflags=subprocess.CREATE_NO_WINDOW
+                if platform.system() == "Windows"
+                else 0,
             )
 
             # Start monitoring
@@ -157,10 +161,8 @@ class OllamaProcessManager(IProcessManager):
             # Cancel monitor task
             if self._monitor_task:
                 self._monitor_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._monitor_task
-                except asyncio.CancelledError:
-                    pass
 
             # Try graceful shutdown
             if self.process:
@@ -187,26 +189,17 @@ class OllamaProcessManager(IProcessManager):
     def get_status(self) -> dict:
         """Get current status of the ollama process"""
         if not self.is_running():
-            return {
-                "running": False,
-                "pid": None,
-                "memory_mb": 0,
-                "cpu_percent": 0
-            }
+            return {"running": False, "pid": None, "memory_mb": 0, "cpu_percent": 0}
 
         try:
+            assert self.process is not None  # guaranteed by is_running() above
             proc = psutil.Process(self.process.pid)
             return {
                 "running": True,
                 "pid": self.process.pid,
                 "memory_mb": proc.memory_info().rss / 1024 / 1024,
-                "cpu_percent": proc.cpu_percent(interval=0.1)
+                "cpu_percent": proc.cpu_percent(interval=0.1),
             }
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             logger.error(f"Error getting process status: {e}")
-            return {
-                "running": False,
-                "pid": None,
-                "memory_mb": 0,
-                "cpu_percent": 0
-            }
+            return {"running": False, "pid": None, "memory_mb": 0, "cpu_percent": 0}

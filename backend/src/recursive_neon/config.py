@@ -1,8 +1,10 @@
 """
 Configuration for Recursive://Neon backend
 """
-from pydantic_settings import BaseSettings
+
 from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -36,9 +38,7 @@ class Settings(BaseSettings):
     ollama_timeout: int = 60  # seconds
     websocket_timeout: int = 30
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()

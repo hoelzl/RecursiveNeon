@@ -4,20 +4,22 @@ App Service
 Manages state for game applications: virtual filesystem, notes, and tasks.
 Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 """
-import uuid
-import json
+
 import base64
+import json
+import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional
 from pathlib import Path
-from recursive_neon.models.game_state import GameState
+from typing import Any, Dict, List
+
 from recursive_neon.models.app_models import (
+    FileNode,
+    FileSystemState,
     Note,
     Task,
     TaskList,
-    FileNode,
-    FileSystemState,
 )
+from recursive_neon.models.game_state import GameState
 
 
 class AppService:
@@ -283,7 +285,9 @@ class AppService:
             n for n in self.game_state.filesystem.nodes if n.id != file_id
         ]
 
-    def copy_file(self, file_id: str, target_parent_id: str, new_name: Optional[str] = None) -> FileNode:
+    def copy_file(
+        self, file_id: str, target_parent_id: str, new_name: str | None = None
+    ) -> FileNode:
         source = self.get_file(file_id)
         timestamp = datetime.now().isoformat()
         copy = FileNode(
@@ -306,10 +310,12 @@ class AppService:
         file = self.get_file(file_id)
         timestamp = datetime.now().isoformat()
         if file.type == "directory":
-            current = target_parent_id
+            current: str | None = target_parent_id
             while current:
                 if current == file_id:
-                    raise ValueError("Cannot move a directory into itself or its descendants")
+                    raise ValueError(
+                        "Cannot move a directory into itself or its descendants"
+                    )
                 parent = self.get_file(current)
                 current = parent.parent_id
         for i, node in enumerate(self.game_state.filesystem.nodes):
@@ -331,7 +337,8 @@ class AppService:
     def list_directory(self, dir_id: str) -> List[FileNode]:
         self.get_file(dir_id)
         return [
-            node for node in self.game_state.filesystem.nodes
+            node
+            for node in self.game_state.filesystem.nodes
             if node.parent_id == dir_id
         ]
 
@@ -358,7 +365,9 @@ class AppService:
             self.delete_file(data["file_id"])
             return {"success": True}
         elif action == "copy":
-            node = self.copy_file(data["file_id"], data["target_parent_id"], data.get("new_name"))
+            node = self.copy_file(
+                data["file_id"], data["target_parent_id"], data.get("new_name")
+            )
             return {"node": node.model_dump()}
         elif action == "move":
             node = self.move_file(data["file_id"], data["target_parent_id"])
@@ -383,7 +392,7 @@ class AppService:
         filepath = Path(data_dir) / "filesystem.json"
         if not filepath.exists():
             return False
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             filesystem_dict = json.load(f)
         self.game_state.filesystem = FileSystemState(
             nodes=[FileNode(**node) for node in filesystem_dict["nodes"]],
@@ -391,7 +400,9 @@ class AppService:
         )
         return True
 
-    def load_initial_filesystem(self, initial_fs_dir: str = "backend/initial_fs") -> None:
+    def load_initial_filesystem(
+        self, initial_fs_dir: str = "backend/initial_fs"
+    ) -> None:
         initial_path = Path(initial_fs_dir)
         if not initial_path.exists():
             self.init_filesystem()
@@ -405,7 +416,7 @@ class AppService:
         if not source_path.exists() or not source_path.is_dir():
             return
         for item in sorted(source_path.iterdir()):
-            if item.name.startswith('.'):
+            if item.name.startswith("."):
                 continue
             timestamp = datetime.now().isoformat()
             if item.is_dir():
@@ -436,28 +447,28 @@ class AppService:
 
     def _get_mime_type(self, extension: str) -> str:
         mime_types = {
-            '.txt': 'text/plain',
-            '.md': 'text/plain',
-            '.json': 'application/json',
-            '.html': 'text/html',
-            '.css': 'text/css',
-            '.js': 'text/javascript',
-            '.py': 'text/x-python',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.gif': 'image/gif',
-            '.svg': 'image/svg+xml',
-            '.pdf': 'application/pdf',
+            ".txt": "text/plain",
+            ".md": "text/plain",
+            ".json": "application/json",
+            ".html": "text/html",
+            ".css": "text/css",
+            ".js": "text/javascript",
+            ".py": "text/x-python",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".pdf": "application/pdf",
         }
-        return mime_types.get(extension.lower(), 'application/octet-stream')
+        return mime_types.get(extension.lower(), "application/octet-stream")
 
     def _read_file_content(self, file_path: Path, mime_type: str) -> str:
-        if mime_type.startswith('text/') or mime_type in ['application/json']:
+        if mime_type.startswith("text/") or mime_type in ["application/json"]:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding="utf-8") as f:
                     return f.read()
             except UnicodeDecodeError:
                 pass
-        with open(file_path, 'rb') as f:
-            return base64.b64encode(f.read()).decode('ascii')
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii")

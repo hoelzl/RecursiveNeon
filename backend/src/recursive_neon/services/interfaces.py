@@ -8,29 +8,30 @@ These interfaces enable:
 - Loose coupling between components
 - Clear service contracts
 """
+
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Protocol
+from typing import Any, Dict, List, Protocol
 
 from recursive_neon.models.npc import NPC, ChatResponse
-
 
 # ============================================================================
 # LLM Interface (for LangChain compatibility)
 # ============================================================================
 
+
 class LLMInterface(Protocol):
     """
     Protocol for Language Model providers.
 
-    This interface matches the LangChain LLM interface, allowing us to
+    This interface matches the LangChain BaseChatModel interface, allowing us to
     inject different LLM implementations (real or mock) into NPCManager.
     """
 
-    def invoke(self, messages: Any) -> Any:
+    def invoke(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         """Synchronously invoke the LLM"""
         ...
 
-    async def ainvoke(self, messages: Any) -> Any:
+    async def ainvoke(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         """Asynchronously invoke the LLM"""
         ...
 
@@ -38,6 +39,7 @@ class LLMInterface(Protocol):
 # ============================================================================
 # NPC Manager Interface
 # ============================================================================
+
 
 class INPCManager(ABC):
     """Abstract interface for NPC management."""
@@ -53,7 +55,7 @@ class INPCManager(ABC):
         pass
 
     @abstractmethod
-    def get_npc(self, npc_id: str) -> Optional[NPC]:
+    def get_npc(self, npc_id: str) -> NPC | None:
         """Get an NPC by ID."""
         pass
 
@@ -64,12 +66,14 @@ class INPCManager(ABC):
 
     @abstractmethod
     async def chat(
-        self,
-        npc_id: str,
-        message: str,
-        player_id: str = "player_1"
+        self, npc_id: str, message: str, player_id: str = "player_1"
     ) -> ChatResponse:
         """Send a chat message to an NPC and get a response."""
+        pass
+
+    @abstractmethod
+    def create_default_npcs(self) -> List[NPC]:
+        """Create and register default NPCs."""
         pass
 
     @abstractmethod
@@ -82,6 +86,7 @@ class INPCManager(ABC):
 # Ollama Client Interface
 # ============================================================================
 
+
 class IOllamaClient(ABC):
     """Abstract interface for Ollama HTTP client."""
 
@@ -92,9 +97,7 @@ class IOllamaClient(ABC):
 
     @abstractmethod
     async def wait_for_ready(
-        self,
-        max_wait: int = 30,
-        check_interval: float = 0.5
+        self, max_wait: int = 30, check_interval: float = 0.5
     ) -> bool:
         """Wait for Ollama server to become ready."""
         pass
@@ -107,9 +110,12 @@ class IOllamaClient(ABC):
     @abstractmethod
     async def generate(
         self,
-        model: str,
         prompt: str,
-        **kwargs: Any
+        model: str = "phi3:mini",
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 200,
+        stream: bool = False,
     ) -> Any:
         """Generate text using a model."""
         pass
@@ -123,6 +129,7 @@ class IOllamaClient(ABC):
 # ============================================================================
 # Process Manager Interface
 # ============================================================================
+
 
 class IProcessManager(ABC):
     """Abstract interface for Ollama process management."""

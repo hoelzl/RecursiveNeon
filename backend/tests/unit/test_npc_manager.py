@@ -5,12 +5,13 @@ These tests demonstrate the improved testability after refactoring for
 dependency injection. The NPCManager can now be tested in complete isolation
 without requiring a running Ollama server.
 """
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
 
-from recursive_neon.services.npc_manager import NPCManager
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
 from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole
+from recursive_neon.services.npc_manager import NPCManager
 
 
 class TestNPCManagerWithDependencyInjection:
@@ -26,15 +27,14 @@ class TestNPCManagerWithDependencyInjection:
         """
         from langchain_core.language_models import BaseChatModel
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import LLMResult, Generation
+        from langchain_core.outputs import Generation, LLMResult
 
         mock = Mock(spec=BaseChatModel)
 
         # Create a proper LLMResult object
         default_response = "Hello! I'm happy to help you."
         llm_result = LLMResult(
-            generations=[[Generation(text=default_response)]],
-            llm_output={}
+            generations=[[Generation(text=default_response)]], llm_output={}
         )
 
         # Return AIMessage objects for message-based methods
@@ -71,7 +71,7 @@ class TestNPCManagerWithDependencyInjection:
             location="Test Suite",
             greeting="Hello, test!",
             conversation_style="helpful and clear",
-            topics_of_interest=["testing", "quality assurance"]
+            topics_of_interest=["testing", "quality assurance"],
         )
 
     def test_initialization_with_injected_llm(self, npc_manager, mock_llm):
@@ -135,7 +135,7 @@ class TestNPCManagerWithDependencyInjection:
             occupation="Trader",
             location="Test Market",
             greeting="Greetings, customer.",
-            conversation_style="professional and businesslike"
+            conversation_style="professional and businesslike",
         )
 
         npc_manager.register_npc(sample_npc)
@@ -155,13 +155,12 @@ class TestNPCManagerWithDependencyInjection:
         test the chat logic without needing a real LLM.
         """
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import LLMResult, Generation
+        from langchain_core.outputs import Generation, LLMResult
 
         # Configure the mock LLM to return a specific response
         expected_response = "I can help you with that!"
         llm_result = LLMResult(
-            generations=[[Generation(text=expected_response)]],
-            llm_output={}
+            generations=[[Generation(text=expected_response)]], llm_output={}
         )
         mock_llm.invoke.return_value = AIMessage(content=expected_response)
         mock_llm.predict.return_value = expected_response
@@ -173,13 +172,15 @@ class TestNPCManagerWithDependencyInjection:
         response = await npc_manager.chat(
             npc_id=sample_npc.id,
             message="Hello, can you help me?",
-            player_id="test_player"
+            player_id="test_player",
         )
 
         # Verify response structure
         assert response.npc_id == sample_npc.id
         assert response.npc_name == sample_npc.name
-        assert expected_response in response.message  # Response might be trimmed/processed
+        assert (
+            expected_response in response.message
+        )  # Response might be trimmed/processed
 
         # Verify memory was updated
         assert len(sample_npc.memory.conversation_history) == 2  # user + assistant
@@ -189,22 +190,19 @@ class TestNPCManagerWithDependencyInjection:
         """Test chat with non-existent NPC raises ValueError."""
         with pytest.raises(ValueError, match="NPC not found"):
             await npc_manager.chat(
-                npc_id="nonexistent_npc",
-                message="Hello",
-                player_id="test_player"
+                npc_id="nonexistent_npc", message="Hello", player_id="test_player"
             )
 
     @pytest.mark.asyncio
     async def test_chat_updates_relationship(self, npc_manager, sample_npc, mock_llm):
         """Test that chat updates relationship level based on sentiment."""
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import LLMResult, Generation
+        from langchain_core.outputs import Generation, LLMResult
 
         # Configure mock LLM response
         response_text = "You're welcome!"
         llm_result = LLMResult(
-            generations=[[Generation(text=response_text)]],
-            llm_output={}
+            generations=[[Generation(text=response_text)]], llm_output={}
         )
         mock_llm.invoke.return_value = AIMessage(content=response_text)
         mock_llm.predict.return_value = response_text
@@ -218,7 +216,7 @@ class TestNPCManagerWithDependencyInjection:
         await npc_manager.chat(
             npc_id=sample_npc.id,
             message="Thank you so much for your help!",
-            player_id="test_player"
+            player_id="test_player",
         )
 
         # Relationship should have increased
@@ -236,9 +234,7 @@ class TestNPCManagerWithDependencyInjection:
         npc_manager.register_npc(sample_npc)
 
         response = await npc_manager.chat(
-            npc_id=sample_npc.id,
-            message="Hello",
-            player_id="test_player"
+            npc_id=sample_npc.id, message="Hello", player_id="test_player"
         )
 
         # Should return fallback response instead of crashing
@@ -276,19 +272,18 @@ class TestNPCManagerWithDependencyInjection:
         """Test the factory method for creating NPCManager with Ollama."""
         # This creates a real ChatOllama instance, so it might fail without Ollama
         # In practice, you'd mock ChatOllama or skip this test
-        with patch('backend.services.npc_manager.ChatOllama') as mock_ollama_class:
+        with patch("recursive_neon.services.npc_manager.ChatOllama") as mock_ollama_class:
             mock_llm_instance = Mock()
             mock_ollama_class.return_value = mock_llm_instance
 
             manager = NPCManager.create_with_ollama(
-                ollama_host="localhost",
-                ollama_port=11434
+                ollama_host="localhost", ollama_port=11434
             )
 
             # Verify ChatOllama was created with correct parameters
             mock_ollama_class.assert_called_once()
             call_kwargs = mock_ollama_class.call_args[1]
-            assert "localhost:11434" in call_kwargs['base_url']
+            assert "localhost:11434" in call_kwargs["base_url"]
             assert manager.llm is mock_llm_instance
 
 
@@ -297,15 +292,12 @@ class TestNPCManagerBackwardCompatibility:
 
     def test_legacy_initialization(self):
         """Test legacy initialization pattern still works."""
-        with patch('backend.services.npc_manager.ChatOllama') as mock_ollama:
+        with patch("recursive_neon.services.npc_manager.ChatOllama") as mock_ollama:
             mock_llm = Mock()
             mock_ollama.return_value = mock_llm
 
             # Old-style initialization
-            manager = NPCManager(
-                ollama_host="localhost",
-                ollama_port=11434
-            )
+            manager = NPCManager(ollama_host="localhost", ollama_port=11434)
 
             # Should have created LLM internally
             assert manager.llm is mock_llm

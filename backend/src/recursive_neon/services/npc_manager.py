@@ -4,16 +4,18 @@ NPC Manager - Orchestrates NPC conversations using LangChain
 This module has been refactored for dependency injection to improve testability.
 The NPCManager now accepts an LLM instance via constructor injection.
 """
-import logging
-import asyncio
-from typing import Dict, List, Optional, Any
-from langchain_ollama import ChatOllama
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain.prompts import PromptTemplate
 
-from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole, ChatResponse
+import asyncio
+import logging
+from typing import Any, Dict, List
+
+from langchain_classic.chains import ConversationChain
+from langchain_classic.memory import ConversationBufferMemory
+from langchain_core.prompts import PromptTemplate
+from langchain_ollama import ChatOllama
+
 from recursive_neon.config import settings
+from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
 from recursive_neon.services.interfaces import INPCManager, LLMInterface
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,12 @@ class NPCManager(INPCManager):
         manager = NPCManager(llm=mock_llm)
     """
 
-    def __init__(self, llm: Optional[LLMInterface] = None, ollama_host: str = None, ollama_port: int = None):
+    def __init__(
+        self,
+        llm: LLMInterface | None = None,
+        ollama_host: str | None = None,
+        ollama_port: int | None = None,
+    ):
         """
         Initialize NPCManager with dependency injection.
 
@@ -70,7 +77,9 @@ class NPCManager(INPCManager):
             logger.info("NPCManager initialized with default LLM")
 
     @classmethod
-    def create_with_ollama(cls, ollama_host: str = None, ollama_port: int = None) -> 'NPCManager':
+    def create_with_ollama(
+        cls, ollama_host: str | None = None, ollama_port: int | None = None
+    ) -> "NPCManager":
         """
         Factory method to create NPCManager with Ollama LLM.
 
@@ -105,7 +114,7 @@ Previous conversation:
 {{history}}
 
 Player: {{input}}
-{npc.name}:"""
+{npc.name}:""",
         )
 
         memory = ConversationBufferMemory()
@@ -118,10 +127,7 @@ Player: {{input}}
                 memory.chat_memory.add_ai_message(msg["content"])
 
         self.chains[npc.id] = ConversationChain(
-            llm=self.llm,
-            prompt=prompt,
-            memory=memory,
-            verbose=False
+            llm=self.llm, prompt=prompt, memory=memory, verbose=False
         )
 
         logger.info(f"Registered NPC: {npc.name} ({npc.id})")
@@ -134,7 +140,7 @@ Player: {{input}}
             del self.chains[npc_id]
         logger.info(f"Unregistered NPC: {npc_id}")
 
-    def get_npc(self, npc_id: str) -> Optional[NPC]:
+    def get_npc(self, npc_id: str) -> NPC | None:
         """Get NPC by ID"""
         return self.npcs.get(npc_id)
 
@@ -142,7 +148,9 @@ Player: {{input}}
         """Get list of all NPCs"""
         return list(self.npcs.values())
 
-    async def chat(self, npc_id: str, message: str, player_id: str = "player_1") -> ChatResponse:
+    async def chat(
+        self, npc_id: str, message: str, player_id: str = "player_1"
+    ) -> ChatResponse:
         """
         Handle a chat message to an NPC
 
@@ -168,25 +176,26 @@ Player: {{input}}
 
             # Generate response using LangChain
             logger.debug(f"Generating response for {npc.name}")
-            response = await asyncio.to_thread(
-                chain.predict,
-                input=message
-            )
+            response = await asyncio.to_thread(chain.predict, input=message)
 
             # Add response to NPC's memory
             npc.add_to_memory("assistant", response)
 
             # Update relationship based on sentiment (simple heuristic)
             # In a real game, this would be more sophisticated
-            if any(word in message.lower() for word in ["thank", "please", "appreciate"]):
-                npc.memory.relationship_level = min(100, npc.memory.relationship_level + 1)
+            if any(
+                word in message.lower() for word in ["thank", "please", "appreciate"]
+            ):
+                npc.memory.relationship_level = min(
+                    100, npc.memory.relationship_level + 1
+                )
             elif any(word in message.lower() for word in ["stupid", "hate", "idiot"]):
-                npc.memory.relationship_level = max(-100, npc.memory.relationship_level - 5)
+                npc.memory.relationship_level = max(
+                    -100, npc.memory.relationship_level - 5
+                )
 
             return ChatResponse(
-                npc_id=npc.id,
-                npc_name=npc.name,
-                message=response.strip()
+                npc_id=npc.id, npc_name=npc.name, message=response.strip()
             )
 
         except Exception as e:
@@ -195,7 +204,7 @@ Player: {{input}}
             return ChatResponse(
                 npc_id=npc.id,
                 npc_name=npc.name,
-                message="I... I'm not sure what to say. Perhaps we can talk later?"
+                message="I... I'm not sure what to say. Perhaps we can talk later?",
             )
 
     def create_default_npcs(self) -> List[NPC]:
@@ -211,9 +220,13 @@ Player: {{input}}
                 location="Main Lobby",
                 greeting="Welcome! How can I assist you today?",
                 conversation_style="professional but warm",
-                topics_of_interest=["building directory", "recent events", "local news"],
+                topics_of_interest=[
+                    "building directory",
+                    "recent events",
+                    "local news",
+                ],
                 avatar="👩‍💼",
-                theme_color="#4a9eff"
+                theme_color="#4a9eff",
             ),
             NPC(
                 id="hacker_zero",
@@ -225,10 +238,14 @@ Player: {{input}}
                 location="Dark Net Café",
                 greeting="...You found me. Interesting.",
                 conversation_style="cryptic and brief",
-                topics_of_interest=["security vulnerabilities", "hidden files", "system secrets"],
+                topics_of_interest=[
+                    "security vulnerabilities",
+                    "hidden files",
+                    "system secrets",
+                ],
                 secrets=["access to restricted areas", "admin passwords"],
                 avatar="🕵️",
-                theme_color="#00ff00"
+                theme_color="#00ff00",
             ),
             NPC(
                 id="merchant_kai",
@@ -242,7 +259,7 @@ Player: {{input}}
                 conversation_style="excited and energetic",
                 topics_of_interest=["rare items", "deals", "collectibles"],
                 avatar="🧙‍♂️",
-                theme_color="#ff6b35"
+                theme_color="#ff6b35",
             ),
             NPC(
                 id="engineer_morgan",
@@ -254,10 +271,14 @@ Player: {{input}}
                 location="Server Room",
                 greeting="What do you want? I'm busy.",
                 conversation_style="gruff and direct",
-                topics_of_interest=["technical problems", "system architecture", "old stories"],
+                topics_of_interest=[
+                    "technical problems",
+                    "system architecture",
+                    "old stories",
+                ],
                 secrets=["system backdoors", "hidden maintenance tunnels"],
                 avatar="👨‍🔧",
-                theme_color="#ff9500"
+                theme_color="#ff9500",
             ),
             NPC(
                 id="guide_luna",
@@ -269,10 +290,14 @@ Player: {{input}}
                 location="Tutorial Zone",
                 greeting="Hi! I'm Luna, your guide. Let me help you get started!",
                 conversation_style="friendly and patient",
-                topics_of_interest=["how things work", "tips and tricks", "getting started"],
+                topics_of_interest=[
+                    "how things work",
+                    "tips and tricks",
+                    "getting started",
+                ],
                 avatar="🤖",
-                theme_color="#ff69b4"
-            )
+                theme_color="#ff69b4",
+            ),
         ]
 
         # Register all default NPCs
@@ -282,7 +307,7 @@ Player: {{input}}
 
         return default_npcs
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, Any]:
         """Get manager statistics"""
         return {
             "total_npcs": len(self.npcs),
@@ -292,8 +317,10 @@ Player: {{input}}
                     "name": npc.name,
                     "conversation_length": len(npc.memory.conversation_history),
                     "relationship_level": npc.memory.relationship_level,
-                    "last_interaction": npc.memory.last_interaction.isoformat() if npc.memory.last_interaction else None
+                    "last_interaction": npc.memory.last_interaction.isoformat()
+                    if npc.memory.last_interaction
+                    else None,
                 }
                 for npc in self.npcs.values()
-            ]
+            ],
         }

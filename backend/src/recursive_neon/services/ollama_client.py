@@ -3,11 +3,14 @@ Ollama HTTP Client - manages communication with local ollama server
 
 Refactored to implement IOllamaClient interface for better testability.
 """
-import httpx
+
 import asyncio
 import logging
-from typing import Optional, Dict, Any, List, AsyncIterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Dict, List
+
+import httpx
 
 from recursive_neon.services.interfaces import IOllamaClient
 
@@ -17,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GenerationResponse:
     """Response from ollama generation"""
+
     text: str
     total_duration_ms: float
     prompt_eval_count: int
@@ -43,12 +47,7 @@ class OllamaClient(IOllamaClient):
     - Error handling and retries
     """
 
-    def __init__(
-        self,
-        host: str = "127.0.0.1",
-        port: int = 11434,
-        timeout: int = 60
-    ):
+    def __init__(self, host: str = "127.0.0.1", port: int = 11434, timeout: int = 60):
         self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
@@ -57,12 +56,14 @@ class OllamaClient(IOllamaClient):
         """Check if ollama server is responding"""
         try:
             response = await self.client.get(f"{self.base_url}/api/tags")
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception as e:
             logger.debug(f"Health check failed: {e}")
             return False
 
-    async def wait_for_ready(self, max_wait: int = 30, check_interval: float = 0.5) -> bool:
+    async def wait_for_ready(
+        self, max_wait: int = 30, check_interval: float = 0.5
+    ) -> bool:
         """
         Wait for ollama server to be ready
 
@@ -98,10 +99,10 @@ class OllamaClient(IOllamaClient):
         self,
         prompt: str,
         model: str = "phi3:mini",
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 200,
-        stream: bool = False
+        stream: bool = False,
     ) -> GenerationResponse:
         """
         Generate text completion
@@ -124,7 +125,7 @@ class OllamaClient(IOllamaClient):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-            }
+            },
         }
 
         if system:
@@ -132,8 +133,7 @@ class OllamaClient(IOllamaClient):
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate",
-                json=payload
+                f"{self.base_url}/api/generate", json=payload
             )
             response.raise_for_status()
             data = response.json()
@@ -142,7 +142,7 @@ class OllamaClient(IOllamaClient):
                 text=data.get("response", ""),
                 total_duration_ms=data.get("total_duration", 0) / 1_000_000,  # ns to ms
                 prompt_eval_count=data.get("prompt_eval_count", 0),
-                eval_count=data.get("eval_count", 0)
+                eval_count=data.get("eval_count", 0),
             )
         except Exception as e:
             logger.error(f"Generation failed: {e}")
@@ -152,9 +152,9 @@ class OllamaClient(IOllamaClient):
         self,
         prompt: str,
         model: str = "phi3:mini",
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 200
+        max_tokens: int = 200,
     ) -> AsyncIterator[str]:
         """
         Generate text completion with streaming
@@ -168,7 +168,7 @@ class OllamaClient(IOllamaClient):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-            }
+            },
         }
 
         if system:
@@ -176,14 +176,13 @@ class OllamaClient(IOllamaClient):
 
         try:
             async with self.client.stream(
-                "POST",
-                f"{self.base_url}/api/generate",
-                json=payload
+                "POST", f"{self.base_url}/api/generate", json=payload
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line:
                         import json
+
                         data = json.loads(line)
                         if chunk := data.get("response"):
                             yield chunk
@@ -196,7 +195,7 @@ class OllamaClient(IOllamaClient):
         messages: List[Dict[str, str]],
         model: str = "phi3:mini",
         temperature: float = 0.7,
-        max_tokens: int = 200
+        max_tokens: int = 200,
     ) -> str:
         """
         Chat completion (multi-turn conversation)
@@ -217,18 +216,15 @@ class OllamaClient(IOllamaClient):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-            }
+            },
         }
 
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat",
-                json=payload
-            )
+            response = await self.client.post(f"{self.base_url}/api/chat", json=payload)
             response.raise_for_status()
             data = response.json()
 
-            return data.get("message", {}).get("content", "")
+            return str(data.get("message", {}).get("content", ""))
         except Exception as e:
             logger.error(f"Chat completion failed: {e}")
             raise

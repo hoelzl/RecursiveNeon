@@ -3,9 +3,10 @@ Shared test fixtures and configuration for pytest.
 
 This module provides common fixtures used across all test modules.
 """
+
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock
-from typing import AsyncGenerator
 
 # Import models for test fixtures
 from recursive_neon.models.npc import NPC
@@ -20,10 +21,9 @@ def mock_llm():
     The mock is configured with spec to avoid strict type checking while maintaining
     the necessary methods for ConversationChain.
     """
-    from langchain_core.runnables import Runnable
     from langchain_core.language_models import BaseChatModel
     from langchain_core.messages import AIMessage
-    from langchain_core.outputs import LLMResult, Generation
+    from langchain_core.outputs import Generation, LLMResult
 
     # Create a more sophisticated mock that inherits from a base class
     # This avoids Pydantic validation issues with ConversationChain
@@ -32,8 +32,7 @@ def mock_llm():
     # Create a proper LLMResult object
     default_response = "Mock response from LLM"
     llm_result = LLMResult(
-        generations=[[Generation(text=default_response)]],
-        llm_output={}
+        generations=[[Generation(text=default_response)]], llm_output={}
     )
 
     # Return AIMessage objects for message-based methods
@@ -73,7 +72,7 @@ def sample_npc():
         occupation="Tester",
         location="Test Suite",
         greeting="Hello! I'm a test NPC.",
-        conversation_style="friendly and helpful"
+        conversation_style="friendly and helpful",
     )
 
 
@@ -95,7 +94,7 @@ def multiple_npcs(sample_npc):
         occupation="Professional Tester",
         location="Test Lab",
         greeting="Greetings.",
-        conversation_style="professional and concise"
+        conversation_style="professional and concise",
     )
     return [sample_npc, npc2]
 
@@ -108,10 +107,9 @@ def mock_ollama_client():
     Returns a mock OllamaClient with common methods mocked.
     """
     mock = AsyncMock()
-    mock.list_models = AsyncMock(return_value=[
-        {"name": "llama3.2:3b"},
-        {"name": "llama3.2:1b"}
-    ])
+    mock.list_models = AsyncMock(
+        return_value=[{"name": "llama3.2:3b"}, {"name": "llama3.2:1b"}]
+    )
     mock.check_health = AsyncMock(return_value=True)
     return mock
 
@@ -154,9 +152,5 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "unit: mark test as a unit test (fast, isolated)"
     )
-    config.addinivalue_line(
-        "markers", "integration: mark test as an integration test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")

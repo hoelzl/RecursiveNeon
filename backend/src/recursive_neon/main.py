@@ -7,24 +7,28 @@ FastAPI server that manages:
 - Ollama process lifecycle
 - Game state and virtual filesystem
 """
-import asyncio
-import json
+
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from recursive_neon.config import settings
+from recursive_neon.dependencies import (
+    ServiceContainer,
+    ServiceFactory,
+    get_container,
+    initialize_container,
+)
+from recursive_neon.models.game_state import StatusResponse, SystemStatus
 from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
-from recursive_neon.models.game_state import SystemStatus, StatusResponse
-from recursive_neon.dependencies import ServiceContainer, ServiceFactory, get_container, initialize_container
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -107,7 +111,7 @@ app = FastAPI(
     title="Recursive://Neon Backend",
     description="Backend server for Recursive://Neon RPG",
     version="0.2.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -124,12 +128,13 @@ app.add_middleware(
 # HTTP Endpoints
 # ============================================================================
 
+
 @app.get("/")
 async def root(container: ServiceContainer = Depends(get_container)):
     return {
         "name": "Recursive://Neon",
         "version": "0.2.0",
-        "status": container.system_state.status.value
+        "status": container.system_state.status.value,
     }
 
 
@@ -138,8 +143,10 @@ async def health_check(container: ServiceContainer = Depends(get_container)):
     uptime = (datetime.now() - container.start_time).total_seconds()
     container.system_state.uptime_seconds = uptime
     return StatusResponse(
-        status="healthy" if container.system_state.status == SystemStatus.READY else "unhealthy",
-        system=container.system_state
+        status="healthy"
+        if container.system_state.status == SystemStatus.READY
+        else "unhealthy",
+        system=container.system_state,
     )
 
 
@@ -159,21 +166,18 @@ async def get_npc(npc_id: str, container: ServiceContainer = Depends(get_contain
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_npc(
-    request: ChatRequest,
-    container: ServiceContainer = Depends(get_container)
+    request: ChatRequest, container: ServiceContainer = Depends(get_container)
 ):
     try:
         response = await container.npc_manager.chat(
-            npc_id=request.npc_id,
-            message=request.message,
-            player_id=request.player_id
+            npc_id=request.npc_id, message=request.message, player_id=request.player_id
         )
         return response
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.get("/stats")
@@ -181,13 +185,14 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
     return {
         "system": container.system_state.model_dump(),
         "ollama_process": container.process_manager.get_status(),
-        "npc_manager": container.npc_manager.get_stats()
+        "npc_manager": container.npc_manager.get_stats(),
     }
 
 
 # ============================================================================
 # WebSocket
 # ============================================================================
+
 
 class ConnectionManager:
     """Manages WebSocket connections"""
@@ -221,8 +226,7 @@ ws_manager = ConnectionManager()
 
 @app.websocket("/ws")
 async def websocket_endpoint(
-    websocket: WebSocket,
-    container: ServiceContainer = Depends(get_container)
+    websocket: WebSocket, container: ServiceContainer = Depends(get_container)
 ):
     """
     Main WebSocket endpoint for real-time communication.
@@ -254,9 +258,7 @@ async def websocket_endpoint(
 
 
 async def handle_ws_message(
-    container: ServiceContainer,
-    msg_type: str,
-    msg_data: dict
+    container: ServiceContainer, msg_type: str, msg_data: dict
 ) -> dict:
     """Route WebSocket messages to appropriate handlers."""
     try:
@@ -267,17 +269,14 @@ async def handle_ws_message(
             npcs = container.npc_manager.list_npcs()
             return {
                 "type": "npcs_list",
-                "data": {"npcs": [npc.model_dump(mode='json') for npc in npcs]}
+                "data": {"npcs": [npc.model_dump(mode="json") for npc in npcs]},
             }
 
         elif msg_type == "chat":
-            npc_id = msg_data.get("npc_id")
-            message = msg_data.get("message", "")
+            npc_id = str(msg_data.get("npc_id", ""))
+            message = str(msg_data.get("message", ""))
             response = await container.npc_manager.chat(npc_id, message)
-            return {
-                "type": "chat_response",
-                "data": response.model_dump(mode='json')
-            }
+            return {"type": "chat_response", "data": response.model_dump(mode="json")}
 
         elif msg_type == "app":
             return await handle_app_message(container, msg_data)
@@ -285,45 +284,37 @@ async def handle_ws_message(
         else:
             return {
                 "type": "error",
-                "data": {"message": f"Unknown message type: {msg_type}"}
+                "data": {"message": f"Unknown message type: {msg_type}"},
             }
 
     except Exception as e:
         logger.error(f"Error handling {msg_type}: {e}")
-        return {
-            "type": "error",
-            "data": {"message": str(e)}
-        }
+        return {"type": "error", "data": {"message": str(e)}}
 
 
 async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dict:
     """Handle app-related WebSocket messages (filesystem, notes, tasks)."""
-    action = msg_data.get("action")
-    app_type = msg_data.get("app_type")
+    action = str(msg_data.get("action", ""))
+    app_type = str(msg_data.get("app_type", ""))
 
     try:
         result = container.app_service.handle_action(app_type, action, msg_data)
-        return {
-            "type": "app_response",
-            "data": result
-        }
+        return {"type": "app_response", "data": result}
     except Exception as e:
         logger.error(f"App message error: {e}")
-        return {
-            "type": "error",
-            "data": {"message": str(e)}
-        }
+        return {"type": "error", "data": {"message": str(e)}}
 
 
 def main():
     """Entry point for the Recursive://Neon backend server"""
     import uvicorn
+
     uvicorn.run(
         "recursive_neon.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
-        log_level="debug" if settings.debug else "info"
+        log_level="debug" if settings.debug else "info",
     )
 
 
