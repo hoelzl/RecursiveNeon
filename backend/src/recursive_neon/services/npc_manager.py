@@ -6,7 +6,10 @@ The NPCManager now accepts an LLM instance via constructor injection.
 """
 
 import asyncio
+import json
 import logging
+import re
+from pathlib import Path
 from typing import Any, Dict, List
 
 from langchain_classic.chains import ConversationChain
@@ -19,6 +22,14 @@ from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
 from recursive_neon.services.interfaces import INPCManager, LLMInterface
 
 logger = logging.getLogger(__name__)
+
+# Regex to strip <think>...</think> blocks emitted by some models (e.g. qwen3).
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> blocks from model output."""
+    return _THINK_TAG_RE.sub("", text)
 
 
 class NPCManager(INPCManager):
@@ -194,8 +205,9 @@ Player: {{input}}
                     -100, npc.memory.relationship_level - 5
                 )
 
+            cleaned = _strip_think_tags(response).strip()
             return ChatResponse(
-                npc_id=npc.id, npc_name=npc.name, message=response.strip()
+                npc_id=npc.id, npc_name=npc.name, message=cleaned
             )
 
         except Exception as e:
@@ -324,3 +336,24 @@ Player: {{input}}
                 for npc in self.npcs.values()
             ],
         }
+
+    def save_npcs_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save NPC state (definitions + memory) to disk."""
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+        filepath = Path(data_dir) / "npcs.json"
+        npcs_data = [npc.model_dump(mode="json") for npc in self.npcs.values()]
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump({"npcs": npcs_data}, f, indent=2, ensure_ascii=False)
+
+    def load_npcs_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load NPC state from disk. Returns False if no saved state exists."""
+        filepath = Path(data_dir) / "npcs.json"
+        if not filepath.exists():
+            return False
+        with open(filepath, encoding="utf-8") as f:
+            data = json.load(f)
+        for npc_data in data.get("npcs", []):
+            npc = NPC(**npc_data)
+            self.register_npc(npc)
+        logger.info(f"Loaded {len(self.npcs)} NPCs from disk")
+        return True

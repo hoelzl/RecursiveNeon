@@ -17,6 +17,7 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
+from recursive_neon.config import settings
 from recursive_neon.dependencies import ServiceFactory
 from recursive_neon.shell.shell import Shell
 
@@ -34,7 +35,8 @@ def main() -> None:
         print(f"Failed to initialize services: {e}", file=sys.stderr)
         sys.exit(1)
 
-    shell = Shell(container)
+    data_dir = str(settings.data_dir)
+    shell = Shell(container, data_dir=data_dir)
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(shell.run())
 

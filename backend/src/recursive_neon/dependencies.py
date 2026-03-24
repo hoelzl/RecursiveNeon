@@ -110,9 +110,10 @@ class ServiceFactory:
 
         app_service = AppService(game_state)
 
-        # Initialize filesystem: try to load from disk, otherwise load initial state
-        logger.info("Initializing in-game filesystem...")
-        if not app_service.load_filesystem_from_disk():
+        # Initialize state: try to load from disk, otherwise load initial state
+        data_dir = str(settings.data_dir)
+        logger.info("Initializing game state...")
+        if not app_service.load_filesystem_from_disk(data_dir):
             initial_fs_path = str(settings.initial_fs_path)
             logger.info(
                 f"No saved filesystem found, loading initial state from {initial_fs_path}"
@@ -120,6 +121,17 @@ class ServiceFactory:
             app_service.load_initial_filesystem(initial_fs_path)
         else:
             logger.info("Filesystem loaded from saved state")
+
+        # Load notes and tasks (non-fatal if missing)
+        app_service.load_notes_from_disk(data_dir)
+        app_service.load_tasks_from_disk(data_dir)
+
+        # Load NPC state from disk, or create defaults
+        if not npc_manager.load_npcs_from_disk(data_dir):
+            npc_manager.create_default_npcs()
+            logger.info("Created default NPCs")
+        else:
+            logger.info("NPCs loaded from saved state")
 
         container = ServiceContainer(
             process_manager=process_manager,

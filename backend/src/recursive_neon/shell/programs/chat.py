@@ -85,6 +85,34 @@ class ChatProgram:
             if user_input.lower() == "exit":
                 break
 
+            # Slash commands within chat
+            if user_input.startswith("/"):
+                cmd = user_input[1:].lower().strip()
+                if cmd == "help":
+                    ctx.stdout.writeln(ctx.stdout.styled("Chat commands:", BOLD))
+                    ctx.stdout.writeln("  /help          Show this help")
+                    ctx.stdout.writeln("  /relationship  Show relationship level")
+                    ctx.stdout.writeln("  /status        Show NPC info")
+                    ctx.stdout.writeln("  exit           Leave conversation")
+                elif cmd == "relationship":
+                    level = npc.memory.relationship_level
+                    ctx.stdout.writeln(
+                        f"Relationship with {ctx.stdout.styled(npc.name, YELLOW)}: {level}"
+                    )
+                elif cmd == "status":
+                    ctx.stdout.writeln(
+                        f"{ctx.stdout.styled(npc.name, YELLOW)} "
+                        f"({npc.role.value}, {npc.personality.value})"
+                    )
+                    ctx.stdout.writeln(f"  Location: {npc.location}")
+                    ctx.stdout.writeln(
+                        f"  Messages: {len(npc.memory.conversation_history)}"
+                    )
+                else:
+                    ctx.stderr.error(f"Unknown command: /{cmd}. Try /help")
+                ctx.stdout.writeln()
+                continue
+
             try:
                 response = await npc_manager.chat(npc_id, user_input, player_id)
                 ctx.stdout.writeln()

@@ -113,6 +113,88 @@ class TestTasksService:
             app_service.get_task_list(task_list.id)
 
 
+class TestNotesPersistence:
+    """Tests for notes save/load persistence."""
+
+    @pytest.fixture
+    def app_service(self):
+        game_state = GameState()
+        return AppService(game_state)
+
+    def test_save_and_load_notes(self, app_service, tmp_path):
+        """Notes survive a save/load round-trip."""
+        app_service.create_note({"title": "Note A", "content": "Content A"})
+        app_service.create_note({"title": "Note B", "content": "Content B"})
+        app_service.save_notes_to_disk(str(tmp_path))
+
+        # Load into fresh state
+        fresh = AppService(GameState())
+        assert fresh.get_notes() == []
+        assert fresh.load_notes_from_disk(str(tmp_path)) is True
+        notes = fresh.get_notes()
+        assert len(notes) == 2
+        assert notes[0].title == "Note A"
+        assert notes[1].content == "Content B"
+
+    def test_load_notes_missing_file(self, app_service, tmp_path):
+        """Returns False when no saved file exists."""
+        assert app_service.load_notes_from_disk(str(tmp_path)) is False
+
+    def test_save_empty_notes(self, app_service, tmp_path):
+        """Saving empty notes still creates valid file."""
+        app_service.save_notes_to_disk(str(tmp_path))
+        fresh = AppService(GameState())
+        assert fresh.load_notes_from_disk(str(tmp_path)) is True
+        assert fresh.get_notes() == []
+
+
+class TestTasksPersistence:
+    """Tests for tasks save/load persistence."""
+
+    @pytest.fixture
+    def app_service(self):
+        game_state = GameState()
+        return AppService(game_state)
+
+    def test_save_and_load_tasks(self, app_service, tmp_path):
+        """Task lists and tasks survive a save/load round-trip."""
+        tl = app_service.create_task_list({"name": "Work"})
+        app_service.create_task(tl.id, {"title": "Task 1", "completed": False})
+        app_service.create_task(tl.id, {"title": "Task 2", "completed": True})
+        app_service.save_tasks_to_disk(str(tmp_path))
+
+        fresh = AppService(GameState())
+        assert fresh.load_tasks_from_disk(str(tmp_path)) is True
+        lists = fresh.get_task_lists()
+        assert len(lists) == 1
+        assert lists[0].name == "Work"
+        assert len(lists[0].tasks) == 2
+        assert lists[0].tasks[0].title == "Task 1"
+        assert lists[0].tasks[1].completed is True
+
+    def test_load_tasks_missing_file(self, app_service, tmp_path):
+        """Returns False when no saved file exists."""
+        assert app_service.load_tasks_from_disk(str(tmp_path)) is False
+
+    def test_save_all_and_load_all(self, app_service, tmp_path):
+        """save_all/load_all round-trips filesystem, notes, and tasks."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        app_service.create_file(
+            {"name": "test.txt", "parent_id": root_id, "content": "hello"}
+        )
+        app_service.create_note({"title": "My Note", "content": "body"})
+        app_service.create_task_list({"name": "Todo"})
+
+        app_service.save_all_to_disk(str(tmp_path))
+
+        fresh = AppService(GameState())
+        assert fresh.load_all_from_disk(str(tmp_path)) is True
+        assert len(fresh.get_notes()) == 1
+        assert len(fresh.get_task_lists()) == 1
+        assert fresh.game_state.filesystem.root_id is not None
+
+
 class TestFileSystemService:
     """Tests for filesystem service"""
 

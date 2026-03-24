@@ -144,8 +144,11 @@ Your relationship with the player is {relationship_desc} (score: {self.memory.re
 What you know about the player:
 {recent_facts}
 
-Stay in character at all times. Keep responses concise (2-3 sentences typically).
-Be {self.personality.value} in your tone and manner of speaking.
+Rules:
+- Stay in character at all times. Never break character or mention that you are an AI.
+- Keep responses concise: 1-3 sentences. Do not ramble.
+- Be {self.personality.value} in your tone and manner of speaking.
+- Respond directly to what the player says. No meta-commentary.
 """
 
     def add_to_memory(self, role: str, content: str):

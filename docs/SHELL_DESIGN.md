@@ -1,7 +1,7 @@
 # Shell Design Document
 
-> **Status**: Design phase (Phase 1 of V2 implementation)
-> **Date**: 2026-03-23
+> **Status**: Phases 1-2 implemented. Design document kept for architecture reference.
+> **Date**: 2026-03-23 (updated 2026-03-24)
 
 ## 1. Overview
 
@@ -34,12 +34,15 @@ backend/src/recursive_neon/shell/
 ├── shell.py             # REPL loop using prompt_toolkit
 ├── parser.py            # Command-line tokenizer (quoting, escaping)
 ├── output.py            # Output abstraction (ANSI helpers, write/error/table)
-├── builtins.py          # Shell builtins (cd, exit, export, alias, history)
+├── path_resolver.py     # Virtual path → FileNode resolution
+├── builtins.py          # Shell builtins (cd, exit, export)
 └── programs/
     ├── __init__.py      # ProgramRegistry + Program protocol + ProgramContext
-    ├── filesystem.py    # ls, pwd, cat, mkdir, touch, rm, cp, mv
-    ├── utility.py       # help, clear, echo, env, whoami, hostname, date
-    └── chat.py          # chat <npc> — NPC conversation mode
+    ├── filesystem.py    # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
+    ├── utility.py       # help, clear, echo, env, whoami, hostname, date, save
+    ├── chat.py          # chat <npc> — NPC conversation mode with /commands
+    ├── notes.py         # note list/show/create/edit/delete
+    └── tasks.py         # task lists/list/add/done/undone/delete
 ```
 
 ## 3. Builtins vs Programs
@@ -346,7 +349,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## 5. Programs — Phase 1
+## 5. Programs
 
 ### 5.1 Filesystem Programs (`programs/filesystem.py`)
 
@@ -360,6 +363,9 @@ if __name__ == "__main__":
 | `rm` | `rm <path>` | Remove file or directory (`-r` for recursive) |
 | `cp` | `cp <src> <dest>` | Copy file or directory |
 | `mv` | `mv <src> <dest>` | Move/rename file or directory |
+| `grep` | `grep [-i] <pattern> [path...]` | Search file contents (regex, recursive) |
+| `find` | `find [path] -name <pattern>` | Find files by name (glob matching) |
+| `write` | `write <file> [content...]` | Write content to a file (create or overwrite) |
 
 Note: `cd` is a **builtin**, not a program (it modifies `session.cwd_id`).
 
@@ -395,6 +401,7 @@ drwx  2025-03-23 14:00  Projects/
 | `whoami` | `whoami` | Print current username |
 | `hostname` | `hostname` | Print system hostname |
 | `date` | `date` | Print current date/time (in-game or real) |
+| `save` | `save` | Save game state (filesystem, notes, tasks, NPCs) to disk |
 
 Note: `exit` and `export` are **builtins**, not programs.
 
@@ -424,6 +431,33 @@ The `chat` program enters a sub-REPL with its own prompt (`{npc_name}> `). The N
 Internally, `chat` uses `services.npc_manager.chat(npc_id, message, player_id)` from its `ProgramContext`, which is async (Ollama HTTP call).
 
 `chat` is a good example of why the `Program` class is useful — it manages its own REPL loop and cleanup, but it still can't touch the shell's state.
+
+Chat also supports slash commands: `/help`, `/relationship`, `/status`. These are handled within the chat sub-REPL (prefixed with `/` to distinguish from messages to the NPC).
+
+### 5.4 Note Program (`programs/notes.py`)
+
+| Subcommand | Syntax | Description |
+|------------|--------|-------------|
+| `note list` | `note list` | List all notes with index, title, preview |
+| `note show` | `note show <ref>` | Show full note (by 1-based index or UUID prefix) |
+| `note create` | `note create <title> [-c <content>]` | Create a note |
+| `note edit` | `note edit <ref> [-t <title>] [-c <content>]` | Update a note |
+| `note delete` | `note delete <ref>` | Delete a note |
+
+Aliases: `ls` for `list`, `new` for `create`, `rm` for `delete`.
+
+### 5.5 Task Program (`programs/tasks.py`)
+
+| Subcommand | Syntax | Description |
+|------------|--------|-------------|
+| `task lists` | `task lists` | List all task lists with completion counts |
+| `task list` | `task list [name]` | Show tasks in a list (defaults to single/default list) |
+| `task add` | `task add <title> [--list <name>]` | Add a task (auto-creates "default" list) |
+| `task done` | `task done <ref>` | Mark task as complete |
+| `task undone` | `task undone <ref>` | Mark task as incomplete |
+| `task delete` | `task delete <ref>` | Delete a task |
+
+Tasks are referenced by 1-based index within their list, or by UUID prefix.
 
 ## 6. Path Resolution — Detailed Design
 
@@ -493,26 +527,30 @@ When the shell starts (`Shell.run()`):
 1. Create ServiceContainer via ServiceFactory
    (initializes GameState, AppService, NPCManager, etc.)
 
-2. AppService.load_filesystem_from_disk()
-   → If saved state exists, restore it
-   → Otherwise, AppService.load_initial_filesystem()
-     (populates from backend/src/recursive_neon/initial_fs/)
+2. Load all saved state from game_data/:
+   a. AppService.load_filesystem_from_disk()
+      → If no saved state, load_initial_filesystem() from initial_fs/
+   b. AppService.load_notes_from_disk() (non-fatal if missing)
+   c. AppService.load_tasks_from_disk() (non-fatal if missing)
+   d. NPCManager.load_npcs_from_disk()
+      → If no saved state, create_default_npcs()
 
-3. NPCManager.create_default_npcs()
-   → Registers default NPCs for chat
-
-4. Create ShellSession
+3. Create ShellSession
    → cwd_id = filesystem root_id
    → env = default environment variables
 
-5. Register builtins (cd, exit, export)
+4. Register builtins (cd, exit, export)
 
-6. Create ProgramRegistry
-   → Register system programs from filesystem.py, utility.py, chat.py
+5. Create ProgramRegistry
+   → Register programs from filesystem, utility, chat, notes, tasks
+
+6. Create PromptSession with FileHistory (persistent) or InMemoryHistory
 
 7. Print welcome banner
 
 8. Enter REPL loop
+
+9. On exit: auto-save all state to game_data/
 ```
 
 ## 8. Testing Strategy
@@ -844,12 +882,17 @@ The parser can be extended to recognize `|`, `>`, `<` tokens. Program output alr
 
 `Output` is abstract enough to be backed by a WebSocket. `ProgramContext` can be created per-connection on the server side. The `Shell` REPL loop would be replaced by a message handler that calls `execute_line()` per incoming message.
 
-### 11.4 Additional System Programs (Phase 2)
+### 11.4 Additional System Programs
 
+The following programs from Phase 2 are now implemented (see Sections 5.1, 5.4, 5.5):
+- `note` — Notes CRUD
+- `task` — Task management
+- `grep` — Search file contents (regex)
+- `find` — Find files by name pattern (glob)
+- `write` — Write content to files
+- `save` — Save game state to disk
+
+Still planned for future phases:
 | Program | Description |
 |---------|-------------|
-| `note` | Notes CRUD (`note list`, `note create "title"`, `note edit <id>`) |
-| `task` | Task management (`task list`, `task add "title"`, `task done <id>`) |
-| `grep` | Search file contents in the virtual filesystem |
-| `find` | Find files by name pattern |
-| `edit` | Simple text editor (TUI, raw mode) |
+| `edit` | Simple text editor (TUI, raw mode — requires Phase 3 infrastructure) |

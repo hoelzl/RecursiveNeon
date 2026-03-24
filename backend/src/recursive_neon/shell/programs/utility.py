@@ -110,6 +110,22 @@ async def prog_date(ctx: ProgramContext) -> int:
     return 0
 
 
+async def prog_save(ctx: ProgramContext) -> int:
+    """Save game state to disk."""
+    data_dir = ctx.env.get("_data_dir", "")
+    if not data_dir:
+        ctx.stderr.error("save: no data directory configured")
+        return 1
+    try:
+        ctx.services.app_service.save_all_to_disk(data_dir)
+        ctx.services.npc_manager.save_npcs_to_disk(data_dir)
+        ctx.stdout.writeln("Game state saved.")
+        return 0
+    except Exception as e:
+        ctx.stderr.error(f"save: {e}")
+        return 1
+
+
 def register_utility_programs(
     registry: ProgramRegistry,
 ) -> None:
@@ -137,3 +153,12 @@ def register_utility_programs(
     registry.register_fn("whoami", prog_whoami, "Print current username")
     registry.register_fn("hostname", prog_hostname, "Print system hostname")
     registry.register_fn("date", prog_date, "Print current date and time")
+    registry.register_fn(
+        "save",
+        prog_save,
+        "Save game state to disk\n"
+        "\n"
+        "Usage: save\n"
+        "\n"
+        "Saves filesystem, notes, tasks, and NPC state.",
+    )

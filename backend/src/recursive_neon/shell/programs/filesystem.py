@@ -1,12 +1,16 @@
 """
-Filesystem programs: ls, pwd, cat, mkdir, touch, rm, cp, mv.
+Filesystem programs: ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write.
 
 All operate on the virtual filesystem via ProgramContext.
 """
 
 from __future__ import annotations
 
-from recursive_neon.shell.output import CYAN, DIM
+import re
+from fnmatch import fnmatch
+
+from recursive_neon.models.app_models import FileNode
+from recursive_neon.shell.output import CYAN, DIM, GREEN, MAGENTA
 from recursive_neon.shell.path_resolver import get_node_path
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -364,6 +368,172 @@ async def prog_mv(ctx: ProgramContext) -> int:
     return 0
 
 
+async def prog_grep(ctx: ProgramContext) -> int:
+    """Search file contents for a pattern."""
+    args = ctx.args[1:]
+    case_insensitive = False
+    paths: list[str] = []
+    pattern_str: str | None = None
+
+    for arg in args:
+        if arg.startswith("-") and not pattern_str:
+            for ch in arg[1:]:
+                if ch == "i":
+                    case_insensitive = True
+                elif ch in ("r", "R", "n"):
+                    pass  # -r and -n are on by default
+                else:
+                    ctx.stderr.error(f"grep: unknown option: -{ch}")
+                    return 1
+        elif pattern_str is None:
+            pattern_str = arg
+        else:
+            paths.append(arg)
+
+    if pattern_str is None:
+        ctx.stderr.error("grep: missing pattern")
+        return 1
+
+    flags = re.IGNORECASE if case_insensitive else 0
+    try:
+        pattern = re.compile(pattern_str, flags)
+    except re.error as e:
+        ctx.stderr.error(f"grep: invalid pattern: {e}")
+        return 1
+
+    if not paths:
+        paths = ["."]
+
+    results: list[tuple[str, int, str]] = []
+    for path in paths:
+        try:
+            node = ctx.resolve_path(path)
+        except (FileNotFoundError, NotADirectoryError) as e:
+            ctx.stderr.error(f"grep: {e}")
+            return 1
+        file_path = get_node_path(node.id, ctx.services.app_service)
+        _grep_node(ctx, pattern, node, file_path, results)
+
+    for file_path, lineno, line in results:
+        prefix = ctx.stdout.styled(f"{file_path}:", MAGENTA)
+        num = ctx.stdout.styled(f"{lineno}:", GREEN)
+        ctx.stdout.writeln(f"{prefix}{num}{line}")
+
+    return 0 if results else 1
+
+
+def _grep_node(
+    ctx: ProgramContext,
+    pattern: re.Pattern[str],
+    node: FileNode,
+    file_path: str,
+    results: list[tuple[str, int, str]],
+) -> None:
+    """Recursively search a node for pattern matches."""
+    if node.type == "directory":
+        children = ctx.services.app_service.list_directory(node.id)
+        for child in sorted(children, key=lambda n: n.name.lower()):
+            child_path = (
+                f"{file_path}/{child.name}" if file_path != "/" else f"/{child.name}"
+            )
+            _grep_node(ctx, pattern, child, child_path, results)
+    elif node.type == "file" and node.content:
+        for lineno, line in enumerate(node.content.splitlines(), 1):
+            if pattern.search(line):
+                results.append((file_path, lineno, line))
+
+
+async def prog_find(ctx: ProgramContext) -> int:
+    """Find files by name pattern."""
+    args = ctx.args[1:]
+    start_path = "."
+    name_pattern: str | None = None
+
+    i = 0
+    while i < len(args):
+        if args[i] == "-name" and i + 1 < len(args):
+            name_pattern = args[i + 1]
+            i += 2
+        elif not args[i].startswith("-"):
+            start_path = args[i]
+            i += 1
+        else:
+            ctx.stderr.error(f"find: unknown option: {args[i]}")
+            return 1
+
+    if name_pattern is None:
+        ctx.stderr.error("find: missing -name pattern")
+        return 1
+
+    try:
+        start_node = ctx.resolve_path(start_path)
+    except (FileNotFoundError, NotADirectoryError) as e:
+        ctx.stderr.error(f"find: {e}")
+        return 1
+
+    base_path = get_node_path(start_node.id, ctx.services.app_service)
+    results: list[str] = []
+    _find_node(ctx, start_node, base_path, name_pattern, results)
+
+    for path in results:
+        ctx.stdout.writeln(path)
+
+    return 0
+
+
+def _find_node(
+    ctx: ProgramContext,
+    node: FileNode,
+    current_path: str,
+    pattern: str,
+    results: list[str],
+) -> None:
+    """Recursively find files matching a name pattern."""
+    if fnmatch(node.name, pattern):
+        results.append(current_path)
+
+    if node.type == "directory":
+        children = ctx.services.app_service.list_directory(node.id)
+        for child in sorted(children, key=lambda n: n.name.lower()):
+            child_path = (
+                f"{current_path}/{child.name}"
+                if current_path != "/"
+                else f"/{child.name}"
+            )
+            _find_node(ctx, child, child_path, pattern, results)
+
+
+async def prog_write(ctx: ProgramContext) -> int:
+    """Write content to a file (reads lines from args or creates empty)."""
+    if len(ctx.args) < 2:
+        ctx.stderr.error("write: missing file operand")
+        return 1
+
+    file_path = ctx.args[1]
+
+    content = " ".join(ctx.args[2:]) if len(ctx.args) > 2 else ""
+
+    # Try to update existing file, or create new one
+    try:
+        node = ctx.resolve_path(file_path)
+        if node.type == "directory":
+            ctx.stderr.error(f"write: {file_path}: Is a directory")
+            return 1
+        ctx.services.app_service.update_file(node.id, {"content": content})
+    except FileNotFoundError:
+        try:
+            parent, name = ctx.resolve_parent_and_name(file_path)
+            ctx.services.app_service.create_file(
+                {"name": name, "parent_id": parent.id, "content": content}
+            )
+        except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+            ctx.stderr.error(f"write: {e}")
+            return 1
+
+    ctx.stdout.writeln(f"Wrote {file_path}")
+    return 0
+
+
 def register_filesystem_programs(registry: ProgramRegistry) -> None:
     """Register all filesystem programs."""
     registry.register_fn("pwd", prog_pwd, "Print current working directory")
@@ -433,4 +603,37 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Usage: mv SOURCE DEST\n"
         "\n"
         "Move SOURCE to DEST. If DEST is a directory, move into it.",
+    )
+    registry.register_fn(
+        "grep",
+        prog_grep,
+        "Search file contents for a pattern\n"
+        "\n"
+        "Usage: grep [-i] PATTERN [PATH...]\n"
+        "\n"
+        "Search files for lines matching PATTERN (regex). Recurses into\n"
+        "directories. Defaults to searching from current directory.\n"
+        "\n"
+        "Options:\n"
+        "  -i    Case-insensitive matching",
+    )
+    registry.register_fn(
+        "find",
+        prog_find,
+        "Find files by name pattern\n"
+        "\n"
+        "Usage: find [PATH] -name PATTERN\n"
+        "\n"
+        "Find files whose name matches PATTERN (glob). Searches recursively\n"
+        "from PATH (default: current directory).",
+    )
+    registry.register_fn(
+        "write",
+        prog_write,
+        "Write content to a file\n"
+        "\n"
+        "Usage: write FILE [CONTENT...]\n"
+        "\n"
+        "Write CONTENT to FILE (creates if needed, overwrites if exists).\n"
+        "Without CONTENT, creates an empty file.",
     )

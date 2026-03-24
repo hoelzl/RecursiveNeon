@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phase 0 complete (branch setup & file curation). Phase 1 (Python CLI shell) in progress.
+**Status**: V2 reboot. Phases 0-2 complete. Phase 3 (browser terminal + desktop GUI) not started.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -46,6 +46,9 @@ cd backend
 
 ## Key Entry Points
 
+- Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)
+- Shell REPL: `backend/src/recursive_neon/shell/shell.py`
+- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, utility)
 - Backend main: `backend/src/recursive_neon/main.py`
 - DI container: `backend/src/recursive_neon/dependencies.py`
 - Models: `backend/src/recursive_neon/models/`

@@ -1,7 +1,7 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23
-> **Status**: Phase 0 complete (branch setup & file curation). Phase 1 not started.
+> **Date**: 2025-03-23 (updated 2026-03-24)
+> **Status**: Phases 0-2 complete. Phase 3 (browser terminal + desktop GUI) not started.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -166,11 +166,27 @@ backend/
     npcs/__init__.py                  # Empty (for future NPC definitions)
     services/
       __init__.py
-      app_service.py                  # Filesystem + Notes + Tasks CRUD, persistence
+      app_service.py                  # Filesystem + Notes + Tasks CRUD + persistence
       interfaces.py                   # INPCManager, IOllamaClient, IProcessManager
-      npc_manager.py                  # LangChain-based NPC conversation manager
+      npc_manager.py                  # LangChain-based NPC conversation + persistence
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
+    shell/                            # CLI shell package (Phase 1-2)
+      __init__.py
+      __main__.py                     # Entry point: python -m recursive_neon.shell
+      builtins.py                     # cd, exit, export (modify shell state)
+      output.py                       # ANSI output abstraction + CapturedOutput
+      parser.py                       # Argv-style tokenizer (quoting, escaping)
+      path_resolver.py                # Virtual path → FileNode resolution
+      session.py                      # ShellSession (cwd, env, history)
+      shell.py                        # REPL loop, dispatch, tab completion
+      programs/
+        __init__.py                   # ProgramRegistry + ProgramContext + Program protocol
+        chat.py                       # NPC conversation sub-REPL with /commands
+        filesystem.py                 # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
+        notes.py                      # note list/show/create/edit/delete
+        tasks.py                      # task lists/list/add/done/undone/delete
+        utility.py                    # help, clear, echo, env, whoami, hostname, date, save
     initial_fs/                       # Sample files for virtual filesystem init
       welcome.txt
       Documents/{readme.txt, sample.txt, my test file.txt}
@@ -182,10 +198,23 @@ backend/
     __init__.py
     conftest.py                       # Shared fixtures (mock LLM, NPCs, etc.)
     unit/__init__.py
-    unit/test_app_service.py          # Notes, Tasks, FileSystem CRUD tests
+    unit/test_app_service.py          # Notes, Tasks, FileSystem CRUD + persistence tests
     unit/test_filesystem_security.py  # Security isolation tests
-    unit/test_npc_manager.py          # NPC registration, chat, relationship tests
+    unit/test_npc_manager.py          # NPC registration, chat, persistence, think-tag tests
+    unit/shell/__init__.py
+    unit/shell/conftest.py            # Shell test fixtures (test_container, make_ctx, output)
+    unit/shell/test_builtins.py       # cd, exit, export tests
+    unit/shell/test_completion.py     # Tab completion tests
+    unit/shell/test_filesystem_enhanced.py  # grep, find, write tests
+    unit/shell/test_note_program.py   # Note CLI program tests
+    unit/shell/test_parser.py         # Tokenizer tests
+    unit/shell/test_path_resolver.py  # Path resolution tests
+    unit/shell/test_programs.py       # Filesystem + utility program tests
+    unit/shell/test_shell_integration.py  # Shell.execute_line dispatch tests
+    unit/shell/test_task_program.py   # Task CLI program tests
     integration/__init__.py
+    integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
+    integration/test_full_flows.py    # End-to-end workflow tests
 
 docs/
   ARCHITECTURE.md                     # Why Ollama, system architecture
@@ -226,37 +255,32 @@ scripts/
 
 ## 6. Implementation Plan (Phases 1-3)
 
-### Phase 1: Build the Python CLI Shell
+### Phase 1: Build the Python CLI Shell — **COMPLETE**
 **Goal**: A working command-line shell that runs in any terminal via `python -m recursive_neon.shell`.
 
-Tasks:
-1. Create a new venv and verify all existing tests pass
-2. Design the shell architecture:
-   - `backend/src/recursive_neon/shell/` — new package
-   - `session.py` — terminal session state (cwd, env vars, history)
-   - `shell.py` — REPL loop, line editing (use Python's `readline` or `prompt_toolkit`)
-   - `commands/` — command implementations (ls, cd, cat, mkdir, rm, cp, mv, echo, etc.)
-   - `commands/chat.py` — `chat <npc_name>` drops into conversation mode
-3. Implement filesystem commands first (ls, cd, pwd, cat, mkdir, touch, rm, cp, mv)
-   - These operate on the virtual filesystem via `AppService`
-   - Output should use ANSI colors for a polished terminal feel
-4. Implement `help`, `clear`, `echo`, `env` utility commands
-5. Implement `chat <npc>` command — enters conversation mode with an NPC
-6. Add tab completion (command names, file paths)
-7. Add command history (up/down arrows)
-8. Write tests for each command
-9. **Verify Claude Code can run the shell** and interact with it programmatically
+Completed:
+1. Shell architecture: `shell/` package with `session.py`, `shell.py`, `parser.py`, `path_resolver.py`, `output.py`, `builtins.py`, `programs/`
+2. Builtins: `cd`, `exit`, `export`
+3. Filesystem programs: `ls`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`
+4. Utility programs: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`
+5. Chat program: `chat <npc_id>` with sub-REPL conversation mode
+6. Tab completion: command names + virtual filesystem paths (quoting-aware)
+7. Command history via prompt_toolkit
+8. 172 unit tests, all passing
+9. `-h`/`--help` flag support for all commands
 
-### Phase 2: Deepen Core Features
+### Phase 2: Deepen Core Features — **COMPLETE**
 **Goal**: The 3 core systems (filesystem, NPC chat, notes/tasks) work flawlessly in CLI.
 
-Tasks:
-1. Add `note` and `task` CLI commands for managing notes and tasks
-2. Add more filesystem features (file content editing, grep/find within virtual FS)
-3. Improve NPC conversations — test with actual Ollama, refine prompts
-4. Add integration tests for full command flows
-5. Consider TUI apps using `rich` or `textual` for richer terminal UI (e.g., a notes editor, task board)
-6. Add persistence — save/load shell history, game state survives restart
+Completed:
+1. **Persistence**: Notes, tasks, NPC state, and shell history all persist to `game_data/` as JSON. Auto-save on shell exit + explicit `save` command. Production container loads all state from disk on startup; falls back to defaults for NPCs / initial filesystem.
+2. **Note CLI**: `note list/show/create/edit/delete` with 1-based index references and UUID prefix support.
+3. **Task CLI**: `task lists/list/add/done/undone/delete` with auto-created default list and `--list` flag for multi-list support.
+4. **Filesystem enhancements**: `grep` (regex, recursive, `-i`), `find` (glob matching, `-name`), `write` (create/overwrite file content).
+5. **NPC improvements**: Think-tag stripping (`<think>...</think>` removed from qwen3 output), refined system prompt (brevity, stay in character, no meta-commentary), chat slash commands (`/help`, `/relationship`, `/status`).
+6. **Integration tests**: Full command workflows for notes, tasks, filesystem, persistence round-trips, and chat listing.
+7. **TUI apps**: Deferred to Phase 3 (requires raw mode design, better co-designed with browser terminal).
+8. 255 total tests (83 new), all passing. Lint and type checks clean.
 
 ### Phase 3: Browser Terminal + Desktop GUI
 **Goal**: The CLI experience runs in the browser, wrapped in the desktop UI.

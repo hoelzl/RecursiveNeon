@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
-from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.history import FileHistory, InMemoryHistory
 
 from recursive_neon.shell.builtins import BUILTIN_HELP, get_builtins
 from recursive_neon.shell.output import (
@@ -30,6 +31,8 @@ from recursive_neon.shell.parser import tokenize
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.filesystem import register_filesystem_programs
+from recursive_neon.shell.programs.notes import register_note_program
+from recursive_neon.shell.programs.tasks import register_task_program
 from recursive_neon.shell.programs.utility import register_utility_programs
 from recursive_neon.shell.session import ShellSession
 
@@ -229,9 +232,11 @@ class Shell:
         self,
         container: ServiceContainer,
         output: Output | None = None,
+        data_dir: str | None = None,
     ) -> None:
         self.output = output or Output()
         self.session = ShellSession(container)
+        self.data_dir = data_dir
         self.builtins = get_builtins()
         self.programs = ProgramRegistry()
 
@@ -239,6 +244,8 @@ class Shell:
         register_filesystem_programs(self.programs)
         register_utility_programs(self.programs)
         register_chat_program(self.programs)
+        register_note_program(self.programs)
+        register_task_program(self.programs)
 
     async def run(self) -> None:
         """Main REPL loop."""
@@ -250,8 +257,17 @@ class Shell:
             session=self.session,
         )
 
+        # Use persistent file history when data_dir is set
+        history: FileHistory | InMemoryHistory
+        if self.data_dir:
+            history_path = Path(self.data_dir) / "history.txt"
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            history = FileHistory(str(history_path))
+        else:
+            history = InMemoryHistory()
+
         prompt_session: PromptSession[str] = PromptSession(
-            history=InMemoryHistory(),
+            history=history,
             completer=completer,
         )
 
@@ -278,6 +294,21 @@ class Shell:
                 break
 
             self.session.last_exit_code = exit_code
+
+        # Save game state on exit
+        self._save_game_state()
+
+    def _save_game_state(self) -> None:
+        """Save all game state to disk."""
+        if not self.data_dir:
+            return
+        try:
+            container = self.session.container
+            container.app_service.save_all_to_disk(self.data_dir)
+            container.npc_manager.save_npcs_to_disk(self.data_dir)
+            logger.info("Game state saved to %s", self.data_dir)
+        except Exception as e:
+            logger.error("Failed to save game state: %s", e)
 
     async def execute_line(self, line: str) -> int:
         """Parse and execute a single command line.
@@ -344,8 +375,10 @@ class Shell:
 
     def _make_program_context(self, args: list[str]) -> ProgramContext:
         """Create a ProgramContext from current session state."""
-        # Pass help data through env so the help program can access it
+        # Pass internal data through env (prefixed with _)
         env = dict(self.session.env)
+        if self.data_dir:
+            env["_data_dir"] = self.data_dir
         env["_builtin_help"] = json.dumps(BUILTIN_HELP)
         program_help = {
             name: self.programs.get_help(name) or ""

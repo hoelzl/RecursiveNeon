@@ -81,6 +81,16 @@ class INPCManager(ABC):
         """Get statistics about NPC interactions."""
         pass
 
+    @abstractmethod
+    def save_npcs_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save NPC state to disk."""
+        pass
+
+    @abstractmethod
+    def load_npcs_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load NPC state from disk. Returns False if no saved state exists."""
+        pass
+
 
 # ============================================================================
 # Ollama Client Interface

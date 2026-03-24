@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from recursive_neon.models.npc import NPC, NPCPersonality, NPCRole
-from recursive_neon.services.npc_manager import NPCManager
+from recursive_neon.services.npc_manager import NPCManager, _strip_think_tags
 
 
 class TestNPCManagerWithDependencyInjection:
@@ -287,6 +287,126 @@ class TestNPCManagerWithDependencyInjection:
             call_kwargs = mock_ollama_class.call_args[1]
             assert "localhost:11434" in call_kwargs["base_url"]
             assert manager.llm is mock_llm_instance
+
+
+class TestStripThinkTags:
+    """Tests for think-tag stripping."""
+
+    def test_strip_think_tags(self):
+        assert _strip_think_tags("<think>reasoning</think>Hello!") == "Hello!"
+
+    def test_strip_multiline_think(self):
+        text = "<think>\nI should be friendly.\nLet me think...\n</think>Hi there!"
+        assert _strip_think_tags(text) == "Hi there!"
+
+    def test_strip_multiple_think_blocks(self):
+        text = "<think>a</think>Hello <think>b</think>world"
+        assert _strip_think_tags(text) == "Hello world"
+
+    def test_no_think_tags(self):
+        assert _strip_think_tags("Just normal text") == "Just normal text"
+
+    def test_empty_string(self):
+        assert _strip_think_tags("") == ""
+
+    def test_empty_think_block(self):
+        assert _strip_think_tags("<think></think>Result") == "Result"
+
+
+class TestNPCSystemPrompt:
+    """Tests for the refined NPC system prompt."""
+
+    def test_prompt_includes_rules(self):
+        npc = NPC(
+            id="test",
+            name="Test",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Tester",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+        )
+        prompt = npc.get_system_prompt()
+        assert "Never break character" in prompt
+        assert "1-3 sentences" in prompt
+        assert "No meta-commentary" in prompt
+
+
+class TestNPCPersistence:
+    """Tests for NPC save/load persistence."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        from langchain_core.language_models import BaseChatModel
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import Generation, LLMResult
+
+        mock = Mock(spec=BaseChatModel)
+        default_response = "Mock response"
+        llm_result = LLMResult(
+            generations=[[Generation(text=default_response)]], llm_output={}
+        )
+        mock.invoke = Mock(return_value=AIMessage(content=default_response))
+        mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
+        mock.generate_prompt = Mock(return_value=llm_result)
+        mock.predict = Mock(return_value=default_response)
+        mock.predict_messages = Mock(return_value=AIMessage(content=default_response))
+        mock.__call__ = Mock(return_value=default_response)
+        mock.__iter__ = Mock(return_value=iter([]))
+        mock._is_runnable = True
+        return mock
+
+    def test_save_and_load_npcs(self, mock_llm, tmp_path):
+        """NPCs with memory survive a save/load round-trip."""
+        manager = NPCManager(llm=mock_llm)
+        npc = NPC(
+            id="test_persist",
+            name="Persist NPC",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="Persistence test",
+            occupation="Tester",
+            location="Disk",
+            greeting="Hi!",
+            conversation_style="terse",
+        )
+        npc.memory.npc_id = npc.id
+        npc.add_to_memory("user", "Hello")
+        npc.add_to_memory("assistant", "Hi there!")
+        npc.memory.relationship_level = 10
+        manager.register_npc(npc)
+
+        manager.save_npcs_to_disk(str(tmp_path))
+
+        # Load into fresh manager
+        fresh = NPCManager(llm=mock_llm)
+        assert len(fresh.npcs) == 0
+        assert fresh.load_npcs_from_disk(str(tmp_path)) is True
+        assert len(fresh.npcs) == 1
+
+        loaded = fresh.get_npc("test_persist")
+        assert loaded is not None
+        assert loaded.name == "Persist NPC"
+        assert loaded.memory.relationship_level == 10
+        assert len(loaded.memory.conversation_history) == 2
+        assert loaded.memory.conversation_history[0].content == "Hello"
+
+    def test_load_npcs_missing_file(self, mock_llm, tmp_path):
+        """Returns False when no saved file exists."""
+        manager = NPCManager(llm=mock_llm)
+        assert manager.load_npcs_from_disk(str(tmp_path)) is False
+
+    def test_save_default_npcs(self, mock_llm, tmp_path):
+        """Default NPCs can be saved and reloaded."""
+        manager = NPCManager(llm=mock_llm)
+        manager.create_default_npcs()
+        manager.save_npcs_to_disk(str(tmp_path))
+
+        fresh = NPCManager(llm=mock_llm)
+        assert fresh.load_npcs_from_disk(str(tmp_path)) is True
+        assert len(fresh.npcs) == 5
 
 
 class TestNPCManagerBackwardCompatibility:

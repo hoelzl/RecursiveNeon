@@ -400,6 +400,67 @@ class AppService:
         )
         return True
 
+    def save_notes_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save notes state to disk as JSON."""
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+        filepath = Path(data_dir) / "notes.json"
+        notes_dict = {
+            "notes": [note.model_dump() for note in self.game_state.notes.notes],
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(notes_dict, f, indent=2, ensure_ascii=False)
+
+    def load_notes_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load notes state from disk. Returns False if no saved state exists."""
+        filepath = Path(data_dir) / "notes.json"
+        if not filepath.exists():
+            return False
+        with open(filepath, encoding="utf-8") as f:
+            notes_dict = json.load(f)
+        from recursive_neon.models.app_models import NotesState
+
+        self.game_state.notes = NotesState(
+            notes=[Note(**n) for n in notes_dict.get("notes", [])],
+        )
+        return True
+
+    def save_tasks_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save tasks state to disk as JSON."""
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+        filepath = Path(data_dir) / "tasks.json"
+        tasks_dict = {
+            "lists": [tl.model_dump() for tl in self.game_state.tasks.lists],
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(tasks_dict, f, indent=2, ensure_ascii=False)
+
+    def load_tasks_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load tasks state from disk. Returns False if no saved state exists."""
+        filepath = Path(data_dir) / "tasks.json"
+        if not filepath.exists():
+            return False
+        with open(filepath, encoding="utf-8") as f:
+            tasks_dict = json.load(f)
+        from recursive_neon.models.app_models import TasksState
+
+        self.game_state.tasks = TasksState(
+            lists=[TaskList(**tl) for tl in tasks_dict.get("lists", [])],
+        )
+        return True
+
+    def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save all state (filesystem, notes, tasks) to disk."""
+        self.save_filesystem_to_disk(data_dir)
+        self.save_notes_to_disk(data_dir)
+        self.save_tasks_to_disk(data_dir)
+
+    def load_all_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load all state from disk. Returns True if filesystem was loaded."""
+        fs_loaded = self.load_filesystem_from_disk(data_dir)
+        self.load_notes_from_disk(data_dir)
+        self.load_tasks_from_disk(data_dir)
+        return fs_loaded
+
     def load_initial_filesystem(
         self, initial_fs_dir: str = "backend/initial_fs"
     ) -> None:
