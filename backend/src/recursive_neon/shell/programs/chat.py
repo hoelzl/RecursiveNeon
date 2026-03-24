@@ -62,18 +62,22 @@ class ChatProgram:
 
         player_id = ctx.env.get("USER", "player_1")
 
+        # Create a single PromptSession for the chat sub-REPL
+        # so up-arrow history works within the conversation.
+        try:
+            from prompt_toolkit import PromptSession
+
+            chat_session: PromptSession[str] = PromptSession()
+        except ImportError:
+            chat_session = None  # type: ignore[assignment]
+
         # Sub-REPL for chat
         while True:
             try:
-                # Use prompt_toolkit for async input if available,
-                # fall back to simple input()
                 prompt = f"{ctx.stdout.styled(npc_id, YELLOW)}> "
-                try:
-                    from prompt_toolkit import PromptSession
-
-                    ps: PromptSession[str] = PromptSession()
-                    user_input = await ps.prompt_async(prompt)
-                except ImportError:
+                if chat_session is not None:
+                    user_input = await chat_session.prompt_async(prompt)
+                else:
                     user_input = input(f"{npc_id}> ")
             except (EOFError, KeyboardInterrupt):
                 ctx.stdout.writeln()

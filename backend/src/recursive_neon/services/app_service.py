@@ -7,6 +7,7 @@ Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 
 import base64
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,8 @@ from recursive_neon.models.app_models import (
     TaskList,
 )
 from recursive_neon.models.game_state import GameState
+
+logger = logging.getLogger(__name__)
 
 
 class AppService:
@@ -378,75 +381,87 @@ class AppService:
     # Persistence
     # ============================================================================
 
-    def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
+    @staticmethod
+    def _save_json(data_dir: str, filename: str, data: dict) -> None:
+        """Write a dict to a JSON file in data_dir."""
         Path(data_dir).mkdir(parents=True, exist_ok=True)
-        filepath = Path(data_dir) / "filesystem.json"
-        filesystem_dict = {
+        filepath = Path(data_dir) / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def _load_json(data_dir: str, filename: str) -> dict | None:
+        """Read a JSON file from data_dir. Returns None if missing or corrupt."""
+        filepath = Path(data_dir) / filename
+        if not filepath.exists():
+            return None
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                result: dict = json.load(f)
+                return result
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load %s: %s", filepath, e)
+            return None
+
+    def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        self._save_json(data_dir, "filesystem.json", {
             "nodes": [node.model_dump() for node in self.game_state.filesystem.nodes],
             "root_id": self.game_state.filesystem.root_id,
-        }
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(filesystem_dict, f, indent=2, ensure_ascii=False)
+        })
 
     def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        filepath = Path(data_dir) / "filesystem.json"
-        if not filepath.exists():
+        data = self._load_json(data_dir, "filesystem.json")
+        if data is None:
             return False
-        with open(filepath, encoding="utf-8") as f:
-            filesystem_dict = json.load(f)
-        self.game_state.filesystem = FileSystemState(
-            nodes=[FileNode(**node) for node in filesystem_dict["nodes"]],
-            root_id=filesystem_dict.get("root_id"),
-        )
-        return True
+        try:
+            self.game_state.filesystem = FileSystemState(
+                nodes=[FileNode(**node) for node in data["nodes"]],
+                root_id=data.get("root_id"),
+            )
+            return True
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Corrupt filesystem.json: %s", e)
+            return False
 
     def save_notes_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        """Save notes state to disk as JSON."""
-        Path(data_dir).mkdir(parents=True, exist_ok=True)
-        filepath = Path(data_dir) / "notes.json"
-        notes_dict = {
+        self._save_json(data_dir, "notes.json", {
             "notes": [note.model_dump() for note in self.game_state.notes.notes],
-        }
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(notes_dict, f, indent=2, ensure_ascii=False)
+        })
 
     def load_notes_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        """Load notes state from disk. Returns False if no saved state exists."""
-        filepath = Path(data_dir) / "notes.json"
-        if not filepath.exists():
+        data = self._load_json(data_dir, "notes.json")
+        if data is None:
             return False
-        with open(filepath, encoding="utf-8") as f:
-            notes_dict = json.load(f)
-        from recursive_neon.models.app_models import NotesState
+        try:
+            from recursive_neon.models.app_models import NotesState
 
-        self.game_state.notes = NotesState(
-            notes=[Note(**n) for n in notes_dict.get("notes", [])],
-        )
-        return True
+            self.game_state.notes = NotesState(
+                notes=[Note(**n) for n in data.get("notes", [])],
+            )
+            return True
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Corrupt notes.json: %s", e)
+            return False
 
     def save_tasks_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        """Save tasks state to disk as JSON."""
-        Path(data_dir).mkdir(parents=True, exist_ok=True)
-        filepath = Path(data_dir) / "tasks.json"
-        tasks_dict = {
+        self._save_json(data_dir, "tasks.json", {
             "lists": [tl.model_dump() for tl in self.game_state.tasks.lists],
-        }
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(tasks_dict, f, indent=2, ensure_ascii=False)
+        })
 
     def load_tasks_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        """Load tasks state from disk. Returns False if no saved state exists."""
-        filepath = Path(data_dir) / "tasks.json"
-        if not filepath.exists():
+        data = self._load_json(data_dir, "tasks.json")
+        if data is None:
             return False
-        with open(filepath, encoding="utf-8") as f:
-            tasks_dict = json.load(f)
-        from recursive_neon.models.app_models import TasksState
+        try:
+            from recursive_neon.models.app_models import TasksState
 
-        self.game_state.tasks = TasksState(
-            lists=[TaskList(**tl) for tl in tasks_dict.get("lists", [])],
-        )
-        return True
+            self.game_state.tasks = TasksState(
+                lists=[TaskList(**tl) for tl in data.get("lists", [])],
+            )
+            return True
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Corrupt tasks.json: %s", e)
+            return False
 
     def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
         """Save all state (filesystem, notes, tasks) to disk."""

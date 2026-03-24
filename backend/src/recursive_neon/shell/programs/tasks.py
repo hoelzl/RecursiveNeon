@@ -174,16 +174,19 @@ async def _task_add(ctx: ProgramContext) -> int:
 
 
 def _resolve_task(ctx: ProgramContext, ref: str, tl: TaskList):
-    """Resolve a task reference (1-based index or UUID prefix) within a list."""
+    """Resolve a task reference (1-based index or UUID prefix) within a list.
+
+    Returns None if not found or if the UUID prefix is ambiguous.
+    """
     try:
         idx = int(ref)
         if 1 <= idx <= len(tl.tasks):
             return tl.tasks[idx - 1]
     except ValueError:
         pass
-    for task in tl.tasks:
-        if task.id.startswith(ref):
-            return task
+    matches = [task for task in tl.tasks if task.id.startswith(ref)]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 

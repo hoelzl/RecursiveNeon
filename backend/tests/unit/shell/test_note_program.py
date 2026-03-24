@@ -113,6 +113,12 @@ class TestNoteEdit:
         assert await prog_note(ctx) == 1
         assert "not found" in output.error_text
 
+    async def test_edit_unknown_flag(self, make_ctx, output, test_container):
+        test_container.app_service.create_note({"title": "Note", "content": "body"})
+        ctx = make_ctx(["note", "edit", "1", "--tytle", "New"])
+        assert await prog_note(ctx) == 1
+        assert "unknown option" in output.error_text
+
 
 @pytest.mark.unit
 class TestNoteDelete:

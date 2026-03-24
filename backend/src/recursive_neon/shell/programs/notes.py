@@ -55,7 +55,10 @@ async def _note_list(ctx: ProgramContext) -> int:
 
 
 def _resolve_note(ctx: ProgramContext, ref: str):
-    """Resolve a note reference (1-based index or UUID prefix)."""
+    """Resolve a note reference (1-based index or UUID prefix).
+
+    Returns None if not found or if the UUID prefix is ambiguous.
+    """
     notes = ctx.services.app_service.get_notes()
     # Try as 1-based index
     try:
@@ -64,10 +67,10 @@ def _resolve_note(ctx: ProgramContext, ref: str):
             return notes[idx - 1]
     except ValueError:
         pass
-    # Try as UUID prefix
-    for note in notes:
-        if note.id.startswith(ref):
-            return note
+    # Try as UUID prefix (must be unambiguous)
+    matches = [note for note in notes if note.id.startswith(ref)]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 
@@ -141,7 +144,8 @@ async def _note_edit(ctx: ProgramContext) -> int:
             updates["content"] = args[i + 1]
             i += 2
         else:
-            i += 1
+            ctx.stderr.error(f"note edit: unknown option: {args[i]}")
+            return 1
 
     if not updates:
         ctx.stderr.error("note edit: provide --title and/or --content")

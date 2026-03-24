@@ -337,26 +337,7 @@ class TestNPCSystemPrompt:
 class TestNPCPersistence:
     """Tests for NPC save/load persistence."""
 
-    @pytest.fixture
-    def mock_llm(self):
-        from langchain_core.language_models import BaseChatModel
-        from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
-
-        mock = Mock(spec=BaseChatModel)
-        default_response = "Mock response"
-        llm_result = LLMResult(
-            generations=[[Generation(text=default_response)]], llm_output={}
-        )
-        mock.invoke = Mock(return_value=AIMessage(content=default_response))
-        mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
-        mock.generate_prompt = Mock(return_value=llm_result)
-        mock.predict = Mock(return_value=default_response)
-        mock.predict_messages = Mock(return_value=AIMessage(content=default_response))
-        mock.__call__ = Mock(return_value=default_response)
-        mock.__iter__ = Mock(return_value=iter([]))
-        mock._is_runnable = True
-        return mock
+    # Uses shared mock_llm fixture from conftest.py
 
     def test_save_and_load_npcs(self, mock_llm, tmp_path):
         """NPCs with memory survive a save/load round-trip."""
@@ -407,6 +388,12 @@ class TestNPCPersistence:
         fresh = NPCManager(llm=mock_llm)
         assert fresh.load_npcs_from_disk(str(tmp_path)) is True
         assert len(fresh.npcs) == 5
+
+    def test_load_corrupt_npcs_json(self, mock_llm, tmp_path):
+        """Corrupt JSON returns False without crashing."""
+        (tmp_path / "npcs.json").write_text("{bad", encoding="utf-8")
+        manager = NPCManager(llm=mock_llm)
+        assert manager.load_npcs_from_disk(str(tmp_path)) is False
 
 
 class TestNPCManagerBackwardCompatibility:

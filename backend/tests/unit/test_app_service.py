@@ -147,6 +147,11 @@ class TestNotesPersistence:
         assert fresh.load_notes_from_disk(str(tmp_path)) is True
         assert fresh.get_notes() == []
 
+    def test_load_corrupt_notes_json(self, app_service, tmp_path):
+        """Corrupt JSON returns False without crashing."""
+        (tmp_path / "notes.json").write_text("{invalid json", encoding="utf-8")
+        assert app_service.load_notes_from_disk(str(tmp_path)) is False
+
 
 class TestTasksPersistence:
     """Tests for tasks save/load persistence."""
@@ -174,6 +179,11 @@ class TestTasksPersistence:
 
     def test_load_tasks_missing_file(self, app_service, tmp_path):
         """Returns False when no saved file exists."""
+        assert app_service.load_tasks_from_disk(str(tmp_path)) is False
+
+    def test_load_corrupt_tasks_json(self, app_service, tmp_path):
+        """Corrupt JSON returns False without crashing."""
+        (tmp_path / "tasks.json").write_text("not json!", encoding="utf-8")
         assert app_service.load_tasks_from_disk(str(tmp_path)) is False
 
     def test_save_all_and_load_all(self, app_service, tmp_path):
