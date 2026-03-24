@@ -383,8 +383,10 @@ async def _ws_reader(websocket: WebSocket, session) -> None:
 
         elif msg_type == "complete":
             line = data.get("line", "")
-            items = session.shell.get_completions(line)
-            await websocket.send_json({"type": "completions", "items": items})
+            items, replace = session.shell.get_completions_ext(line)
+            await websocket.send_json(
+                {"type": "completions", "items": items, "replace": replace}
+            )
 
         else:
             await websocket.send_json(

@@ -261,6 +261,7 @@ class Shell:
         self.data_dir = data_dir
         self.builtins = get_builtins()
         self.programs = ProgramRegistry()
+        self._input_source: InputSource | None = None
 
         # Register all system programs
         register_filesystem_programs(self.programs)
@@ -288,6 +289,7 @@ class Shell:
                 shell=self,
                 data_dir=self.data_dir,
             )
+        self._input_source = input_source
 
         self.output.write(WELCOME_BANNER)
 
@@ -408,6 +410,7 @@ class Shell:
             cwd_id=self.session.cwd_id,
             builtin_help=self._builtin_help,
             program_help=self._program_help,
+            get_line=self._input_source.get_line if self._input_source else None,
         )
 
     def get_completions(self, text: str) -> list[str]:
@@ -417,15 +420,27 @@ class Shell:
         the ``ShellCompleter`` adapter calls this internally via the same
         underlying helpers.
         """
+        items, _ = self.get_completions_ext(text)
+        return items
+
+    def get_completions_ext(self, text: str) -> tuple[list[str], int]:
+        """Like ``get_completions`` but also returns the replacement length.
+
+        Returns:
+            (items, replace_len) where *replace_len* is the number of
+            characters before the cursor that the completions replace.
+        """
         arg_start, raw_content = _get_current_argument(text)
+        replace_len = len(text) - arg_start
         is_first_arg = not text[:arg_start].strip()
 
         if is_first_arg:
             all_commands = list(self.builtins.keys()) + self.programs.list_programs()
-            return sorted({n for n in all_commands if n.startswith(raw_content)})
+            items = sorted({n for n in all_commands if n.startswith(raw_content)})
+        else:
+            items = self._path_completion_strings(raw_content)
 
-        # Path completions
-        return self._path_completion_strings(raw_content)
+        return items, replace_len
 
     def _path_completion_strings(self, raw_path: str) -> list[str]:
         """Return matching path strings for a partial path."""

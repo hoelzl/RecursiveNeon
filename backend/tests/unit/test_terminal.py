@@ -6,6 +6,7 @@ the /ws/terminal endpoint.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -269,6 +270,64 @@ class TestTerminalSession:
         completions = session.shell.get_completions("ls Doc")
         assert any("Documents" in c for c in completions)
 
+    async def test_get_completions_ext(self, container):
+        """get_completions_ext returns items + replacement length."""
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+
+        items, replace = session.shell.get_completions_ext("l")
+        assert "ls" in items
+        assert replace == 1  # replacing "l"
+
+        items, replace = session.shell.get_completions_ext("ls Doc")
+        assert any("Documents" in c for c in items)
+        assert replace == 3  # replacing "Doc"
+
+
+# ============================================================================
+# WebSocketCompleter unit test
+# ============================================================================
+
+
+class TestWebSocketCompleter:
+    """Test the client-side completer's async coordination."""
+
+    async def test_feed_completions_resolves_future(self):
+        """feed_completions resolves the pending future created by get_completions_async."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from recursive_neon.wsclient.client import _WebSocketCompleter
+
+        ws = AsyncMock()
+        completer = _WebSocketCompleter(ws)
+
+        # Build a mock Document with text_before_cursor
+        doc = MagicMock()
+        doc.text_before_cursor = "ls D"
+        event = MagicMock()
+
+        # Collect completions from the async generator.
+        # We need a helper task because the generator awaits a future.
+        async def _collect():
+            return [c async for c in completer.get_completions_async(doc, event)]
+
+        task = asyncio.create_task(_collect())
+        # Let the coroutine run until it awaits the future
+        await asyncio.sleep(0)
+
+        # Simulate the server response arriving
+        completer.feed_completions(["Documents/"], 1)
+
+        completions = await task
+        assert len(completions) == 1
+        assert completions[0].text == "Documents/"
+        assert completions[0].start_position == -1
+
+        # Verify the request was sent
+        ws.send.assert_called_once()
+        sent = json.loads(ws.send.call_args[0][0])
+        assert sent == {"type": "complete", "line": "ls D"}
+
 
 # ============================================================================
 # /ws/terminal integration tests
@@ -328,7 +387,7 @@ class TestTerminalWebSocket:
             assert "/Documents" in combined
 
     def test_tab_completion_request(self, client):
-        """Send a completion request and get results."""
+        """Send a completion request and get results including replace length."""
         with client.websocket_connect("/ws/terminal") as ws:
             _recv_until_prompt_sync(ws, timeout=5.0)
 
@@ -336,6 +395,7 @@ class TestTerminalWebSocket:
             resp = ws.receive_json()
             assert resp["type"] == "completions"
             assert "ls" in resp["items"]
+            assert resp["replace"] == 1  # replacing "l"
 
     def test_unknown_message_type(self, client):
         """Unknown message types should return an error."""

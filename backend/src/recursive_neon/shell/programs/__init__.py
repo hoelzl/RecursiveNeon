@@ -35,6 +35,7 @@ class ProgramContext:
     cwd_id: str
     builtin_help: dict[str, str] | None = None
     program_help: dict[str, str] | None = None
+    get_line: Callable[[str], Awaitable[str]] | None = None
 
     def resolve_path(self, path: str) -> FileNode:
         """Resolve a path string to a FileNode."""

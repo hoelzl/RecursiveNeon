@@ -12,10 +12,69 @@ import json
 import logging
 import sys
 
+from prompt_toolkit.completion import Completer, Completion
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# WebSocketCompleter — tab completion via the server
+# ---------------------------------------------------------------------------
+
+
+class _WebSocketCompleter(Completer):
+    """prompt_toolkit Completer that requests completions from the server.
+
+    Overrides ``get_completions_async`` so completions run natively on
+    the asyncio event loop (no thread pool needed).  This is safe because
+    the client uses ``prompt_async()``, which calls the async variant.
+    """
+
+    def __init__(self, ws) -> None:
+        self._ws = ws
+        self._pending: asyncio.Future[tuple[list[str], int]] | None = None
+
+    # -- async path (used by prompt_async) ------------------------------------
+
+    async def get_completions_async(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text:
+            return
+
+        # Cancel any previous in-flight request
+        if self._pending is not None and not self._pending.done():
+            self._pending.cancel()
+
+        loop = asyncio.get_running_loop()
+        self._pending = loop.create_future()
+        await self._ws.send(json.dumps({"type": "complete", "line": text}))
+
+        try:
+            items, replace = await asyncio.wait_for(self._pending, timeout=3.0)
+        except (TimeoutError, asyncio.CancelledError):
+            return
+
+        for item in items:
+            yield Completion(item, start_position=-replace)
+
+    # -- sync fallback (required by Completer ABC) ----------------------------
+
+    def get_completions(self, document, complete_event):
+        return []
+
+    # -- called by _server_reader when a completions message arrives ----------
+
+    def feed_completions(self, items: list[str], replace: int) -> None:
+        """Resolve the pending future with the server's response."""
+        if self._pending is not None and not self._pending.done():
+            self._pending.set_result((items, replace))
+
+
+# ---------------------------------------------------------------------------
+# Client session
+# ---------------------------------------------------------------------------
 
 
 async def run_client(url: str) -> None:
@@ -31,11 +90,16 @@ async def run_client(url: str) -> None:
 
 async def _session_loop(ws) -> None:
     """Main client loop: read server messages, send user input."""
-    # We run two tasks: one reading from the server, one reading user input
+    completer = _WebSocketCompleter(ws)
+
     input_queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-    reader_task = asyncio.create_task(_server_reader(ws, input_queue))
-    writer_task = asyncio.create_task(_user_input_sender(ws, input_queue))
+    reader_task = asyncio.create_task(
+        _server_reader(ws, input_queue, completer)
+    )
+    writer_task = asyncio.create_task(
+        _user_input_sender(ws, input_queue, completer)
+    )
 
     done, pending = await asyncio.wait(
         [reader_task, writer_task],
@@ -57,6 +121,7 @@ async def _session_loop(ws) -> None:
 async def _server_reader(
     ws,
     input_queue: asyncio.Queue[str | None],
+    completer: _WebSocketCompleter,
 ) -> None:
     """Read messages from the server and display them."""
     try:
@@ -76,9 +141,8 @@ async def _server_reader(
 
             elif msg_type == "completions":
                 items = msg.get("items", [])
-                if items:
-                    sys.stdout.write("\n" + "  ".join(items) + "\n")
-                    sys.stdout.flush()
+                replace = msg.get("replace", 0)
+                completer.feed_completions(items, replace)
 
             elif msg_type == "exit":
                 break
@@ -94,13 +158,17 @@ async def _server_reader(
 async def _user_input_sender(
     ws,
     input_queue: asyncio.Queue[str | None],
+    completer: _WebSocketCompleter,
 ) -> None:
     """Read lines from the user (via prompt_toolkit) and send them to the server."""
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import ANSI
     from prompt_toolkit.patch_stdout import patch_stdout
 
-    session: PromptSession[str] = PromptSession()
+    session: PromptSession[str] = PromptSession(
+        completer=completer,
+        complete_while_typing=False,
+    )
 
     with patch_stdout(raw=True):
         while True:
