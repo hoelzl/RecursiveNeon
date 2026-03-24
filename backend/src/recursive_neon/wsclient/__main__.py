@@ -10,6 +10,21 @@ import sys
 from recursive_neon.wsclient.client import run_client
 
 
+def _enable_ansi_on_windows() -> None:
+    """Enable virtual terminal processing so ANSI codes render on Windows."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    STD_OUTPUT_HANDLE = -11
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+    handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+    mode = ctypes.c_ulong()
+    if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Connect to Recursive://Neon terminal via WebSocket",
@@ -29,6 +44,7 @@ def main() -> None:
 
     url = f"ws://{args.host}:{args.port}/ws/terminal"
 
+    _enable_ansi_on_windows()
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(run_client(url))
 

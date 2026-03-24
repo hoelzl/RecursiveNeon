@@ -102,7 +102,7 @@ async def _user_input_sender(
 
     session: PromptSession[str] = PromptSession()
 
-    with patch_stdout():
+    with patch_stdout(raw=True):
         while True:
             # Wait for the server to send a prompt
             prompt_text = await input_queue.get()
