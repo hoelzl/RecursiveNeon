@@ -53,8 +53,8 @@ Every feature works in the CLI (Layer 2) before touching the browser (Layers 3-4
 
 ### Application Core (Layer 1)
 
-- **AppService** — virtual filesystem, notes, and tasks CRUD. All files are UUID-based `FileNode` objects in memory (see `FILESYSTEM_SECURITY.md`).
-- **NPCManager** — LangChain-based NPC conversation manager with persistent memory and relationship tracking.
+- **AppService** — virtual filesystem, notes, and tasks CRUD with JSON persistence. All files are UUID-based `FileNode` objects in memory (see `FILESYSTEM_SECURITY.md`).
+- **NPCManager** — LangChain-based NPC conversation manager with persistent memory, relationship tracking, and think-tag stripping for qwen3 models.
 - **OllamaClient** — async HTTP client for Ollama's REST API.
 - **ProcessManager** — manages the Ollama binary lifecycle.
 - **ServiceContainer** — dependency injection via `ServiceFactory` (see `docs/BACKEND_CONVENTIONS.md`).
@@ -62,9 +62,11 @@ Every feature works in the CLI (Layer 2) before touching the browser (Layers 3-4
 ### CLI Shell (Layer 2)
 
 - **ShellSession** — session state (cwd, env vars, history) + path resolution between human-readable paths and UUID-based filesystem.
-- **CommandRegistry** — maps command names to async handler functions.
-- **Commands** — filesystem ops, utilities, NPC chat.
+- **ProgramRegistry** — maps program names to async `Program` implementations with restricted `ProgramContext`.
+- **Builtins** (`cd`, `exit`, `export`) — modify shell session state directly.
+- **Programs** — filesystem ops (`ls`, `cat`, `grep`, `find`, `write`, ...), notes/tasks management, NPC chat, utilities (`help`, `save`, `echo`, ...).
 - **Output** — abstracted output with ANSI colors, replaceable with WebSocket transport for Layer 3.
+- **Persistence** — game state (filesystem, notes, tasks, NPC conversations) saves to `game_data/` as JSON on exit and loads on startup. Shell history persists via `FileHistory`.
 
 See `docs/SHELL_DESIGN.md` for detailed shell architecture.
 

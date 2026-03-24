@@ -44,6 +44,20 @@ cd backend
 3. **Don't add features beyond what's tested and working.** V1's mistake was breadth without depth.
 4. **Write tests** for all new functionality.
 
+## Shell Commands
+
+**Builtins** (modify shell state): `cd`, `exit`, `export`
+
+**Filesystem**: `ls`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `grep`, `find`, `write`
+
+**Notes/Tasks**: `note` (list/show/create/edit/delete), `task` (lists/list/add/done/undone/delete)
+
+**NPC**: `chat` (list NPCs or enter conversation; supports `/help`, `/relationship`, `/status`)
+
+**Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
+
+**Persistence**: Game state auto-saves on exit to `game_data/`. Manual save via `save` command. Files: `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`, `history.txt`.
+
 ## Key Entry Points
 
 - Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)

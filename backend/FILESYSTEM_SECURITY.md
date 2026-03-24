@@ -41,23 +41,26 @@ app_service.load_initial_filesystem("backend/initial_fs")
 ```
 
 #### b) Persistence (Save)
-- **Destination:** `backend/game_data/filesystem.json`
-- **Purpose:** Save game state on shutdown
-- **Access:** Writes to single JSON file in controlled directory
-- **Safety:** No file paths from players, only serialized FileNode objects
+- **Destination:** `backend/game_data/` directory
+- **Purpose:** Save game state on shutdown (auto-save on exit + explicit `save` command)
+- **Access:** Writes JSON files in controlled directory
+- **Files:** `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`, `history.txt`
+- **Safety:** No file paths from players, only serialized model objects
 
 ```python
-app_service.save_filesystem_to_disk("backend/game_data")
+app_service.save_all_to_disk("backend/game_data")
+npc_manager.save_npcs_to_disk("backend/game_data")
 ```
 
 #### c) Persistence (Load)
-- **Source:** `backend/game_data/filesystem.json`
+- **Source:** `backend/game_data/` directory
 - **Purpose:** Restore game state on startup
-- **Access:** Reads from single JSON file
-- **Safety:** Validates and deserializes into FileNode objects
+- **Access:** Reads JSON files from controlled directory
+- **Safety:** Validates and deserializes into model objects. Corrupt files are handled gracefully (logged and skipped).
 
 ```python
-app_service.load_filesystem_from_disk("backend/game_data")
+app_service.load_all_from_disk("backend/game_data")
+npc_manager.load_npcs_from_disk("backend/game_data")
 ```
 
 ### 3. File Operations
@@ -104,7 +107,7 @@ api.createFile("../../../etc/passwd", parent_id, "malicious", "text/plain")
 
 ### 6. Persistence Safety
 
-The `game_data/filesystem.json` file contains:
+The `game_data/` directory contains separate JSON files per data type (e.g. `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`). Example `filesystem.json`:
 
 ```json
 {
@@ -173,13 +176,13 @@ The frontend API uses WebSocket messages:
 
 ## Implementation Files
 
-- **Backend Service:** `backend/services/app_service.py`
-- **Models:** `backend/models/app_models.py`
-- **Message Handler:** `backend/services/message_handler.py`
-- **Frontend API:** `frontend/src/utils/appApi.ts`
-- **File Browser UI:** `frontend/src/components/apps/FileBrowserApp.tsx`
-- **Initial State:** `backend/initial_fs/` (source)
-- **Game Data:** `backend/game_data/` (runtime storage)
+- **Service:** `backend/src/recursive_neon/services/app_service.py`
+- **Models:** `backend/src/recursive_neon/models/app_models.py`
+- **Path resolver:** `backend/src/recursive_neon/shell/path_resolver.py`
+- **Filesystem programs:** `backend/src/recursive_neon/shell/programs/filesystem.py`
+- **Security tests:** `backend/tests/unit/test_filesystem_security.py`
+- **Initial state:** `backend/src/recursive_neon/initial_fs/` (source)
+- **Game data:** `backend/game_data/` (runtime storage, gitignored)
 
 ## Testing
 

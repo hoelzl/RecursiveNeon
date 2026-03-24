@@ -32,15 +32,13 @@ cd backend
 
 ## Run the Shell
 
-> **Note**: The CLI shell is currently under development (Phase 1). Once complete:
-
 ```bash
 # From repo root
 .venv/Scripts/python -m recursive_neon.shell    # Windows
 # .venv/bin/python -m recursive_neon.shell      # Linux/macOS
 ```
 
-This drops you into an interactive terminal session with the virtual filesystem, NPC chat, and more. Type `help` for available commands.
+This drops you into an interactive terminal session with the virtual filesystem, NPC chat, notes, tasks, and more. Type `help` for available commands. Game state persists automatically on exit.
 
 ## Set Up an LLM (for NPC Chat)
 
@@ -77,10 +75,16 @@ cd backend
 backend/src/recursive_neon/
   models/          Data models (FileNode, NPC, GameState, etc.)
   services/        Business logic (AppService, NPCManager, etc.)
-  shell/           CLI shell (commands, session, REPL)
+  shell/           CLI shell (REPL, session, builtins)
+    programs/      Shell programs (filesystem, notes, tasks, chat, utility)
   config.py        Settings (Pydantic)
   dependencies.py  Dependency injection container
   main.py          FastAPI app (HTTP/WebSocket API)
+
+backend/tests/
+  unit/shell/      Shell program and component tests
+  unit/            Service and model tests
+  integration/     End-to-end workflow tests
 ```
 
 ## Further Reading

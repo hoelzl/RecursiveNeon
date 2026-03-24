@@ -42,25 +42,59 @@ Documents/  My Folder/  Pictures/  Projects/  welcome.txt
 user@neon-proxy:/$ cat welcome.txt
 user@neon-proxy:/$ cd Documents
 user@neon-proxy:/Documents$ mkdir notes
-user@neon-proxy:/Documents$ touch notes/todo.txt
+user@neon-proxy:/Documents$ write notes/todo.txt Buy groceries
+```
+
+**Search files:**
+
+```
+user@neon-proxy:/$ grep -i secret /Documents
+/Documents/readme.txt:3:This file contains a secret code
+user@neon-proxy:/$ find / -name *.txt
+/welcome.txt
+/Documents/readme.txt
+...
+```
+
+**Manage notes and tasks:**
+
+```
+user@neon-proxy:/$ note create "Investigation Log" -c "Found suspicious files in /Projects"
+Created note: Investigation Log
+user@neon-proxy:/$ task add Check server logs
+Added to default: Check server logs
+user@neon-proxy:/$ task done 1
+[x] Check server logs
 ```
 
 **Chat with NPCs** (requires Ollama + a model):
 
 ```
-user@neon-proxy:/$ chat cipher
-Connecting to cipher...
-[cipher]: Ah, a new face on the network...
+user@neon-proxy:/$ chat hacker_zero
+Connecting to Zero...
+[Zero]: ...You found me. Interesting.
 
-cipher> What happened to this system?
-[cipher]: You really want to know? Let's just say the breach
-wasn't from the outside...
+hacker_zero> What do you know about the breach?
+[Zero]: The breach wasn't from the outside. Someone on the inside
+left the door wide open.
 
-cipher> exit
+hacker_zero> /relationship
+Relationship with Zero: 0
+
+hacker_zero> exit
 Connection closed.
 ```
 
-**Standard shell utilities:** `pwd`, `echo`, `env`, `whoami`, `hostname`, `date`, `help`
+**Save your progress:**
+
+```
+user@neon-proxy:/$ save
+Game state saved.
+```
+
+Game state (filesystem, notes, tasks, NPC conversations) persists across sessions automatically on exit, or manually with `save`.
+
+**All commands:** `ls`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `grep`, `find`, `write`, `note`, `task`, `chat`, `save`, `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `export`, `exit`
 
 ## Setting Up NPC Chat
 
