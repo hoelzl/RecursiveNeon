@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from recursive_neon.config import settings
 from recursive_neon.dependencies import ServiceFactory
 from recursive_neon.shell.output import CapturedOutput
 from recursive_neon.shell.programs import ProgramContext
@@ -17,7 +18,7 @@ def test_container(mock_llm):
         mock_npc_manager=ServiceFactory.create_npc_manager(llm=mock_llm),
     )
     container.app_service.load_initial_filesystem(
-        initial_fs_dir="src/recursive_neon/initial_fs"
+        initial_fs_dir=str(settings.initial_fs_path)
     )
     return container
 
