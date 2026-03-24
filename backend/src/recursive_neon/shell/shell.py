@@ -6,7 +6,6 @@ Uses prompt_toolkit for line editing, history, and tab completion.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -375,16 +374,14 @@ class Shell:
 
     def _make_program_context(self, args: list[str]) -> ProgramContext:
         """Create a ProgramContext from current session state."""
-        # Pass internal data through env (prefixed with _)
         env = dict(self.session.env)
         if self.data_dir:
             env["_data_dir"] = self.data_dir
-        env["_builtin_help"] = json.dumps(BUILTIN_HELP)
+
         program_help = {
             name: self.programs.get_help(name) or ""
             for name in self.programs.list_programs()
         }
-        env["_program_help"] = json.dumps(program_help)
 
         return ProgramContext(
             args=args,
@@ -393,6 +390,8 @@ class Shell:
             env=env,
             services=self.session.container,
             cwd_id=self.session.cwd_id,
+            builtin_help=dict(BUILTIN_HELP),
+            program_help=program_help,
         )
 
     def _build_prompt(self) -> str:

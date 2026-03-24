@@ -118,10 +118,11 @@ class OllamaProcessManager(IProcessManager):
             # Read stderr in background (ollama logs to stderr)
             while self.process.poll() is None:
                 if self.process.stderr:
-                    line = self.process.stderr.readline()
+                    line = await asyncio.to_thread(self.process.stderr.readline)
                     if line:
                         logger.debug(f"Ollama: {line.decode().strip()}")
-                await asyncio.sleep(0.1)
+                else:
+                    await asyncio.sleep(0.1)
 
             # Process ended
             logger.warning(f"Ollama process ended with code {self.process.returncode}")

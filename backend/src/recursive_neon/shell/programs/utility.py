@@ -12,10 +12,8 @@ from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
 async def prog_help(ctx: ProgramContext) -> int:
     """List available commands or show help for a specific command."""
-    # help needs access to the registries — stored in env by the shell
-    # as a workaround (programs can't access shell internals)
-    builtin_help = _get_help_data(ctx, "_builtin_help")
-    program_help = _get_help_data(ctx, "_program_help")
+    builtin_help = ctx.builtin_help or {}
+    program_help = ctx.program_help or {}
 
     if len(ctx.args) > 1:
         name = ctx.args[1]
@@ -47,18 +45,6 @@ async def prog_help(ctx: ProgramContext) -> int:
             ctx.stdout.writeln(f"  {ctx.stdout.styled(name, CYAN):20s} {short}")
 
     return 0
-
-
-def _get_help_data(ctx: ProgramContext, key: str) -> dict[str, str]:
-    """Retrieve help data passed through env."""
-    import json
-
-    raw = ctx.env.get(key, "{}")
-    try:
-        result: dict[str, str] = json.loads(raw)
-        return result
-    except (json.JSONDecodeError, TypeError):
-        return {}
 
 
 async def prog_clear(ctx: ProgramContext) -> int:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from langchain_classic.chains import ConversationChain
-from langchain_classic.memory import ConversationBufferMemory
+from langchain_classic.memory import ConversationBufferWindowMemory
 from langchain_core.prompts import PromptTemplate
 from langchain_ollama import ChatOllama
 
@@ -128,7 +128,7 @@ Player: {{input}}
 {npc.name}:""",
         )
 
-        memory = ConversationBufferMemory()
+        memory = ConversationBufferWindowMemory(k=settings.npc_memory_context_length)
 
         # Load existing conversation history into memory
         for msg in npc.get_recent_conversation():

@@ -33,6 +33,8 @@ class ProgramContext:
     env: dict[str, str]
     services: ServiceContainer
     cwd_id: str
+    builtin_help: dict[str, str] | None = None
+    program_help: dict[str, str] | None = None
 
     def resolve_path(self, path: str) -> FileNode:
         """Resolve a path string to a FileNode."""

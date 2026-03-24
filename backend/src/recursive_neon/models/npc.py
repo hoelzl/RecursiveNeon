@@ -90,6 +90,11 @@ class NPC(BaseModel):
     # Memory
     memory: NPCMemory = Field(default_factory=lambda: NPCMemory(npc_id=""))
 
+    def model_post_init(self, __context: object) -> None:
+        """Sync memory.npc_id with self.id after construction."""
+        if not self.memory.npc_id:
+            self.memory.npc_id = self.id
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

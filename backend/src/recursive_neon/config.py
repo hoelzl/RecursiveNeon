@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     npc_memory_context_length: int = 10  # Last N messages to remember
     max_response_tokens: int = 200
 
+    # CORS
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
     # Performance
     ollama_timeout: int = 60  # seconds
     websocket_timeout: int = 30

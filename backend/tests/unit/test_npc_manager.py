@@ -313,6 +313,45 @@ class TestStripThinkTags:
         assert _strip_think_tags("<think></think>Result") == "Result"
 
 
+class TestNPCMemoryInit:
+    """Tests for NPC.memory.npc_id auto-sync."""
+
+    def test_memory_npc_id_auto_set(self):
+        """memory.npc_id is automatically set to self.id on construction."""
+        npc = NPC(
+            id="auto_id_test",
+            name="Auto",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Tester",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+        )
+        assert npc.memory.npc_id == "auto_id_test"
+
+    def test_memory_npc_id_preserved_if_set(self):
+        """If memory is provided with a npc_id, it's not overwritten."""
+        from recursive_neon.models.npc import NPCMemory
+
+        memory = NPCMemory(npc_id="explicit_id")
+        npc = NPC(
+            id="npc_id",
+            name="Test",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Tester",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+            memory=memory,
+        )
+        # Provided non-empty npc_id is kept
+        assert npc.memory.npc_id == "explicit_id"
+
+
 class TestNPCSystemPrompt:
     """Tests for the refined NPC system prompt."""
 

@@ -74,9 +74,9 @@ async def lifespan(app: FastAPI):
         logger.info(f"Available models: {models}")
         container.system_state.ollama_models_loaded = models
 
-        # Create default NPCs
-        logger.info("Creating default NPCs...")
-        npcs = container.npc_manager.create_default_npcs()
+        # NPC state is already loaded by create_production_container()
+        # (from disk if available, otherwise defaults are created there).
+        npcs = container.npc_manager.list_npcs()
         container.system_state.npcs_loaded = len(npcs)
         logger.info(f"Loaded {len(npcs)} NPCs")
 
@@ -127,7 +127,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

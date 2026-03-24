@@ -73,8 +73,9 @@ class OllamaClient(IOllamaClient):
         Returns:
             True if server became ready, False if timeout
         """
-        start_time = asyncio.get_event_loop().time()
-        while (asyncio.get_event_loop().time() - start_time) < max_wait:
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        while (loop.time() - start_time) < max_wait:
             if await self.health_check():
                 logger.info("Ollama server is ready")
                 return True

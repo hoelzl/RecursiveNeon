@@ -6,6 +6,7 @@ Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 """
 
 import base64
+import contextlib
 import json
 import logging
 import uuid
@@ -37,6 +38,31 @@ class AppService:
 
     def __init__(self, game_state: GameState):
         self.game_state = game_state
+        # O(1) lookup indexes — mirrors game_state.filesystem.nodes
+        self._node_index: dict[str, FileNode] = {}
+        self._children_index: dict[str | None, list[str]] = {}
+        self._rebuild_indexes()
+
+    def _rebuild_indexes(self) -> None:
+        """Rebuild lookup indexes from the canonical nodes list."""
+        self._node_index.clear()
+        self._children_index.clear()
+        for node in self.game_state.filesystem.nodes:
+            self._node_index[node.id] = node
+            self._children_index.setdefault(node.parent_id, []).append(node.id)
+
+    def _index_node(self, node: FileNode) -> None:
+        """Add a single node to the lookup indexes."""
+        self._node_index[node.id] = node
+        self._children_index.setdefault(node.parent_id, []).append(node.id)
+
+    def _unindex_node(self, node: FileNode) -> None:
+        """Remove a single node from the lookup indexes."""
+        self._node_index.pop(node.id, None)
+        children = self._children_index.get(node.parent_id)
+        if children:
+            with contextlib.suppress(ValueError):
+                children.remove(node.id)
 
     def handle_action(self, app_type: str, action: str, data: dict) -> dict:
         """Route an app action to the appropriate handler."""
@@ -233,13 +259,14 @@ class AppService:
         )
         self.game_state.filesystem.nodes.append(root)
         self.game_state.filesystem.root_id = root.id
+        self._index_node(root)
         return root
 
     def get_file(self, file_id: str) -> FileNode:
-        for node in self.game_state.filesystem.nodes:
-            if node.id == file_id:
-                return node
-        raise ValueError(f"File not found: {file_id}")
+        node = self._node_index.get(file_id)
+        if node is None:
+            raise ValueError(f"File not found: {file_id}")
+        return node
 
     def create_directory(self, data: dict[str, Any]) -> FileNode:
         timestamp = datetime.now().isoformat()
@@ -252,6 +279,7 @@ class AppService:
             updated_at=timestamp,
         )
         self.game_state.filesystem.nodes.append(directory)
+        self._index_node(directory)
         return directory
 
     def create_file(self, data: dict[str, Any]) -> FileNode:
@@ -267,6 +295,7 @@ class AppService:
             updated_at=timestamp,
         )
         self.game_state.filesystem.nodes.append(file)
+        self._index_node(file)
         return file
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
@@ -284,6 +313,7 @@ class AppService:
                     updated_at=timestamp,
                 )
                 self.game_state.filesystem.nodes[i] = updated
+                self._node_index[file_id] = updated
                 return updated
         raise ValueError(f"File not found: {file_id}")
 
@@ -292,6 +322,7 @@ class AppService:
         if node.type == "directory":
             for child in self.list_directory(file_id):
                 self.delete_file(child.id)
+        self._unindex_node(node)
         self.game_state.filesystem.nodes = [
             n for n in self.game_state.filesystem.nodes if n.id != file_id
         ]
@@ -312,6 +343,7 @@ class AppService:
             updated_at=timestamp,
         )
         self.game_state.filesystem.nodes.append(copy)
+        self._index_node(copy)
         if source.type == "directory":
             for child in self.list_directory(file_id):
                 self.copy_file(child.id, copy.id)
@@ -331,6 +363,7 @@ class AppService:
                 current = parent.parent_id
         for i, node in enumerate(self.game_state.filesystem.nodes):
             if node.id == file_id:
+                self._unindex_node(file)
                 updated = FileNode(
                     id=file.id,
                     name=file.name,
@@ -342,16 +375,14 @@ class AppService:
                     updated_at=timestamp,
                 )
                 self.game_state.filesystem.nodes[i] = updated
+                self._index_node(updated)
                 return updated
         raise ValueError(f"File not found: {file_id}")
 
     def list_directory(self, dir_id: str) -> list[FileNode]:
-        self.get_file(dir_id)
-        return [
-            node
-            for node in self.game_state.filesystem.nodes
-            if node.parent_id == dir_id
-        ]
+        self.get_file(dir_id)  # validate dir exists
+        child_ids = self._children_index.get(dir_id, [])
+        return [self._node_index[cid] for cid in child_ids if cid in self._node_index]
 
     def _handle_filesystem_action(self, action: str, data: dict) -> dict:
         if action == "init":
@@ -426,6 +457,7 @@ class AppService:
                 nodes=[FileNode(**node) for node in data["nodes"]],
                 root_id=data.get("root_id"),
             )
+            self._rebuild_indexes()
             return True
         except (KeyError, TypeError, ValueError) as e:
             logger.warning("Corrupt filesystem.json: %s", e)
@@ -495,6 +527,7 @@ class AppService:
         self.game_state.filesystem.root_id = None
         root = self.init_filesystem()
         self._load_directory_recursive(initial_path, root.id)
+        self._rebuild_indexes()
 
     def _load_directory_recursive(self, source_path: Path, parent_id: str) -> None:
         if not source_path.exists() or not source_path.is_dir():

@@ -3,7 +3,9 @@ Tests for desktop app service
 """
 
 import pytest
+from pydantic import ValidationError
 
+from recursive_neon.models.app_models import FileNode
 from recursive_neon.models.game_state import GameState
 from recursive_neon.services.app_service import AppService
 
@@ -303,3 +305,139 @@ class TestFileSystemService:
         app_service.create_directory({"name": "dir1", "parent_id": root_id})
         contents = app_service.list_directory(root_id)
         assert len(contents) == 2
+
+    def test_get_file_not_found(self, app_service):
+        """Getting a non-existent file raises ValueError."""
+        with pytest.raises(ValueError, match="File not found"):
+            app_service.get_file("nonexistent-uuid")
+
+    def test_move_file_into_self_raises(self, app_service):
+        """Moving a directory into itself raises ValueError."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        dir_a = app_service.create_directory({"name": "A", "parent_id": root_id})
+        with pytest.raises(ValueError, match="Cannot move"):
+            app_service.move_file(dir_a.id, dir_a.id)
+
+    def test_move_file_into_descendant_raises(self, app_service):
+        """Moving a directory into its own descendant raises ValueError."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        dir_a = app_service.create_directory({"name": "A", "parent_id": root_id})
+        dir_b = app_service.create_directory({"name": "B", "parent_id": dir_a.id})
+        with pytest.raises(ValueError, match="Cannot move"):
+            app_service.move_file(dir_a.id, dir_b.id)
+
+    def test_move_file_updates_parent(self, app_service):
+        """Moving a file changes its parent_id."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        dir_a = app_service.create_directory({"name": "A", "parent_id": root_id})
+        dir_b = app_service.create_directory({"name": "B", "parent_id": root_id})
+        f = app_service.create_file(
+            {"name": "x.txt", "parent_id": dir_a.id, "content": "x"}
+        )
+        moved = app_service.move_file(f.id, dir_b.id)
+        assert moved.parent_id == dir_b.id
+        # Should appear in dir_b listing, not dir_a
+        assert any(n.id == f.id for n in app_service.list_directory(dir_b.id))
+        assert all(n.id != f.id for n in app_service.list_directory(dir_a.id))
+
+    def test_copy_file_deep(self, app_service):
+        """Copying a directory recursively copies children."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        src = app_service.create_directory({"name": "src", "parent_id": root_id})
+        app_service.create_file(
+            {"name": "a.txt", "parent_id": src.id, "content": "hello"}
+        )
+        copy = app_service.copy_file(src.id, root_id, "src_copy")
+        assert copy.name == "src_copy"
+        children = app_service.list_directory(copy.id)
+        assert len(children) == 1
+        assert children[0].name == "a.txt"
+        assert children[0].id != src.id  # new UUID
+
+    def test_delete_directory_recursive(self, app_service):
+        """Deleting a directory removes all descendants."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        parent = app_service.create_directory({"name": "parent", "parent_id": root_id})
+        child = app_service.create_file(
+            {"name": "c.txt", "parent_id": parent.id, "content": "c"}
+        )
+        app_service.delete_file(parent.id)
+        with pytest.raises(ValueError):
+            app_service.get_file(child.id)
+        with pytest.raises(ValueError):
+            app_service.get_file(parent.id)
+
+
+class TestFileNodeTypeValidation:
+    """FileNode.type must be 'file' or 'directory'."""
+
+    def test_valid_file_type(self):
+        FileNode(id="1", name="f", type="file")
+
+    def test_valid_directory_type(self):
+        FileNode(id="1", name="d", type="directory")
+
+    def test_invalid_type_rejected(self):
+        with pytest.raises(ValidationError):
+            FileNode(id="1", name="bad", type="fle")
+
+    def test_invalid_type_case_sensitive(self):
+        with pytest.raises(ValidationError):
+            FileNode(id="1", name="bad", type="Directory")
+
+
+class TestFilesystemIndexConsistency:
+    """Verify that O(1) lookup indexes stay consistent with the nodes list."""
+
+    @pytest.fixture
+    def svc(self):
+        svc = AppService(GameState())
+        svc.init_filesystem()
+        return svc
+
+    def test_index_after_create(self, svc):
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file({"name": "x.txt", "parent_id": root_id, "content": ""})
+        assert svc._node_index[f.id] is f
+        assert f.id in svc._children_index[root_id]
+
+    def test_index_after_delete(self, svc):
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file({"name": "x.txt", "parent_id": root_id, "content": ""})
+        svc.delete_file(f.id)
+        assert f.id not in svc._node_index
+        assert f.id not in svc._children_index.get(root_id, [])
+
+    def test_index_after_move(self, svc):
+        root_id = svc.game_state.filesystem.root_id
+        a = svc.create_directory({"name": "a", "parent_id": root_id})
+        b = svc.create_directory({"name": "b", "parent_id": root_id})
+        f = svc.create_file({"name": "x.txt", "parent_id": a.id, "content": ""})
+        svc.move_file(f.id, b.id)
+        assert f.id not in svc._children_index.get(a.id, [])
+        assert f.id in svc._children_index[b.id]
+        assert svc._node_index[f.id].parent_id == b.id
+
+    def test_index_after_update(self, svc):
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file({"name": "x.txt", "parent_id": root_id, "content": "old"})
+        updated = svc.update_file(f.id, {"content": "new"})
+        assert svc._node_index[f.id] is updated
+        assert updated.content == "new"
+
+    def test_index_after_load_from_disk(self, svc, tmp_path):
+        root_id = svc.game_state.filesystem.root_id
+        svc.create_file({"name": "x.txt", "parent_id": root_id, "content": "data"})
+        svc.save_filesystem_to_disk(str(tmp_path))
+
+        fresh = AppService(GameState())
+        fresh.load_filesystem_from_disk(str(tmp_path))
+        # Index should be populated after load
+        assert len(fresh._node_index) == len(fresh.game_state.filesystem.nodes)
+        for node in fresh.game_state.filesystem.nodes:
+            assert fresh._node_index[node.id] is node

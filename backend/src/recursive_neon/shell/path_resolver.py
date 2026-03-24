@@ -151,8 +151,12 @@ def get_node_path(node_id: str, app_service: AppService) -> str:
     root_id = app_service.game_state.filesystem.root_id
     parts: list[str] = []
     current_id: str | None = node_id
+    visited: set[str] = set()
 
     while current_id is not None:
+        if current_id in visited:
+            break  # cycle detected — corrupt parent links
+        visited.add(current_id)
         node = app_service.get_file(current_id)
         if current_id == root_id:
             break

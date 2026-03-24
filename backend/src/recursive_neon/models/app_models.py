@@ -5,6 +5,8 @@ Core models for the virtual filesystem, notes, and tasks.
 These are presentation-agnostic and work with both CLI and GUI interfaces.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # ============================================================================
@@ -22,7 +24,7 @@ class FileNode(BaseModel):
 
     id: str
     name: str
-    type: str  # "file" or "directory"
+    type: Literal["file", "directory"]
     parent_id: str | None = None
     content: str | None = None  # For files: text content or base64 for images
     mime_type: str | None = None  # For files: "text/plain", "image/jpeg", etc.
