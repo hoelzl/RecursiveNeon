@@ -66,9 +66,11 @@ class ChatProgram:
         # so up-arrow history works within the conversation.
         try:
             from prompt_toolkit import PromptSession
+            from prompt_toolkit.formatted_text import ANSI
 
             chat_session: PromptSession[str] = PromptSession()
         except ImportError:
+            ANSI = None  # type: ignore[assignment,misc]
             chat_session = None  # type: ignore[assignment]
 
         # Sub-REPL for chat
@@ -76,7 +78,7 @@ class ChatProgram:
             try:
                 prompt = f"{ctx.stdout.styled(npc_id, YELLOW)}> "
                 if chat_session is not None:
-                    user_input = await chat_session.prompt_async(prompt)
+                    user_input = await chat_session.prompt_async(ANSI(prompt))
                 else:
                     user_input = input(f"{npc_id}> ")
             except (EOFError, KeyboardInterrupt):
