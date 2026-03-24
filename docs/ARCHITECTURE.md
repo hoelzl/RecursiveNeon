@@ -1,129 +1,76 @@
-# Architecture Decision: Why Ollama?
+# Architecture
 
-## Summary
+## Why Ollama?
 
-Recursive://Neon uses **Ollama** for local LLM inference instead of llama.cpp or other alternatives. This document explains why.
+Recursive://Neon uses **Ollama** for local LLM inference instead of llama.cpp or other alternatives.
 
-## The Problem
+### The Problem
 
 Initial designs considered using llama.cpp directly, but this approach had critical issues:
 
 1. **Build Complexity**: Requires compilation with CUDA toolkit, specific compilers, and platform-specific toolchains
-2. **Distribution Challenge**: Different binaries needed for CUDA vs CPU, making end-user distribution fragile
+2. **Distribution Challenge**: Different binaries needed for CUDA vs CPU
 3. **Dependency Hell**: Heavy build dependencies (Visual Studio tools, CMake, BLAS libraries, etc.)
 4. **Portability Issues**: No guarantee of working on target machines with different GPU drivers
 
-## The Solution: Ollama
+### The Solution
 
-Ollama solves these problems elegantly:
+Ollama solves these problems:
 
-### Advantages
+- **Single binary distribution** — one executable for all platforms, automatic GPU detection with CPU fallback
+- **Simple integration** — clean REST API (OpenAI-compatible), built-in model management, LangChain compatible
+- **Robust hardware support** — works on any hardware, automatic quantization selection, built-in CUDA/ROCm/Metal
+- **Better DX** — well-documented API, active development, easy to test
 
-1. **Single Binary Distribution**
-   - One executable for all platforms (Windows, Linux, macOS)
-   - Automatic GPU detection with graceful CPU fallback
-   - No compilation required
-   - Self-contained (~500MB)
+**Trade-offs**: Slightly higher memory overhead (~100MB), less fine-grained control, slightly slower cold start (~2-3s). For a game distribution scenario, these heavily favor Ollama.
 
-2. **Simple Integration**
-   - Clean REST API (OpenAI-compatible)
-   - Built-in model management
-   - Easy process lifecycle management
-   - LangChain compatible
-
-3. **Robust Hardware Support**
-   - Works on any hardware (CPU-only to high-end GPUs)
-   - Automatic quantization selection
-   - Graceful degradation under memory pressure
-   - Built-in CUDA/ROCm/Metal support (auto-detected)
-
-4. **Better Developer Experience**
-   - Well-documented API
-   - Active development and community
-   - Easy to test and debug
-   - Stable API surface
-
-### Trade-offs
-
-**What we lose:**
-- Slightly higher memory overhead (~100MB more)
-- Less fine-grained control over inference parameters
-- Slightly slower cold start (~2-3 seconds more)
-
-**What we gain:**
-- Vastly simpler distribution (critical for a game!)
-- No build complexity
-- Better cross-platform support
-- Easier to test and debug
-- More reliable for end users
-
-**Verdict**: For a game distribution scenario, these trade-offs heavily favor Ollama.
-
-## Architecture Overview
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│     React Frontend (Desktop UI)             │
-│     - Window Manager                        │
-│     - Chat Interface                        │
-│     - WebSocket Client                      │
-└───────────────┬─────────────────────────────┘
-                │ WebSocket + HTTP
-┌───────────────▼─────────────────────────────┐
-│     FastAPI Backend                         │
-│     - WebSocket Handler                     │
-│     - NPC Manager (LangChain)               │
-│     - Process Orchestrator                  │
-└───────────────┬─────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  Layer 4: Desktop GUI (Browser, future)         │
+│  Window manager, taskbar, desktop icons          │
+├─────────────────────────────────────────────────┤
+│  Layer 3: Terminal Emulator (Browser, future)   │
+│  xterm.js, WebSocket transport                   │
+├─────────────────────────────────────────────────┤
+│  Layer 2: CLI Shell (Python)          ← current │
+│  prompt_toolkit REPL, commands, path resolver    │
+├─────────────────────────────────────────────────┤
+│  Layer 1: Application Core (Python)   ← exists  │
+│  AppService, NPCManager, GameState, models       │
+└───────────────┬─────────────────────────────────┘
                 │ HTTP (localhost:11434)
-┌───────────────▼─────────────────────────────┐
-│     Ollama Server                           │
-│     - LLM Inference (auto GPU/CPU)          │
-│     - Model Loading                         │
-│     - OpenAI-compatible API                 │
-└─────────────────────────────────────────────┘
+┌───────────────▼─────────────────────────────────┐
+│  Ollama Server                                   │
+│  LLM inference (auto GPU/CPU), model management  │
+└─────────────────────────────────────────────────┘
 ```
+
+Every feature works in the CLI (Layer 2) before touching the browser (Layers 3-4). See `docs/V2_HANDOVER.md` for the rationale behind this approach.
 
 ## Key Components
 
-### Backend (Python + FastAPI)
-- Manages game state and NPC orchestration
-- Uses LangChain for conversation management
-- Spawns and monitors Ollama process
-- Provides WebSocket API for frontend
+### Application Core (Layer 1)
 
-### Frontend (React + TypeScript)
-- Desktop-like UI with window management
-- Real-time chat interface
-- WebSocket connection to backend
+- **AppService** — virtual filesystem, notes, and tasks CRUD. All files are UUID-based `FileNode` objects in memory (see `FILESYSTEM_SECURITY.md`).
+- **NPCManager** — LangChain-based NPC conversation manager with persistent memory and relationship tracking.
+- **OllamaClient** — async HTTP client for Ollama's REST API.
+- **ProcessManager** — manages the Ollama binary lifecycle.
+- **ServiceContainer** — dependency injection via `ServiceFactory` (see `docs/BACKEND_CONVENTIONS.md`).
+
+### CLI Shell (Layer 2)
+
+- **ShellSession** — session state (cwd, env vars, history) + path resolution between human-readable paths and UUID-based filesystem.
+- **CommandRegistry** — maps command names to async handler functions.
+- **Commands** — filesystem ops, utilities, NPC chat.
+- **Output** — abstracted output with ANSI colors, replaceable with WebSocket transport for Layer 3.
+
+See `docs/SHELL_DESIGN.md` for detailed shell architecture.
 
 ### Ollama
+
 - Bundled with the game distribution
 - Automatically started by backend
 - Provides LLM inference for all NPCs
 - No external API keys or network required
-
-## Development Setup
-
-The simplified architecture means setup is straightforward:
-
-```bash
-# 1. Install Python dependencies
-pip install -r requirements.txt
-
-# 2. Install Node dependencies
-cd frontend && npm install
-
-# 3. Download Ollama (handled by setup script)
-# No compilation needed!
-
-# 4. Pull a model
-ollama pull phi3:mini
-
-# 5. Run backend + frontend
-# That's it!
-```
-
-## Conclusion
-
-By choosing Ollama over llama.cpp, we traded minor performance overhead for massive gains in simplicity, reliability, and distribution ease. This makes Recursive://Neon actually feasible to ship as a game that runs on end-user machines without requiring them to install CUDA toolkits or deal with compilation errors.

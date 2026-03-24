@@ -1,168 +1,92 @@
 # Quick Start Guide
 
-Get Recursive://Neon up and running in 5 minutes!
+Get Recursive://Neon up and running.
 
-## Prerequisites Check
+## Prerequisites
 
-Before starting, verify you have:
+- Python 3.11+ (`python --version`)
+- [uv](https://docs.astral.sh/uv/) for fast dependency management (`uv --version`)
+- ~2GB free disk space (for Ollama model)
 
-```bash
-# Check Python (need 3.11+)
-python3 --version
-
-# Check Node.js (need 18+)
-node --version
-
-# Check disk space (need ~2GB free)
-df -h .
-```
-
-## Step 1: Clone and Setup
-
-### Linux/macOS:
+## Setup
 
 ```bash
 git clone https://github.com/hoelzl/RecursiveNeon.git
 cd RecursiveNeon
-chmod +x scripts/setup.sh
-./scripts/setup.sh
+
+# Create virtual environment and install dependencies
+uv venv --python 3.14 .venv
+uv pip install -e "backend/.[dev]"
 ```
 
-### Windows:
-
-```cmd
-git clone https://github.com/hoelzl/RecursiveNeon.git
-cd RecursiveNeon
-scripts\setup.bat
-```
-
-This will:
-- Create Python virtual environment
-- Install Python dependencies
-- Install Node.js dependencies
-- Download ollama binary
-
-## Step 2: Get a Model
+## Run Tests
 
 ```bash
-# Pull the recommended lightweight model
-ollama pull qwen2.5:3b
+cd backend
+../.venv/Scripts/pytest           # Windows
+# ../.venv/bin/pytest             # Linux/macOS
+
+../.venv/Scripts/pytest --cov     # With coverage
+../.venv/Scripts/pytest -m unit   # Unit tests only
 ```
 
-**Note**: This downloads ~2GB. For other options, see [Model Selection](#model-selection).
+## Run the Shell
 
-## Step 3: Run the Game
-
-Open **two terminal windows**:
-
-### Terminal 1 - Backend:
+> **Note**: The CLI shell is currently under development (Phase 1). Once complete:
 
 ```bash
-# Activate virtual environment (from project root)
-source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
-
-# Run backend (must be from project root)
-python -m backend.main
+# From repo root
+.venv/Scripts/python -m recursive_neon.shell    # Windows
+# .venv/bin/python -m recursive_neon.shell      # Linux/macOS
 ```
 
-Wait for: `Recursive://Neon Backend Ready!`
+This drops you into an interactive terminal session with the virtual filesystem, NPC chat, and more. Type `help` for available commands.
 
-### Terminal 2 - Frontend:
+## Set Up an LLM (for NPC Chat)
+
+NPC conversations require a local LLM via Ollama:
 
 ```bash
-cd frontend
-npm run dev
+# Install Ollama (https://ollama.com) or use the bundled downloader:
+python scripts/download_ollama.py
+
+# Pull a model
+ollama pull qwen3:4b
 ```
 
-Open browser to: `http://localhost:5173`
+### Model Recommendations
 
-## Step 4: Play!
+| Model | Size | RAM | Notes |
+|-------|------|-----|-------|
+| `qwen3:4b` | ~2GB | 4GB | Default, good for testing |
+| `qwen2.5:3b` | ~2GB | 4GB | Great storytelling |
+| `gemma2:9b` | ~5GB | 8GB | Better quality, needs more RAM |
 
-1. Wait for status indicator to turn **green** (backend ready)
-2. Double-click **Chat** icon on desktop
-3. Select an NPC from the sidebar
-4. Start chatting!
-
-## Troubleshooting
-
-### Backend won't start
+## Code Quality
 
 ```bash
-# IMPORTANT: Run from project root, not from backend/ directory
-# Make sure you're in RecursiveNeon/ directory
-pwd  # Should show .../RecursiveNeon
-
-# Activate venv
-source backend/venv/bin/activate  # Windows: backend\venv\Scripts\activate
-
-# Run backend
-python -m backend.main
-
-# If still issues, check if ports are free
-lsof -i :8000   # Backend (Mac/Linux)
-lsof -i :11434  # Ollama
-
-# If busy, kill the process or change ports in .env
+cd backend
+../.venv/Scripts/ruff check .      # Lint
+../.venv/Scripts/ruff format .     # Format
+../.venv/Scripts/mypy              # Type check
 ```
 
-### Frontend shows connection error
+## Project Structure
 
-1. Verify backend is running (check terminal 1)
-2. Check browser console for errors (F12)
-3. Try refreshing the page
-
-### NPCs don't respond
-
-```bash
-# Verify model is installed
-ollama list
-
-# If empty, pull a model
-ollama pull qwen2.5:3b
+```
+backend/src/recursive_neon/
+  models/          Data models (FileNode, NPC, GameState, etc.)
+  services/        Business logic (AppService, NPCManager, etc.)
+  shell/           CLI shell (commands, session, REPL)
+  config.py        Settings (Pydantic)
+  dependencies.py  Dependency injection container
+  main.py          FastAPI app (HTTP/WebSocket API)
 ```
 
-### Out of memory
+## Further Reading
 
-Use a smaller model:
-
-```bash
-ollama pull qwen2.5:3b  # ~2GB RAM
-# Instead of larger models like:
-# ollama pull gemma2:9b  # ~5GB RAM
-```
-
-## Model Selection
-
-### General Purpose Models
-
-| Model | Size | RAM Needed | Speed | Quality | Notes |
-|-------|------|------------|-------|---------|-------|
-| qwen2.5:3b | ~2GB | 4GB | ⚡⚡⚡ | ⭐⭐⭐ | Great storytelling |
-| gemma2:9b | ~5GB | 8GB | ⚡⚡ | ⭐⭐⭐⭐ | Balanced performance |
-| llama3.3:70b | ~40GB | 64GB+ | ⚡ | ⭐⭐⭐⭐⭐ | Requires powerful hardware |
-
-### Specialized Role-Playing Models
-
-| Model | Size | RAM Needed | Speed | Quality | Notes |
-|-------|------|------------|-------|---------|-------|
-| nous-hermes:13b | ~7GB | 12GB | ⚡⚡ | ⭐⭐⭐⭐ | Purpose-built for NPCs |
-| mythomax-l2:13b | ~7GB | 12GB | ⚡⚡ | ⭐⭐⭐⭐ | Excellent storytelling |
-
-**Recommendation**: Start with `qwen2.5:3b` for testing, upgrade to `nous-hermes:13b` for better roleplay quality.
-
-## Next Steps
-
-- Read the full [README.md](../README.md)
-- Check out [ARCHITECTURE.md](ARCHITECTURE.md) for technical details
-- Explore the code in `backend/` and `frontend/`
-- Add your own NPCs (see README for examples)
-
-## Getting Help
-
-- 📖 [Full Documentation](../README.md)
-- 🐛 [Report Issues](https://github.com/hoelzl/RecursiveNeon/issues)
-- 💬 Read the design documents in `design-documents/`
-
----
-
-**Happy exploring in Recursive://Neon! ⚡**
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system architecture, why Ollama
+- [SHELL_DESIGN.md](SHELL_DESIGN.md) — CLI shell design
+- [BACKEND_CONVENTIONS.md](BACKEND_CONVENTIONS.md) — code style, DI, testing
+- [V2_HANDOVER.md](V2_HANDOVER.md) — V2 decisions, what was kept/removed, phases
+- [backend/FILESYSTEM_SECURITY.md](../backend/FILESYSTEM_SECURITY.md) — virtual filesystem security

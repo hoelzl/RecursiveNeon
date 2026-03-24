@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phase 0 complete (branch setup & file curation). Phase 1 (Python CLI shell) not started.
+**Status**: V2 reboot. Phase 0 complete (branch setup & file curation). Phase 1 (Python CLI shell) in progress.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -57,6 +57,7 @@ cd backend
 ## Reference Docs
 
 - `docs/V2_HANDOVER.md` — V2 decisions, what was kept/removed, implementation phases
+- `docs/SHELL_DESIGN.md` — CLI shell architecture, commands, path resolution
 - `docs/BACKEND_CONVENTIONS.md` — Python code style, testing patterns, DI walkthrough
 - `docs/ARCHITECTURE.md` — Why Ollama, system architecture
 - `backend/FILESYSTEM_SECURITY.md` — Virtual filesystem security design

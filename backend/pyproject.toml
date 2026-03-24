@@ -41,6 +41,9 @@ dependencies = [
 
     # System Utilities
     "psutil>=7.2.2",
+
+    # CLI Shell
+    "prompt_toolkit>=3.0.50",
 ]
 
 [project.optional-dependencies]
