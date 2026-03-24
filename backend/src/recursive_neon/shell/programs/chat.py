@@ -100,4 +100,13 @@ class ChatProgram:
 
 def register_chat_program(registry: ProgramRegistry) -> None:
     """Register the chat program."""
-    registry.register("chat", ChatProgram(), "Chat with an NPC")
+    registry.register(
+        "chat",
+        ChatProgram(),
+        "Chat with an NPC\n"
+        "\n"
+        "Usage: chat [NPC_ID]\n"
+        "\n"
+        "With no argument, list available NPCs. With NPC_ID, start a\n"
+        "conversation. Type 'exit' or Ctrl+D to disconnect.",
+    )

@@ -20,29 +20,33 @@ async def prog_help(ctx: ProgramContext) -> int:
     if len(ctx.args) > 1:
         name = ctx.args[1]
         if name in builtin_help:
+            first, _, rest = builtin_help[name].partition("\n")
             ctx.stdout.writeln(
-                f"{ctx.stdout.styled(name, BOLD)} (builtin): {builtin_help[name]}"
+                f"{ctx.stdout.styled(name, BOLD)} (builtin): {first}"
             )
+            if rest:
+                ctx.stdout.writeln(rest)
             return 0
         if name in program_help:
-            ctx.stdout.writeln(f"{ctx.stdout.styled(name, BOLD)}: {program_help[name]}")
+            first, _, rest = program_help[name].partition("\n")
+            ctx.stdout.writeln(f"{ctx.stdout.styled(name, BOLD)}: {first}")
+            if rest:
+                ctx.stdout.writeln(rest)
             return 0
         ctx.stderr.error(f"help: no help for '{name}'")
         return 1
 
     ctx.stdout.writeln(ctx.stdout.styled("Shell builtins:", BOLD))
     for name in sorted(builtin_help):
-        ctx.stdout.writeln(
-            f"  {ctx.stdout.styled(name, CYAN):20s} {builtin_help[name]}"
-        )
+        short = builtin_help[name].split("\n", 1)[0]
+        ctx.stdout.writeln(f"  {ctx.stdout.styled(name, CYAN):20s} {short}")
 
     ctx.stdout.writeln()
     ctx.stdout.writeln(ctx.stdout.styled("Programs:", BOLD))
     for name in sorted(program_help):
         if not name.startswith("_"):
-            ctx.stdout.writeln(
-                f"  {ctx.stdout.styled(name, CYAN):20s} {program_help[name]}"
-            )
+            short = program_help[name].split("\n", 1)[0]
+            ctx.stdout.writeln(f"  {ctx.stdout.styled(name, CYAN):20s} {short}")
 
     return 0
 
@@ -111,9 +115,25 @@ def register_utility_programs(
     registry: ProgramRegistry,
 ) -> None:
     """Register all utility programs."""
-    registry.register_fn("help", prog_help, "Show available commands")
+    registry.register_fn(
+        "help",
+        prog_help,
+        "Show available commands\n"
+        "\n"
+        "Usage: help [COMMAND]\n"
+        "\n"
+        "With no argument, list all commands. With COMMAND, show its help.",
+    )
     registry.register_fn("clear", prog_clear, "Clear the terminal screen")
-    registry.register_fn("echo", prog_echo, "Print text to stdout")
+    registry.register_fn(
+        "echo",
+        prog_echo,
+        "Print text to stdout\n"
+        "\n"
+        "Usage: echo [TEXT...]\n"
+        "\n"
+        "Print arguments separated by spaces. Supports $VAR expansion.",
+    )
     registry.register_fn("env", prog_env, "Print environment variables")
     registry.register_fn("whoami", prog_whoami, "Print current username")
     registry.register_fn("hostname", prog_hostname, "Print system hostname")

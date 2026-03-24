@@ -327,11 +327,17 @@ class Shell:
         """Print help text for a builtin or program. Returns exit code."""
         help_text = BUILTIN_HELP.get(name)
         if help_text:
-            self.output.writeln(f"{name} (builtin): {help_text}")
+            first, _, rest = help_text.partition("\n")
+            self.output.writeln(f"{name} (builtin): {first}")
+            if rest:
+                self.output.writeln(rest)
             return 0
         help_text = self.programs.get_help(name)
         if help_text:
-            self.output.writeln(f"{name}: {help_text}")
+            first, _, rest = help_text.partition("\n")
+            self.output.writeln(f"{name}: {first}")
+            if rest:
+                self.output.writeln(rest)
             return 0
         self.output.error(f"nsh: command not found: {name}")
         return 127

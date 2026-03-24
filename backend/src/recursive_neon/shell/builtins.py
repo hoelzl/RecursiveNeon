@@ -91,9 +91,29 @@ def get_builtins() -> dict[str, BuiltinFn]:
     }
 
 
-# Help text for builtins (used by the help program)
+# Help text for builtins (used by the help program).
+# First line is the short description; subsequent lines are usage details.
 BUILTIN_HELP: dict[str, str] = {
-    "cd": "Change the current working directory",
-    "exit": "Exit the shell",
-    "export": "Set environment variables (export VAR=value)",
+    "cd": (
+        "Change the current working directory\n"
+        "\n"
+        "Usage: cd [DIR]\n"
+        "\n"
+        "Navigate to DIR. With no argument, go to HOME."
+    ),
+    "exit": (
+        "Exit the shell\n"
+        "\n"
+        "Usage: exit [CODE]\n"
+        "\n"
+        "Terminate the shell session. Exit code defaults to 0."
+    ),
+    "export": (
+        "Set environment variables\n"
+        "\n"
+        "Usage: export [VAR=value ...]\n"
+        "\n"
+        "Set one or more environment variables. With no arguments,\n"
+        "print all exported variables."
+    ),
 }

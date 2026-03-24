@@ -86,20 +86,57 @@ class TestShellExecuteLine:
     async def test_dash_h_for_program(self, shell):
         code = await shell.execute_line("ls -h")
         assert code == 0
-        assert "ls:" in shell.output.text
-        assert "List" in shell.output.text
+        text = shell.output.text
+        assert "ls:" in text
+        assert "List directory contents" in text
+        # Should include usage and options
+        assert "Usage: ls" in text
+        assert "-l" in text
+        assert "-a" in text
 
     async def test_dash_dash_help_for_program(self, shell):
         code = await shell.execute_line("cat --help")
         assert code == 0
-        assert "cat:" in shell.output.text
+        text = shell.output.text
+        assert "cat:" in text
+        assert "Usage: cat" in text
 
     async def test_dash_h_for_builtin(self, shell):
         code = await shell.execute_line("cd -h")
         assert code == 0
-        assert "cd (builtin):" in shell.output.text
+        text = shell.output.text
+        assert "cd (builtin):" in text
+        assert "Usage: cd" in text
 
     async def test_dash_h_unknown_command(self, shell):
         code = await shell.execute_line("nonexistent -h")
         assert code == 127
         assert "command not found" in shell.output.error_text
+
+    async def test_help_command_shows_short_descriptions(self, shell):
+        """The help listing should show only short descriptions, not full usage."""
+        code = await shell.execute_line("help")
+        assert code == 0
+        text = shell.output.text
+        # Should have command names and short descriptions
+        assert "ls" in text
+        assert "List directory contents" in text
+        # Should NOT include the detailed usage block
+        assert "Usage:" not in text
+
+    async def test_help_specific_command_shows_usage(self, shell):
+        """help <command> should show the full help including usage."""
+        code = await shell.execute_line("help ls")
+        assert code == 0
+        text = shell.output.text
+        assert "List directory contents" in text
+        assert "Usage: ls" in text
+        assert "-l" in text
+
+    async def test_dash_h_no_options_command(self, shell):
+        """Commands without options should still show a clean help."""
+        code = await shell.execute_line("pwd -h")
+        assert code == 0
+        text = shell.output.text
+        assert "pwd:" in text
+        assert "Print current working directory" in text

@@ -365,10 +365,70 @@ async def prog_mv(ctx: ProgramContext) -> int:
 def register_filesystem_programs(registry: ProgramRegistry) -> None:
     """Register all filesystem programs."""
     registry.register_fn("pwd", prog_pwd, "Print current working directory")
-    registry.register_fn("ls", prog_ls, "List directory contents")
-    registry.register_fn("cat", prog_cat, "Print file contents")
-    registry.register_fn("mkdir", prog_mkdir, "Create directories")
-    registry.register_fn("touch", prog_touch, "Create empty files or update timestamps")
-    registry.register_fn("rm", prog_rm, "Remove files or directories")
-    registry.register_fn("cp", prog_cp, "Copy files or directories")
-    registry.register_fn("mv", prog_mv, "Move or rename files and directories")
+    registry.register_fn(
+        "ls",
+        prog_ls,
+        "List directory contents\n"
+        "\n"
+        "Usage: ls [-la] [PATH...]\n"
+        "\n"
+        "Options:\n"
+        "  -l    Long listing format (type, permissions, timestamp)\n"
+        "  -a    Show hidden entries (names starting with .)",
+    )
+    registry.register_fn(
+        "cat",
+        prog_cat,
+        "Print file contents\n"
+        "\n"
+        "Usage: cat FILE...\n"
+        "\n"
+        "Concatenate and print the contents of one or more files.",
+    )
+    registry.register_fn(
+        "mkdir",
+        prog_mkdir,
+        "Create directories\n"
+        "\n"
+        "Usage: mkdir [-p] DIR...\n"
+        "\n"
+        "Options:\n"
+        "  -p    Create parent directories as needed",
+    )
+    registry.register_fn(
+        "touch",
+        prog_touch,
+        "Create empty files or update timestamps\n"
+        "\n"
+        "Usage: touch FILE...\n"
+        "\n"
+        "Create each FILE if it does not exist, or update its timestamp.",
+    )
+    registry.register_fn(
+        "rm",
+        prog_rm,
+        "Remove files or directories\n"
+        "\n"
+        "Usage: rm [-r] FILE...\n"
+        "\n"
+        "Options:\n"
+        "  -r, -R    Remove directories and their contents recursively",
+    )
+    registry.register_fn(
+        "cp",
+        prog_cp,
+        "Copy files or directories\n"
+        "\n"
+        "Usage: cp SOURCE DEST\n"
+        "\n"
+        "Copy SOURCE to DEST. If DEST is a directory, copy into it.",
+    )
+    registry.register_fn(
+        "mv",
+        prog_mv,
+        "Move or rename files and directories\n"
+        "\n"
+        "Usage: mv SOURCE DEST\n"
+        "\n"
+        "Move SOURCE to DEST. If DEST is a directory, move into it.",
+    )
