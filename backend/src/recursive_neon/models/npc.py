@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NPCPersonality(StrEnum):
@@ -91,8 +91,8 @@ class NPC(BaseModel):
     # Memory
     memory: NPCMemory = Field(default_factory=lambda: NPCMemory(npc_id=""))
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "merchant_bob",
                 "name": "Bob the Merchant",
@@ -109,6 +109,7 @@ class NPC(BaseModel):
                 "theme_color": "#ff6b35",
             }
         }
+    )
 
     def get_system_prompt(self) -> str:
         """Generate system prompt for LLM"""

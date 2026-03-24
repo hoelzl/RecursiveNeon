@@ -21,9 +21,7 @@ async def prog_help(ctx: ProgramContext) -> int:
         name = ctx.args[1]
         if name in builtin_help:
             first, _, rest = builtin_help[name].partition("\n")
-            ctx.stdout.writeln(
-                f"{ctx.stdout.styled(name, BOLD)} (builtin): {first}"
-            )
+            ctx.stdout.writeln(f"{ctx.stdout.styled(name, BOLD)} (builtin): {first}")
             if rest:
                 ctx.stdout.writeln(rest)
             return 0
@@ -57,7 +55,8 @@ def _get_help_data(ctx: ProgramContext, key: str) -> dict[str, str]:
 
     raw = ctx.env.get(key, "{}")
     try:
-        return json.loads(raw)
+        result: dict[str, str] = json.loads(raw)
+        return result
     except (json.JSONDecodeError, TypeError):
         return {}
 

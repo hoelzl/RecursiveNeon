@@ -7,6 +7,7 @@ Uses NPCManager from the service container.
 
 from __future__ import annotations
 
+from recursive_neon.models.npc import NPC
 from recursive_neon.shell.output import BOLD, CYAN, DIM, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -25,13 +26,13 @@ class ChatProgram:
                 return 0
 
             ctx.stdout.writeln(ctx.stdout.styled("Available NPCs:", BOLD))
-            for npc in npcs:
-                name = ctx.stdout.styled(npc.name, YELLOW)
-                role = ctx.stdout.styled(f"({npc.role.value})", DIM)
-                ctx.stdout.writeln(f"  {npc.id:16s} {name} {role}")
-                if npc.greeting:
-                    greeting_preview = npc.greeting[:60]
-                    if len(npc.greeting) > 60:
+            for entry in npcs:
+                name = ctx.stdout.styled(entry.name, YELLOW)
+                role = ctx.stdout.styled(f"({entry.role.value})", DIM)
+                ctx.stdout.writeln(f"  {entry.id:16s} {name} {role}")
+                if entry.greeting:
+                    greeting_preview = entry.greeting[:60]
+                    if len(entry.greeting) > 60:
                         greeting_preview += "..."
                     ctx.stdout.writeln(
                         f"  {'':16s} {ctx.stdout.styled(greeting_preview, DIM)}"
@@ -41,7 +42,7 @@ class ChatProgram:
             return 0
 
         npc_id = ctx.args[1]
-        npc = npc_manager.get_npc(npc_id)
+        npc: NPC | None = npc_manager.get_npc(npc_id)
         if npc is None:
             ctx.stderr.error(f"chat: unknown NPC: {npc_id}")
             return 1
@@ -70,7 +71,7 @@ class ChatProgram:
                 try:
                     from prompt_toolkit import PromptSession
 
-                    ps = PromptSession()
+                    ps: PromptSession[str] = PromptSession()
                     user_input = await ps.prompt_async(prompt)
                 except ImportError:
                     user_input = input(f"{npc_id}> ")

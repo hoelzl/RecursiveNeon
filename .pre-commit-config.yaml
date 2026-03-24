@@ -15,17 +15,18 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/
       - id: ruff-format
+        files: ^backend/
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+  # Local mypy hook uses the project venv (where all deps are installed).
+  # Must cd into backend/ so mypy_path = "src" resolves correctly.
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - pydantic>=2.10
-          - pydantic-settings>=2.6
-          - fastapi>=0.115
-          - types-psutil
-        args: [--config-file=backend/pyproject.toml]
-        pass_filenames: false
+        name: mypy
+        entry: bash -c 'cd backend && if [ -x ../.venv/Scripts/mypy.exe ]; then ../.venv/Scripts/mypy.exe; else ../.venv/bin/mypy; fi'
+        language: system
+        types: [python]
         files: ^backend/
+        pass_filenames: false

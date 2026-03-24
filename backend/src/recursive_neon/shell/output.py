@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import sys
+from typing import TextIO
 
 # ANSI color codes — cyberpunk palette
 RESET = "\033[0m"
@@ -34,12 +35,12 @@ class Output:
 
     def __init__(
         self,
-        stream: io.TextIOBase | None = None,
-        err_stream: io.TextIOBase | None = None,
+        stream: TextIO | None = None,
+        err_stream: TextIO | None = None,
         color: bool = True,
     ) -> None:
-        self._stream = stream or sys.stdout  # type: ignore[assignment]
-        self._err_stream = err_stream or sys.stderr  # type: ignore[assignment]
+        self._stream: TextIO = stream or sys.stdout
+        self._err_stream: TextIO = err_stream or sys.stderr
         self._color = color
 
     def write(self, text: str) -> None:
@@ -74,7 +75,7 @@ class CapturedOutput(Output):
     def __init__(self) -> None:
         self._out_buf = io.StringIO()
         self._err_buf = io.StringIO()
-        super().__init__(stream=self._out_buf, err_stream=self._err_buf, color=False)  # type: ignore[arg-type]
+        super().__init__(stream=self._out_buf, err_stream=self._err_buf, color=False)
 
     @property
     def text(self) -> str:

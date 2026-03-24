@@ -185,6 +185,8 @@ def _mkdir_parents(ctx: ProgramContext, path: str) -> None:
     """Create directory and all parent directories as needed."""
     if path.startswith("/"):
         root_id = ctx.services.app_service.game_state.filesystem.root_id
+        if root_id is None:
+            raise FileNotFoundError("Filesystem has no root directory")
         current_id = root_id
         segments = [s for s in path.split("/") if s]
     else:
