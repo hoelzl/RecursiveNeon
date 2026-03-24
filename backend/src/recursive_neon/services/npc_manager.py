@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from langchain_classic.chains import ConversationChain
 from langchain_classic.memory import ConversationBufferMemory
@@ -68,8 +68,8 @@ class NPCManager(INPCManager):
             ollama_host: Ollama server host (deprecated, use llm parameter instead)
             ollama_port: Ollama server port (deprecated, use llm parameter instead)
         """
-        self.npcs: Dict[str, NPC] = {}
-        self.chains: Dict[str, ConversationChain] = {}
+        self.npcs: dict[str, NPC] = {}
+        self.chains: dict[str, ConversationChain] = {}
 
         # Support both new dependency injection and legacy initialization
         if llm is not None:
@@ -155,7 +155,7 @@ Player: {{input}}
         """Get NPC by ID"""
         return self.npcs.get(npc_id)
 
-    def list_npcs(self) -> List[NPC]:
+    def list_npcs(self) -> list[NPC]:
         """Get list of all NPCs"""
         return list(self.npcs.values())
 
@@ -221,7 +221,7 @@ Player: {{input}}
                 message="I... I'm not sure what to say. Perhaps we can talk later?",
             )
 
-    def create_default_npcs(self) -> List[NPC]:
+    def create_default_npcs(self) -> list[NPC]:
         """Create a set of default NPCs for the game"""
         default_npcs = [
             NPC(
@@ -321,7 +321,7 @@ Player: {{input}}
 
         return default_npcs
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get manager statistics"""
         return {
             "total_npcs": len(self.npcs),

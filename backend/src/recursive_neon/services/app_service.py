@@ -11,7 +11,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from recursive_neon.models.app_models import (
     FileNode,
@@ -54,7 +54,7 @@ class AppService:
     # Notes
     # ============================================================================
 
-    def get_notes(self) -> List[Note]:
+    def get_notes(self) -> list[Note]:
         return self.game_state.notes.notes
 
     def get_note(self, note_id: str) -> Note:
@@ -63,7 +63,7 @@ class AppService:
                 return note
         raise ValueError(f"Note not found: {note_id}")
 
-    def create_note(self, data: Dict[str, Any]) -> Note:
+    def create_note(self, data: dict[str, Any]) -> Note:
         timestamp = datetime.now().isoformat()
         note = Note(
             id=str(uuid.uuid4()),
@@ -75,7 +75,7 @@ class AppService:
         self.game_state.notes.notes.append(note)
         return note
 
-    def update_note(self, note_id: str, data: Dict[str, Any]) -> Note:
+    def update_note(self, note_id: str, data: dict[str, Any]) -> Note:
         timestamp = datetime.now().isoformat()
         for i, n in enumerate(self.game_state.notes.notes):
             if n.id == note_id:
@@ -91,9 +91,12 @@ class AppService:
         raise ValueError(f"Note not found: {note_id}")
 
     def delete_note(self, note_id: str) -> None:
+        original_len = len(self.game_state.notes.notes)
         self.game_state.notes.notes = [
             n for n in self.game_state.notes.notes if n.id != note_id
         ]
+        if len(self.game_state.notes.notes) == original_len:
+            raise ValueError(f"Note not found: {note_id}")
 
     def _handle_notes_action(self, action: str, data: dict) -> dict:
         if action == "get_all":
@@ -113,7 +116,7 @@ class AppService:
     # Tasks
     # ============================================================================
 
-    def get_task_lists(self) -> List[TaskList]:
+    def get_task_lists(self) -> list[TaskList]:
         return self.game_state.tasks.lists
 
     def get_task_list(self, list_id: str) -> TaskList:
@@ -122,7 +125,7 @@ class AppService:
                 return task_list
         raise ValueError(f"Task list not found: {list_id}")
 
-    def create_task_list(self, data: Dict[str, Any]) -> TaskList:
+    def create_task_list(self, data: dict[str, Any]) -> TaskList:
         task_list = TaskList(
             id=str(uuid.uuid4()),
             name=data.get("name", "Untitled List"),
@@ -132,11 +135,14 @@ class AppService:
         return task_list
 
     def delete_task_list(self, list_id: str) -> None:
+        original_len = len(self.game_state.tasks.lists)
         self.game_state.tasks.lists = [
             tl for tl in self.game_state.tasks.lists if tl.id != list_id
         ]
+        if len(self.game_state.tasks.lists) == original_len:
+            raise ValueError(f"Task list not found: {list_id}")
 
-    def create_task(self, list_id: str, data: Dict[str, Any]) -> Task:
+    def create_task(self, list_id: str, data: dict[str, Any]) -> Task:
         task = Task(
             id=str(uuid.uuid4()),
             title=data.get("title", "Untitled Task"),
@@ -153,7 +159,7 @@ class AppService:
                 return task
         raise ValueError(f"Task list not found: {list_id}")
 
-    def update_task(self, list_id: str, task_id: str, data: Dict[str, Any]) -> Task:
+    def update_task(self, list_id: str, task_id: str, data: dict[str, Any]) -> Task:
         for i, tl in enumerate(self.game_state.tasks.lists):
             if tl.id == list_id:
                 updated_tasks = []
@@ -179,12 +185,14 @@ class AppService:
     def delete_task(self, list_id: str, task_id: str) -> None:
         for i, tl in enumerate(self.game_state.tasks.lists):
             if tl.id == list_id:
+                new_tasks = [t for t in tl.tasks if t.id != task_id]
+                if len(new_tasks) == len(tl.tasks):
+                    raise ValueError(f"Task not found: {task_id}")
                 self.game_state.tasks.lists[i] = TaskList(
-                    id=tl.id,
-                    name=tl.name,
-                    tasks=[t for t in tl.tasks if t.id != task_id],
+                    id=tl.id, name=tl.name, tasks=new_tasks,
                 )
-                break
+                return
+        raise ValueError(f"Task list not found: {list_id}")
 
     def _handle_tasks_action(self, action: str, data: dict) -> dict:
         if action == "get_lists":
@@ -233,7 +241,7 @@ class AppService:
                 return node
         raise ValueError(f"File not found: {file_id}")
 
-    def create_directory(self, data: Dict[str, Any]) -> FileNode:
+    def create_directory(self, data: dict[str, Any]) -> FileNode:
         timestamp = datetime.now().isoformat()
         directory = FileNode(
             id=str(uuid.uuid4()),
@@ -246,7 +254,7 @@ class AppService:
         self.game_state.filesystem.nodes.append(directory)
         return directory
 
-    def create_file(self, data: Dict[str, Any]) -> FileNode:
+    def create_file(self, data: dict[str, Any]) -> FileNode:
         timestamp = datetime.now().isoformat()
         file = FileNode(
             id=str(uuid.uuid4()),
@@ -261,7 +269,7 @@ class AppService:
         self.game_state.filesystem.nodes.append(file)
         return file
 
-    def update_file(self, file_id: str, data: Dict[str, Any]) -> FileNode:
+    def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
         timestamp = datetime.now().isoformat()
         for i, node in enumerate(self.game_state.filesystem.nodes):
             if node.id == file_id:
@@ -337,7 +345,7 @@ class AppService:
                 return updated
         raise ValueError(f"File not found: {file_id}")
 
-    def list_directory(self, dir_id: str) -> List[FileNode]:
+    def list_directory(self, dir_id: str) -> list[FileNode]:
         self.get_file(dir_id)
         return [
             node

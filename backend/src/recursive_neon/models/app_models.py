@@ -5,8 +5,6 @@ Core models for the virtual filesystem, notes, and tasks.
 These are presentation-agnostic and work with both CLI and GUI interfaces.
 """
 
-from typing import List
-
 from pydantic import BaseModel, Field
 
 # ============================================================================
@@ -35,7 +33,7 @@ class FileNode(BaseModel):
 class FileSystemState(BaseModel):
     """State for the virtual filesystem"""
 
-    nodes: List[FileNode] = Field(default_factory=list)
+    nodes: list[FileNode] = Field(default_factory=list)
     root_id: str | None = None  # ID of the root directory
 
 
@@ -57,7 +55,7 @@ class Note(BaseModel):
 class NotesState(BaseModel):
     """State for notes"""
 
-    notes: List[Note] = Field(default_factory=list)
+    notes: list[Note] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -79,10 +77,10 @@ class TaskList(BaseModel):
 
     id: str
     name: str
-    tasks: List[Task] = Field(default_factory=list)
+    tasks: list[Task] = Field(default_factory=list)
 
 
 class TasksState(BaseModel):
     """State for task lists"""
 
-    lists: List[TaskList] = Field(default_factory=list)
+    lists: list[TaskList] = Field(default_factory=list)

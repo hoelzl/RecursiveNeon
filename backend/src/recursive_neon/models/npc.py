@@ -4,7 +4,6 @@ NPC Data Models
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,8 +44,8 @@ class NPCMemory(BaseModel):
     """Memory of past interactions with player"""
 
     npc_id: str
-    conversation_history: List[ConversationMessage] = Field(default_factory=list)
-    facts_learned: List[str] = Field(
+    conversation_history: list[ConversationMessage] = Field(default_factory=list)
+    facts_learned: list[str] = Field(
         default_factory=list, description="Facts the NPC has learned about the player"
     )
     relationship_level: int = Field(
@@ -73,10 +72,10 @@ class NPC(BaseModel):
     conversation_style: str = Field(
         ..., description="How they speak (formal, casual, etc.)"
     )
-    topics_of_interest: List[str] = Field(
+    topics_of_interest: list[str] = Field(
         default_factory=list, description="What they like to talk about"
     )
-    secrets: List[str] = Field(
+    secrets: list[str] = Field(
         default_factory=list,
         description="Information they might reveal under certain conditions",
     )
@@ -164,7 +163,7 @@ Rules:
                 -max_history:
             ]
 
-    def get_recent_conversation(self, n: int = 10) -> List[Dict[str, str]]:
+    def get_recent_conversation(self, n: int = 10) -> list[dict[str, str]]:
         """Get recent conversation messages in LLM format"""
         recent = self.memory.conversation_history[-n:]
         return [{"role": msg.role, "content": msg.content} for msg in recent]
@@ -173,7 +172,7 @@ Rules:
 class NPCListResponse(BaseModel):
     """Response containing list of NPCs"""
 
-    npcs: List[NPC]
+    npcs: list[NPC]
 
 
 class ChatRequest(BaseModel):

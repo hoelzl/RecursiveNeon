@@ -10,7 +10,7 @@ These interfaces enable:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Protocol
+from typing import Any, Protocol
 
 from recursive_neon.models.npc import NPC, ChatResponse
 
@@ -60,7 +60,7 @@ class INPCManager(ABC):
         pass
 
     @abstractmethod
-    def list_npcs(self) -> List[NPC]:
+    def list_npcs(self) -> list[NPC]:
         """List all registered NPCs."""
         pass
 
@@ -72,12 +72,12 @@ class INPCManager(ABC):
         pass
 
     @abstractmethod
-    def create_default_npcs(self) -> List[NPC]:
+    def create_default_npcs(self) -> list[NPC]:
         """Create and register default NPCs."""
         pass
 
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics about NPC interactions."""
         pass
 
@@ -113,7 +113,7 @@ class IOllamaClient(ABC):
         pass
 
     @abstractmethod
-    async def list_models(self) -> List[str]:
+    async def list_models(self) -> list[str]:
         """List available models on the Ollama server."""
         pass
 
@@ -160,6 +160,6 @@ class IProcessManager(ABC):
         pass
 
     @abstractmethod
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get status information about the process."""
         pass

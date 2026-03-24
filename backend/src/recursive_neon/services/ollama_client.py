@@ -8,7 +8,6 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Dict, List
 
 import httpx
 
@@ -84,7 +83,7 @@ class OllamaClient(IOllamaClient):
         logger.error(f"Ollama server did not become ready within {max_wait}s")
         return False
 
-    async def list_models(self) -> List[str]:
+    async def list_models(self) -> list[str]:
         """Get list of available models"""
         try:
             response = await self.client.get(f"{self.base_url}/api/tags")
@@ -192,7 +191,7 @@ class OllamaClient(IOllamaClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         model: str = "phi3:mini",
         temperature: float = 0.7,
         max_tokens: int = 200,
