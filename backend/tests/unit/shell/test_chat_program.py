@@ -54,9 +54,7 @@ class TestChatConversation:
 
     async def test_exit_command(self, chat, make_ctx, output):
         """User types 'exit' to leave chat."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -66,9 +64,7 @@ class TestChatConversation:
 
     async def test_eof_exits(self, chat, make_ctx, output):
         """Ctrl+D (EOFError) exits chat."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=EOFError)
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -78,9 +74,7 @@ class TestChatConversation:
 
     async def test_keyboard_interrupt_exits(self, chat, make_ctx, output):
         """Ctrl+C exits chat."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=KeyboardInterrupt)
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -99,9 +93,7 @@ class TestChatConversation:
             generations=[[Generation(text=response_text)]], llm_output={}
         )
 
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["Hello!", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -113,9 +105,7 @@ class TestChatConversation:
 
     async def test_empty_input_skipped(self, chat, make_ctx, output):
         """Empty input lines are skipped."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["", "   ", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -124,9 +114,7 @@ class TestChatConversation:
 
     async def test_slash_help(self, chat, make_ctx, output):
         """/help shows chat commands."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["/help", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -137,9 +125,7 @@ class TestChatConversation:
 
     async def test_slash_relationship(self, chat, make_ctx, output):
         """/relationship shows level."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["/relationship", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -149,9 +135,7 @@ class TestChatConversation:
 
     async def test_slash_status(self, chat, make_ctx, output):
         """/status shows NPC info."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["/status", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -162,9 +146,7 @@ class TestChatConversation:
 
     async def test_unknown_slash_command(self, chat, make_ctx, output):
         """/bogus shows error."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["/bogus", "exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
@@ -174,9 +156,7 @@ class TestChatConversation:
 
     async def test_greeting_displayed(self, chat, make_ctx, output):
         """NPC greeting is shown when entering chat."""
-        with patch(
-            "prompt_toolkit.PromptSession"
-        ) as MockSession:
+        with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
             session.prompt_async = AsyncMock(side_effect=["exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])

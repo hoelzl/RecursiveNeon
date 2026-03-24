@@ -56,7 +56,7 @@ data/
 *.sqlite
 
 # Game data (in-game filesystem state)
-backend/game_data/
+game_data/
 
 # Ollama binaries (large files)
 services/ollama/ollama

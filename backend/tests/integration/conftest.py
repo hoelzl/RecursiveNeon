@@ -33,6 +33,6 @@ def shell_with_data_dir(mock_llm, tmp_path):
     container.app_service.load_initial_filesystem(initial_fs_dir=_INITIAL_FS)
     container.npc_manager.create_default_npcs()
     output = CapturedOutput()
-    return Shell(
-        container=container, output=output, data_dir=str(tmp_path)
-    ), str(tmp_path)
+    return Shell(container=container, output=output, data_dir=str(tmp_path)), str(
+        tmp_path
+    )

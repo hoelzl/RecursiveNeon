@@ -115,9 +115,7 @@ async def _note_create(ctx: ProgramContext) -> int:
         ctx.stderr.error("note create: missing title")
         return 1
 
-    note = ctx.services.app_service.create_note(
-        {"title": title, "content": content}
-    )
+    note = ctx.services.app_service.create_note({"title": title, "content": content})
     ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note.title, BOLD)}")
     return 0
 

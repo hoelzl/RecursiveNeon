@@ -106,7 +106,9 @@ async def _task_list(ctx: ProgramContext) -> int:
         if tl is None:
             lists = ctx.services.app_service.get_task_lists()
             if not lists:
-                ctx.stdout.writeln("No task lists. Use 'task add <title>' to create one.")
+                ctx.stdout.writeln(
+                    "No task lists. Use 'task add <title>' to create one."
+                )
                 return 0
             ctx.stderr.error(
                 "task list: multiple lists exist, specify a name or use 'task lists'"
@@ -114,9 +116,7 @@ async def _task_list(ctx: ProgramContext) -> int:
             return 1
 
     if not tl.tasks:
-        ctx.stdout.writeln(
-            f"{ctx.stdout.styled(tl.name, BOLD)}: no tasks"
-        )
+        ctx.stdout.writeln(f"{ctx.stdout.styled(tl.name, BOLD)}: no tasks")
         return 0
 
     ctx.stdout.writeln(ctx.stdout.styled(tl.name, BOLD))
@@ -167,9 +167,7 @@ async def _task_add(ctx: ProgramContext) -> int:
     task = ctx.services.app_service.create_task(
         tl.id, {"title": title, "completed": False}
     )
-    ctx.stdout.writeln(
-        f"Added to {ctx.stdout.styled(tl.name, CYAN)}: {task.title}"
-    )
+    ctx.stdout.writeln(f"Added to {ctx.stdout.styled(tl.name, CYAN)}: {task.title}")
     return 0
 
 
@@ -207,9 +205,7 @@ async def _task_done(ctx: ProgramContext) -> int:
         return 1
 
     ctx.services.app_service.update_task(tl.id, task.id, {"completed": True})
-    ctx.stdout.writeln(
-        f"{ctx.stdout.styled('[x]', GREEN)} {task.title}"
-    )
+    ctx.stdout.writeln(f"{ctx.stdout.styled('[x]', GREEN)} {task.title}")
     return 0
 
 
@@ -230,9 +226,7 @@ async def _task_undone(ctx: ProgramContext) -> int:
         return 1
 
     ctx.services.app_service.update_task(tl.id, task.id, {"completed": False})
-    ctx.stdout.writeln(
-        f"{ctx.stdout.styled('[ ]', RED)} {task.title}"
-    )
+    ctx.stdout.writeln(f"{ctx.stdout.styled('[ ]', RED)} {task.title}")
     return 0
 
 

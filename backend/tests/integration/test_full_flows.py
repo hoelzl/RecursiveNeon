@@ -18,7 +18,10 @@ class TestNoteWorkflow:
         o = s.output
 
         # Create a note
-        assert await s.execute_line('note create "My First Note" -c "Initial content"') == 0
+        assert (
+            await s.execute_line('note create "My First Note" -c "Initial content"')
+            == 0
+        )
         assert "My First Note" in o.text
         o.reset()
 
@@ -123,7 +126,9 @@ class TestFilesystemWorkflow:
         o.reset()
 
         # Write new content (overwrite)
-        assert await s.execute_line("write /project/readme.md Updated content here") == 0
+        assert (
+            await s.execute_line("write /project/readme.md Updated content here") == 0
+        )
         o.reset()
 
         # Verify overwrite
@@ -159,7 +164,9 @@ class TestPersistenceRoundTrip:
         o = s.output
 
         # Create some data
-        assert await s.execute_line('note create "Persisted Note" -c "Saved content"') == 0
+        assert (
+            await s.execute_line('note create "Persisted Note" -c "Saved content"') == 0
+        )
         assert await s.execute_line("task add Persisted Task") == 0
         assert await s.execute_line("mkdir /saved_dir") == 0
         o.reset()

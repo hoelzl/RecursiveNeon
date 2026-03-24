@@ -8,6 +8,7 @@ FastAPI server that manages:
 - Game state and virtual filesystem
 """
 
+import asyncio
 import logging
 import warnings
 from contextlib import asynccontextmanager
@@ -34,6 +35,7 @@ from recursive_neon.dependencies import (
 )
 from recursive_neon.models.game_state import StatusResponse, SystemStatus
 from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
+from recursive_neon.terminal import TerminalSessionManager
 
 # Configure logging
 logging.basicConfig(
@@ -56,6 +58,13 @@ async def lifespan(app: FastAPI):
         container = ServiceFactory.create_production_container()
         initialize_container(container)
         app.state.services = container
+
+        # Terminal session manager for WebSocket-driven shells
+        terminal_manager = TerminalSessionManager(
+            container=container,
+            data_dir=str(settings.data_dir),
+        )
+        app.state.terminal_manager = terminal_manager
 
         # Start ollama server
         logger.info("Starting ollama server...")
@@ -85,6 +94,7 @@ async def lifespan(app: FastAPI):
         logger.info("=" * 60)
         logger.info("Recursive://Neon Backend Ready!")
         logger.info(f"WebSocket: ws://{settings.host}:{settings.port}/ws")
+        logger.info(f"Terminal: ws://{settings.host}:{settings.port}/ws/terminal")
         logger.info(f"Health: http://{settings.host}:{settings.port}/health")
         logger.info("=" * 60)
 
@@ -315,6 +325,81 @@ async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dic
     except Exception as e:
         logger.error(f"App message error: {e}")
         return {"type": "error", "data": {"message": str(e)}}
+
+
+# ============================================================================
+# WebSocket Terminal
+# ============================================================================
+
+
+@app.websocket("/ws/terminal")
+async def terminal_websocket(websocket: WebSocket):
+    """WebSocket endpoint for interactive terminal sessions.
+
+    Protocol (JSON messages):
+        Client → Server:
+            {"type": "input", "line": "ls -la"}
+            {"type": "complete", "line": "ls Doc"}
+
+        Server → Client:
+            {"type": "output", "text": "..."}
+            {"type": "prompt", "text": "user@neon:~$ "}
+            {"type": "completions", "items": ["Documents/"]}
+            {"type": "exit"}
+            {"type": "error", "message": "..."}
+    """
+    await websocket.accept()
+
+    manager: TerminalSessionManager = app.state.terminal_manager
+    session = manager.create_session()
+
+    try:
+        await session.start()
+        logger.info("Terminal WS connected, session %s", session.session_id)
+
+        # Run two concurrent tasks: read from WS, drain output to WS
+        await asyncio.gather(
+            _ws_reader(websocket, session),
+            _ws_writer(websocket, session),
+        )
+
+    except WebSocketDisconnect:
+        logger.info("Terminal WS disconnected, session %s", session.session_id)
+    except Exception as e:
+        logger.error("Terminal WS error for %s: %s", session.session_id, e)
+    finally:
+        await manager.remove_session(session.session_id)
+
+
+async def _ws_reader(websocket: WebSocket, session) -> None:
+    """Read messages from the WebSocket and feed them into the shell."""
+    while True:
+        data = await websocket.receive_json()
+        msg_type = data.get("type")
+
+        if msg_type == "input":
+            line = data.get("line", "")
+            session.feed_line(line)
+
+        elif msg_type == "complete":
+            line = data.get("line", "")
+            items = session.shell.get_completions(line)
+            await websocket.send_json({"type": "completions", "items": items})
+
+        else:
+            await websocket.send_json(
+                {"type": "error", "message": f"Unknown message type: {msg_type}"}
+            )
+
+
+async def _ws_writer(websocket: WebSocket, session) -> None:
+    """Drain the shell's output queue and send messages to the WebSocket."""
+    while True:
+        msg = await session.output_queue.get()
+        await websocket.send_json(msg)
+
+        if msg["type"] == "exit":
+            break
 
 
 def main():

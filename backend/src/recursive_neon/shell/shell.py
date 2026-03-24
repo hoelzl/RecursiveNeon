@@ -1,19 +1,17 @@
 """
 Shell REPL — the main interactive loop.
 
-Uses prompt_toolkit for line editing, history, and tab completion.
+The Shell class is transport-agnostic: it receives input lines via an
+InputSource protocol and writes output via an Output object.  The default
+PromptToolkitInput drives the shell from a real terminal; other
+implementations (e.g. WebSocket) can supply lines from any source.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.formatted_text import ANSI
-from prompt_toolkit.history import FileHistory, InMemoryHistory
+from typing import TYPE_CHECKING, Protocol
 
 from recursive_neon.shell.builtins import BUILTIN_HELP, get_builtins
 from recursive_neon.shell.output import (
@@ -38,6 +36,35 @@ from recursive_neon.shell.session import ShellSession
 if TYPE_CHECKING:
     from recursive_neon.dependencies import ServiceContainer
 
+
+# ---------------------------------------------------------------------------
+# InputSource protocol — how the shell receives command lines
+# ---------------------------------------------------------------------------
+
+
+class InputSource(Protocol):
+    """Provides command lines to the shell REPL.
+
+    Implementations must be async and raise ``EOFError`` when no more input
+    is available (e.g. the user closed the connection).
+    """
+
+    async def get_line(self, prompt: str) -> str:
+        """Read one line from the user.
+
+        Args:
+            prompt: The prompt string (may contain ANSI codes).
+
+        Returns:
+            The raw line entered by the user.
+
+        Raises:
+            EOFError: No more input available.
+            KeyboardInterrupt: User pressed Ctrl-C (skip this line).
+        """
+        ...
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,89 +77,80 @@ WELCOME_BANNER = """\
 """
 
 
-class ShellCompleter(Completer):
-    """Tab completion for the shell.
+def _make_shell_completer(
+    builtin_names: list[str],
+    program_registry: ProgramRegistry,
+    session: ShellSession,
+):
+    """Create a prompt_toolkit Completer for the shell.
 
-    Completes command names (builtins + programs) for the first word,
-    and virtual filesystem paths for subsequent words.
-
-    Uses our own quoting-aware argument parser instead of prompt_toolkit's
-    word detection, so that paths like "My Folder"/a are handled correctly.
+    Factory function so the prompt_toolkit import stays lazy — only
+    pulled in when the local CLI is actually used.
     """
+    from prompt_toolkit.completion import Completer, Completion
 
-    def __init__(
-        self,
-        builtin_names: list[str],
-        program_registry: ProgramRegistry,
-        session: ShellSession,
-    ) -> None:
-        self._builtin_names = builtin_names
-        self._program_registry = program_registry
-        self._session = session
+    class ShellCompleter(Completer):
+        """Tab completion for the shell.
 
-    def get_completions(self, document, complete_event):
-        text = document.text_before_cursor
+        Completes command names (builtins + programs) for the first word,
+        and virtual filesystem paths for subsequent words.
 
-        arg_start, raw_content = _get_current_argument(text)
-        arg_text_len = len(text) - arg_start
-        is_first_arg = not text[:arg_start].strip()
-
-        if is_first_arg:
-            # First word — complete command names
-            all_commands = self._builtin_names + self._program_registry.list_programs()
-            for name in sorted(set(all_commands)):
-                if name.startswith(raw_content):
-                    yield Completion(name, start_position=-arg_text_len)
-        else:
-            # Subsequent words — complete file paths
-            yield from self._path_completions(raw_content, arg_text_len)
-
-    def _path_completions(self, raw_path: str, replace_len: int):
-        """Complete virtual filesystem paths.
-
-        Args:
-            raw_path: The unquoted path content typed so far.
-            replace_len: Number of characters to replace on the input line
-                         (the full extent of the current argument including quotes).
+        Uses our own quoting-aware argument parser instead of prompt_toolkit's
+        word detection, so that paths like "My Folder"/a are handled correctly.
         """
-        app_service = self._session.container.app_service
 
-        # Split into directory part and name prefix
-        if "/" in raw_path:
-            last_slash = raw_path.rfind("/")
-            dir_part = raw_path[: last_slash + 1] or "/"
-            prefix = raw_path[last_slash + 1 :]
-        else:
-            dir_part = ""
-            prefix = raw_path
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
 
-        # Resolve directory to list children
-        try:
-            if dir_part:
-                dir_node = self._session.resolve_path(dir_part)
+            arg_start, raw_content = _get_current_argument(text)
+            arg_text_len = len(text) - arg_start
+            is_first_arg = not text[:arg_start].strip()
+
+            if is_first_arg:
+                all_commands = builtin_names + program_registry.list_programs()
+                for name in sorted(set(all_commands)):
+                    if name.startswith(raw_content):
+                        yield Completion(name, start_position=-arg_text_len)
             else:
-                dir_node = app_service.get_file(self._session.cwd_id)
-        except (FileNotFoundError, NotADirectoryError, ValueError):
-            return
+                yield from self._path_completions(raw_content, arg_text_len)
 
-        if dir_node.type != "directory":
-            return
+        def _path_completions(self, raw_path: str, replace_len: int):
+            app_svc = session.container.app_service
 
-        children = app_service.list_directory(dir_node.id)
-        for child in sorted(children, key=lambda n: n.name.lower()):
-            if child.name.lower().startswith(prefix.lower()):
-                suffix = "/" if child.type == "directory" else ""
-                display_name = child.name + suffix
+            if "/" in raw_path:
+                last_slash = raw_path.rfind("/")
+                dir_part = raw_path[: last_slash + 1] or "/"
+                prefix = raw_path[last_slash + 1 :]
+            else:
+                dir_part = ""
+                prefix = raw_path
 
-                # Build full path and quote per-segment
-                full_path = dir_part + child.name + suffix
-                completion_text = _quote_path(full_path)
+            try:
+                if dir_part:
+                    dir_node = session.resolve_path(dir_part)
+                else:
+                    dir_node = app_svc.get_file(session.cwd_id)
+            except (FileNotFoundError, NotADirectoryError, ValueError):
+                return
 
-                yield Completion(
-                    completion_text,
-                    start_position=-replace_len,
-                    display=display_name,
-                )
+            if dir_node.type != "directory":
+                return
+
+            children = app_svc.list_directory(dir_node.id)
+            for child in sorted(children, key=lambda n: n.name.lower()):
+                if child.name.lower().startswith(prefix.lower()):
+                    suffix = "/" if child.type == "directory" else ""
+                    display_name = child.name + suffix
+                    full_path = dir_part + child.name + suffix
+                    completion_text = _quote_path(full_path)
+
+                    yield Completion(
+                        completion_text,
+                        start_position=-replace_len,
+                        display=display_name,
+                    )
+
+    return ShellCompleter()
 
 
 def _get_current_argument(text_before_cursor: str) -> tuple[int, str]:
@@ -225,7 +243,12 @@ def _quote_path(path: str) -> str:
 
 
 class Shell:
-    """The main shell REPL."""
+    """The main shell REPL.
+
+    Transport-agnostic: call ``run()`` with a ``PromptToolkitInput`` for
+    the local CLI, or supply any other ``InputSource`` implementation
+    (e.g. a WebSocket adapter) to drive the shell remotely.
+    """
 
     def __init__(
         self,
@@ -253,34 +276,25 @@ class Shell:
         }
         self._builtin_help: dict[str, str] = dict(BUILTIN_HELP)
 
-    async def run(self) -> None:
-        """Main REPL loop."""
+    async def run(self, input_source: InputSource | None = None) -> None:
+        """Main REPL loop.
+
+        Args:
+            input_source: Where to read command lines from.  When *None*,
+                creates a ``PromptToolkitInput`` for local terminal use.
+        """
+        if input_source is None:
+            input_source = PromptToolkitInput(
+                shell=self,
+                data_dir=self.data_dir,
+            )
+
         self.output.write(WELCOME_BANNER)
-
-        completer = ShellCompleter(
-            builtin_names=list(self.builtins.keys()),
-            program_registry=self.programs,
-            session=self.session,
-        )
-
-        # Use persistent file history when data_dir is set
-        history: FileHistory | InMemoryHistory
-        if self.data_dir:
-            history_path = Path(self.data_dir) / "history.txt"
-            history_path.parent.mkdir(parents=True, exist_ok=True)
-            history = FileHistory(str(history_path))
-        else:
-            history = InMemoryHistory()
-
-        prompt_session: PromptSession[str] = PromptSession(
-            history=history,
-            completer=completer,
-        )
 
         while True:
             try:
-                prompt_text = ANSI(self._build_prompt())
-                line = await prompt_session.prompt_async(prompt_text)
+                prompt_text = self._build_prompt()
+                line = await input_source.get_line(prompt_text)
             except KeyboardInterrupt:
                 self.output.writeln()
                 continue
@@ -396,6 +410,55 @@ class Shell:
             program_help=self._program_help,
         )
 
+    def get_completions(self, text: str) -> list[str]:
+        """Return completion candidates for *text* (transport-agnostic).
+
+        Used by WebSocket tab-completion handler.  For prompt_toolkit,
+        the ``ShellCompleter`` adapter calls this internally via the same
+        underlying helpers.
+        """
+        arg_start, raw_content = _get_current_argument(text)
+        is_first_arg = not text[:arg_start].strip()
+
+        if is_first_arg:
+            all_commands = list(self.builtins.keys()) + self.programs.list_programs()
+            return sorted({n for n in all_commands if n.startswith(raw_content)})
+
+        # Path completions
+        return self._path_completion_strings(raw_content)
+
+    def _path_completion_strings(self, raw_path: str) -> list[str]:
+        """Return matching path strings for a partial path."""
+        app_service = self.session.container.app_service
+
+        if "/" in raw_path:
+            last_slash = raw_path.rfind("/")
+            dir_part = raw_path[: last_slash + 1] or "/"
+            prefix = raw_path[last_slash + 1 :]
+        else:
+            dir_part = ""
+            prefix = raw_path
+
+        try:
+            if dir_part:
+                dir_node = self.session.resolve_path(dir_part)
+            else:
+                dir_node = app_service.get_file(self.session.cwd_id)
+        except (FileNotFoundError, NotADirectoryError, ValueError):
+            return []
+
+        if dir_node.type != "directory":
+            return []
+
+        children = app_service.list_directory(dir_node.id)
+        results: list[str] = []
+        for child in sorted(children, key=lambda n: n.name.lower()):
+            if child.name.lower().startswith(prefix.lower()):
+                suffix = "/" if child.type == "directory" else ""
+                full_path = dir_part + child.name + suffix
+                results.append(_quote_path(full_path))
+        return results
+
     def _build_prompt(self) -> str:
         """Build the colored shell prompt string."""
         cwd = self.session.get_cwd_path()
@@ -412,3 +475,47 @@ class Shell:
             f"{BOLD}{cwd}{RESET}"
             f"{sigil_color}${RESET} "
         )
+
+
+# ---------------------------------------------------------------------------
+# PromptToolkitInput — local terminal input source
+# ---------------------------------------------------------------------------
+
+
+class PromptToolkitInput:
+    """InputSource backed by prompt_toolkit (readline, history, completion).
+
+    This is the default input source for ``Shell.run()`` when running in a
+    real terminal.  It is deliberately kept in this module (rather than a
+    separate file) because it needs access to ``ShellCompleter`` and the
+    prompt_toolkit imports.
+    """
+
+    def __init__(self, shell: Shell, data_dir: str | None = None) -> None:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import FileHistory, InMemoryHistory
+
+        completer = _make_shell_completer(
+            builtin_names=list(shell.builtins.keys()),
+            program_registry=shell.programs,
+            session=shell.session,
+        )
+
+        history: FileHistory | InMemoryHistory
+        if data_dir:
+            history_path = Path(data_dir) / "history.txt"
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            history = FileHistory(str(history_path))
+        else:
+            history = InMemoryHistory()
+
+        self._prompt_session: PromptSession[str] = PromptSession(
+            history=history,
+            completer=completer,
+        )
+
+    async def get_line(self, prompt: str) -> str:
+        """Read a line using prompt_toolkit (supports ANSI prompts)."""
+        from prompt_toolkit.formatted_text import ANSI
+
+        return await self._prompt_session.prompt_async(ANSI(prompt))

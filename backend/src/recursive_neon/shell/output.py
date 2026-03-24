@@ -10,6 +10,7 @@ This allows the same program code to work with:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import sys
 from typing import TextIO
@@ -98,3 +99,26 @@ class CapturedOutput(Output):
         self._out_buf.seek(0)
         self._err_buf.truncate(0)
         self._err_buf.seek(0)
+
+
+class QueueOutput(Output):
+    """Output that pushes text fragments to an asyncio.Queue.
+
+    Used by the WebSocket terminal session: the shell writes output here,
+    and the WebSocket handler drains the queue to send JSON messages to
+    the client.  ANSI codes are preserved (the client renders them).
+    """
+
+    def __init__(self, queue: asyncio.Queue[dict]) -> None:
+        # We override every write method, so the parent streams are unused.
+        super().__init__(color=True)
+        self._queue = queue
+
+    def write(self, text: str) -> None:
+        self._queue.put_nowait({"type": "output", "text": text})
+
+    def writeln(self, text: str = "") -> None:
+        self._queue.put_nowait({"type": "output", "text": text + "\n"})
+
+    def error(self, text: str) -> None:
+        self._queue.put_nowait({"type": "output", "text": f"{RED}{text}{RESET}\n"})

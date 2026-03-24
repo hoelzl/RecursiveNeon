@@ -73,7 +73,9 @@ class TestTaskList:
 
 @pytest.mark.unit
 class TestTaskAdd:
-    async def test_add_auto_creates_default_list(self, make_ctx, output, test_container):
+    async def test_add_auto_creates_default_list(
+        self, make_ctx, output, test_container
+    ):
         ctx = make_ctx(["task", "add", "Buy", "groceries"])
         assert await prog_task(ctx) == 0
         assert "Buy groceries" in output.text
