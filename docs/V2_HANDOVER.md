@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-24)
-> **Status**: Phases 0-2 complete. Phase 3 (WebSocket terminal protocol + CLI client) not started. Phases 4-5 planned.
+> **Status**: Phases 0-3 complete. Phase 4 (TUI apps / raw mode) not started. Phase 5 planned.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -171,15 +171,16 @@ backend/
       npc_manager.py                  # LangChain-based NPC conversation + persistence
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
+    terminal.py                       # WebSocket terminal session manager (Phase 3)
     shell/                            # CLI shell package (Phase 1-2)
-      __init__.py
+      __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
       builtins.py                     # cd, exit, export (modify shell state)
-      output.py                       # ANSI output abstraction + CapturedOutput
+      output.py                       # ANSI output abstraction + CapturedOutput + QueueOutput
       parser.py                       # Argv-style tokenizer (quoting, escaping)
       path_resolver.py                # Virtual path → FileNode resolution
       session.py                      # ShellSession (cwd, env, history)
-      shell.py                        # REPL loop, dispatch, tab completion
+      shell.py                        # REPL loop, dispatch, InputSource protocol, tab completion
       programs/
         __init__.py                   # ProgramRegistry + ProgramContext + Program protocol
         chat.py                       # NPC conversation sub-REPL with /commands
@@ -187,6 +188,10 @@ backend/
         notes.py                      # note list/show/create/edit/delete
         tasks.py                      # task lists/list/add/done/undone/delete
         utility.py                    # help, clear, echo, env, whoami, hostname, date, save
+    wsclient/                         # WebSocket CLI client (Phase 3)
+      __init__.py
+      __main__.py                     # Entry point: python -m recursive_neon.wsclient
+      client.py                       # Interactive WS client using prompt_toolkit
     initial_fs/                       # Sample files for virtual filesystem init
       welcome.txt
       Documents/{readme.txt, sample.txt, my test file.txt}
@@ -200,7 +205,9 @@ backend/
     unit/__init__.py
     unit/test_app_service.py          # Notes, Tasks, FileSystem CRUD + persistence tests
     unit/test_filesystem_security.py  # Security isolation tests
+    unit/test_main.py                 # HTTP endpoints + WebSocket /ws tests
     unit/test_npc_manager.py          # NPC registration, chat, persistence, think-tag tests
+    unit/test_terminal.py             # WebSocket terminal: session manager, QueueOutput, /ws/terminal
     unit/shell/__init__.py
     unit/shell/conftest.py            # Shell test fixtures (test_container, make_ctx, output)
     unit/shell/test_builtins.py       # cd, exit, export tests
@@ -282,7 +289,7 @@ Completed:
 7. **TUI apps**: Deferred to Phase 3 (requires raw mode design, better co-designed with browser terminal).
 8. 255 total tests (83 new), all passing. Lint and type checks clean.
 
-### Phase 3: WebSocket Terminal Protocol + CLI Client
+### Phase 3: WebSocket Terminal Protocol + CLI Client — **COMPLETE**
 **Goal**: The shell runs over WebSocket with a structured protocol. Both Claude Code and humans can drive it from a terminal client, exercising the exact same code path the browser will use later.
 
 **Design decisions**:
@@ -291,18 +298,16 @@ Completed:
 - **No prompt_toolkit over WebSocket** — prompt_toolkit is used only by the local CLI entry point. The WebSocket path uses its own input abstraction.
 - **ANSI codes pass through** — programs emit ANSI via `Output.styled()`, both xterm.js and real terminals render them natively. No translation layer.
 - **No new dependencies** — FastAPI + websockets (already installed) handles everything.
+- **Session manager owns sessions** — sessions are decoupled from WebSocket connection lifecycle, enabling future persistent/named sessions without architectural changes.
 
-Tasks:
-1. **Transport abstraction in Shell**: Extract an `InputSource` protocol from the prompt_toolkit coupling in `shell.py`. The Shell receives lines from any source — prompt_toolkit (CLI), a WebSocket queue, or a test mock.
-2. **WebSocket output adapter**: `WebSocketOutput` subclass of `Output` that sends output as structured JSON messages instead of writing to a stream.
-3. **Terminal session manager**: New `/ws/terminal` endpoint. Each connection gets its own `Shell` instance backed by the shared `ServiceContainer`. Manages lifecycle: connect → create session → exchange commands/output → disconnect.
-4. **WebSocket message protocol** (cooked mode):
-   - Client → Server: `{"type": "input", "line": "ls -la"}`
-   - Server → Client: `{"type": "output", "text": "..."}`, `{"type": "prompt", "text": "user@neon:~$ "}`, `{"type": "exit"}`
-   - Tab completion: `{"type": "complete", "line": "ls Doc"}` → `{"type": "completions", "items": [...]}`
-5. **WebSocket CLI client** (`python -m recursive_neon.wsclient`): A readline-based terminal client that connects to the backend via WebSocket. Same experience as local shell, but through the network stack. Supports `--command` flag for non-interactive use (send one command, get output, disconnect).
-6. **Periodic auto-save**: Save game state on a timer (in addition to save-on-exit and manual `save` command), so WebSocket sessions don't lose progress on unexpected disconnect.
-7. **Tests**: WebSocket session lifecycle, command round-trips, tab completion over WS, concurrent sessions.
+Completed:
+1. **Transport abstraction**: `InputSource` protocol decouples Shell from prompt_toolkit. `PromptToolkitInput` for CLI, `WebSocketInput` for WS, test mocks possible. prompt_toolkit imports are fully lazy.
+2. **`QueueOutput` adapter**: `Output` subclass that pushes messages to an `asyncio.Queue` for WebSocket delivery. ANSI codes preserved.
+3. **`TerminalSessionManager`**: Owns Shell instances by UUID, independent of WebSocket lifecycle. Creates/removes sessions, manages auto-save background task.
+4. **`/ws/terminal` endpoint**: JSON protocol with `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` message types. Concurrent reader/writer tasks per connection.
+5. **WebSocket CLI client** (`python -m recursive_neon.wsclient`): Interactive prompt_toolkit-based client with `--host`/`--port` flags. `--command` batch mode deferred (architecture supports it; persistent sessions needed first for it to be useful).
+6. **Periodic auto-save**: Background task saves game state every 60s while WebSocket sessions are active. Also saves on session disconnect.
+7. **Tests**: 26 new tests — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion, auto-save, and 8 WebSocket integration tests. 343 total tests, all passing.
 
 ### Phase 4: TUI Apps (Raw Mode)
 **Goal**: Interactive full-screen apps that run inside the terminal, driven by keystroke input. Testable via both the local CLI and the WebSocket client from Phase 3.

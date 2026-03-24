@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-2 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence). Phase 3 (browser terminal + desktop GUI) is not started.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-3 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol). Phase 4 (TUI apps / raw mode) is not started.
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 259 tests
+../.venv/Scripts/pytest              # All 343 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -69,6 +69,8 @@ All three must pass before committing.
 |---------|------|
 | Shell entry point | `backend/src/recursive_neon/shell/__main__.py` |
 | Shell REPL + dispatch | `backend/src/recursive_neon/shell/shell.py` |
+| WS terminal sessions | `backend/src/recursive_neon/terminal.py` |
+| WS client entry point | `backend/src/recursive_neon/wsclient/__main__.py` |
 | Program registry | `backend/src/recursive_neon/shell/programs/__init__.py` |
 | DI container | `backend/src/recursive_neon/dependencies.py` |
 | Config | `backend/src/recursive_neon/config.py` |
@@ -77,13 +79,21 @@ All three must pass before committing.
 | Models | `backend/src/recursive_neon/models/` |
 | Test fixtures | `backend/tests/conftest.py`, `backend/tests/unit/shell/conftest.py` |
 
-## What's Next (Phase 3)
+## WebSocket Terminal Protocol (Phase 3)
 
-Phase 3 is the browser terminal + desktop GUI. Key decisions ahead:
-- xterm.js for browser-side terminal emulation
-- WebSocket protocol for terminal sessions (the `Output` abstraction is already designed for this)
-- Cooked mode (shell) vs raw mode (TUI apps) switching
-- Desktop chrome: window manager, taskbar, desktop icons
-- TUI apps using `rich` or `textual` (deferred from Phase 2 to co-design with browser terminal)
+The shell runs over WebSocket via `/ws/terminal`. Key concepts:
+- **`InputSource` protocol** in `shell.py` — abstracts where command lines come from (prompt_toolkit, WebSocket queue, test mock)
+- **`QueueOutput`** in `output.py` — pushes output to an `asyncio.Queue` for the WS handler to drain
+- **`TerminalSessionManager`** in `terminal.py` — owns Shell instances by UUID, decoupled from WS connection lifecycle
+- **Message protocol**: `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` (all JSON)
+- **WebSocket CLI client**: `python -m recursive_neon.wsclient` for interactive sessions
 
-See `docs/V2_HANDOVER.md` Section 6 (Phase 3) for the full plan.
+## What's Next (Phase 4)
+
+Phase 4 is TUI apps with raw mode. Key decisions ahead:
+- Raw mode protocol design (server tells client to switch modes; client sends keystrokes)
+- TUI framework: screen buffer, cursor management, input handling
+- Minigames, file browser, etc. (scope TBD)
+- Testable via both local CLI and WebSocket client
+
+See `docs/V2_HANDOVER.md` Section 6 (Phase 4) for the full plan.

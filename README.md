@@ -114,13 +114,26 @@ cd backend
 ../.venv/Scripts/pytest --cov        # With coverage
 ```
 
+## WebSocket Terminal
+
+The shell also runs over WebSocket, enabling remote connections via the same protocol the browser will use:
+
+```bash
+# Start the backend server (requires Ollama for NPC chat)
+.venv/Scripts/python -m recursive_neon.main
+
+# In another terminal, connect via WebSocket
+.venv/Scripts/python -m recursive_neon.wsclient
+```
+
 ## Architecture
 
 ```
 Layer 1: Application Core     AppService, NPCManager, GameState
 Layer 2: CLI Shell             prompt_toolkit REPL, commands, path resolver
-Layer 3: Browser Terminal      (planned) xterm.js over WebSocket
-Layer 4: Desktop GUI           (planned) window manager, taskbar
+Layer 3: WebSocket Terminal    /ws/terminal endpoint + CLI client (complete)
+Layer 4: Browser Terminal      (planned) xterm.js over WebSocket
+Layer 5: Desktop GUI           (planned) window manager, taskbar
 ```
 
 Every feature works in the CLI before touching the browser. See [docs/](docs/) for detailed design documents.

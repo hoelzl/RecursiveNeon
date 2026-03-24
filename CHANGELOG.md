@@ -2,6 +2,23 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 3 — WebSocket Terminal Protocol + CLI Client (2026-03-24)
+
+### Added
+- **`InputSource` protocol** — Shell is now transport-agnostic; receives lines from any source (prompt_toolkit, WebSocket, test mock)
+- **`QueueOutput`** — Output adapter that pushes messages to an `asyncio.Queue` for WebSocket delivery
+- **`TerminalSessionManager`** — Manages Shell instances by UUID, independent of WebSocket connection lifecycle; supports future persistent sessions
+- **`/ws/terminal` WebSocket endpoint** — JSON protocol with `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` message types
+- **WebSocket CLI client** — `python -m recursive_neon.wsclient` connects to the backend over WebSocket with interactive prompt_toolkit REPL
+- **Periodic auto-save** — Background task saves game state every 60s while WebSocket sessions are active
+- **26 new tests** — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion over WS, 8 WebSocket integration tests (343 total)
+
+### Changed
+- `shell.py` refactored: prompt_toolkit imports are now lazy (only loaded for local CLI); `PromptToolkitInput` class encapsulates all prompt_toolkit logic
+- `ShellCompleter` moved inside a factory function (`_make_shell_completer`) to keep prompt_toolkit deferred
+- `Shell.run()` accepts an optional `InputSource` parameter (defaults to `PromptToolkitInput`)
+- `Shell.get_completions()` method added for transport-agnostic tab completion
+
 ## Phase 2 — Deepen Core Features (2026-03-24)
 
 ### Added

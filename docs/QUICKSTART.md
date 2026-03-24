@@ -40,6 +40,20 @@ cd backend
 
 This drops you into an interactive terminal session with the virtual filesystem, NPC chat, notes, tasks, and more. Type `help` for available commands. Game state persists automatically on exit.
 
+## Run the WebSocket Client
+
+The shell can also run over WebSocket (same protocol the browser terminal will use):
+
+```bash
+# First start the backend server (in one terminal)
+.venv/Scripts/python -m recursive_neon.main       # Windows
+# .venv/bin/python -m recursive_neon.main          # Linux/macOS
+
+# Then connect via WebSocket (in another terminal)
+.venv/Scripts/python -m recursive_neon.wsclient    # Windows
+# .venv/bin/python -m recursive_neon.wsclient      # Linux/macOS
+```
+
 ## Set Up an LLM (for NPC Chat)
 
 NPC conversations require a local LLM via Ollama:
@@ -77,9 +91,11 @@ backend/src/recursive_neon/
   services/        Business logic (AppService, NPCManager, etc.)
   shell/           CLI shell (REPL, session, builtins)
     programs/      Shell programs (filesystem, notes, tasks, chat, utility)
+  terminal.py      WebSocket terminal session manager
+  wsclient/        WebSocket CLI client
   config.py        Settings (Pydantic)
   dependencies.py  Dependency injection container
-  main.py          FastAPI app (HTTP/WebSocket API)
+  main.py          FastAPI app (HTTP/WebSocket API, /ws/terminal)
 
 backend/tests/
   unit/shell/      Shell program and component tests
