@@ -305,6 +305,24 @@ class TestEcho:
         assert result == 0
         assert output.text.strip() == ""
 
+    async def test_echo_inline_variable_expansion(self, make_ctx, output):
+        ctx = make_ctx(["echo", "Hello$USER"])
+        result = await prog_echo(ctx)
+        assert result == 0
+        assert output.text.strip() == "Hellotest"
+
+    async def test_echo_multiple_vars_in_one_arg(self, make_ctx, output):
+        ctx = make_ctx(["echo", "$USER@$HOSTNAME"])
+        result = await prog_echo(ctx)
+        assert result == 0
+        assert output.text.strip() == "test@test-host"
+
+    async def test_echo_undefined_var_preserved(self, make_ctx, output):
+        ctx = make_ctx(["echo", "$UNDEFINED"])
+        result = await prog_echo(ctx)
+        assert result == 0
+        assert output.text.strip() == "$UNDEFINED"
+
 
 @pytest.mark.unit
 class TestEnv:

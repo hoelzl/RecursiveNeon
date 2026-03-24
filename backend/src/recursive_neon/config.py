@@ -31,7 +31,8 @@ class Settings(BaseSettings):
 
     # Game Configuration
     max_npcs: int = 20
-    npc_memory_context_length: int = 10  # Last N messages to remember
+    npc_max_conversation_history: int = 50  # Total messages stored on NPC model
+    npc_memory_context_length: int = 10  # Last N messages fed to LLM window
     max_response_tokens: int = 200
 
     # CORS

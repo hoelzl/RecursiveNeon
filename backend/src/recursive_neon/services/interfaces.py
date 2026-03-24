@@ -135,6 +135,12 @@ class IOllamaClient(ABC):
         """Close the client and cleanup resources."""
         pass
 
+    async def __aenter__(self) -> "IOllamaClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
 
 # ============================================================================
 # Process Manager Interface

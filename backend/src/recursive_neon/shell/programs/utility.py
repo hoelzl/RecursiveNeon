@@ -4,6 +4,7 @@ Utility programs: help, clear, echo, env, whoami, hostname, date.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from recursive_neon.shell.output import BOLD, CYAN
@@ -53,17 +54,15 @@ async def prog_clear(ctx: ProgramContext) -> int:
     return 0
 
 
+def _expand_vars(text: str, env: dict[str, str]) -> str:
+    """Expand $VAR references inline. Unset variables stay as $VAR."""
+    return re.sub(r"\$(\w+)", lambda m: env.get(str(m.group(1)), m.group(0)), text)
+
+
 async def prog_echo(ctx: ProgramContext) -> int:
     """Print arguments to stdout."""
     parts = ctx.args[1:]
-    # Simple $VAR expansion
-    expanded = []
-    for part in parts:
-        if part.startswith("$"):
-            var_name = part[1:]
-            expanded.append(ctx.env.get(var_name, ""))
-        else:
-            expanded.append(part)
+    expanded = [_expand_vars(part, ctx.env) for part in parts]
     ctx.stdout.writeln(" ".join(expanded))
     return 0
 

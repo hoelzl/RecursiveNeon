@@ -183,7 +183,8 @@ Player: {{input}}
 
         try:
             # Add player message to NPC's memory
-            npc.add_to_memory("user", message)
+            max_hist = settings.npc_max_conversation_history
+            npc.add_to_memory("user", message, max_history=max_hist)
 
             # Generate response using LangChain
             logger.debug(f"Generating response for {npc.name}")
@@ -194,7 +195,7 @@ Player: {{input}}
             cleaned = _strip_think_tags(response).strip()
 
             # Add cleaned response to NPC's memory
-            npc.add_to_memory("assistant", cleaned)
+            npc.add_to_memory("assistant", cleaned, max_history=max_hist)
 
             # Update relationship based on sentiment (simple heuristic)
             if any(
@@ -208,9 +209,7 @@ Player: {{input}}
                     -100, npc.memory.relationship_level - 5
                 )
 
-            return ChatResponse(
-                npc_id=npc.id, npc_name=npc.name, message=cleaned
-            )
+            return ChatResponse(npc_id=npc.id, npc_name=npc.name, message=cleaned)
 
         except Exception as e:
             logger.error(f"Error in chat with {npc.name}: {e}")

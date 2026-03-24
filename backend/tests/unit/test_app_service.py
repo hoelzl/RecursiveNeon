@@ -372,6 +372,24 @@ class TestFileSystemService:
         with pytest.raises(ValueError):
             app_service.get_file(parent.id)
 
+    def test_delete_deep_tree_removes_all_descendants(self, app_service):
+        """Deleting a deep directory tree removes everything in one pass."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        # Build: /a/b/c/d.txt
+        a = app_service.create_directory({"name": "a", "parent_id": root_id})
+        b = app_service.create_directory({"name": "b", "parent_id": a.id})
+        c = app_service.create_directory({"name": "c", "parent_id": b.id})
+        d = app_service.create_file(
+            {"name": "d.txt", "parent_id": c.id, "content": "x"}
+        )
+        initial_count = len(app_service.game_state.filesystem.nodes)
+        app_service.delete_file(a.id)
+        # Should have removed a, b, c, d (4 nodes)
+        assert len(app_service.game_state.filesystem.nodes) == initial_count - 4
+        for nid in [a.id, b.id, c.id, d.id]:
+            assert nid not in app_service._node_index
+
 
 class TestFileNodeTypeValidation:
     """FileNode.type must be 'file' or 'directory'."""

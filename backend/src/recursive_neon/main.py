@@ -102,13 +102,15 @@ async def lifespan(app: FastAPI):
         if container:
             container.system_state.status = SystemStatus.SHUTTING_DOWN
 
-            # Save filesystem state
-            logger.info("Saving in-game filesystem state...")
+            # Save all game state
+            logger.info("Saving game state...")
             try:
-                container.app_service.save_filesystem_to_disk()
-                logger.info("Filesystem state saved successfully")
+                data_dir = str(settings.data_dir)
+                container.app_service.save_all_to_disk(data_dir)
+                container.npc_manager.save_npcs_to_disk(data_dir)
+                logger.info("Game state saved successfully")
             except Exception as e:
-                logger.error(f"Failed to save filesystem state: {e}")
+                logger.error(f"Failed to save game state: {e}")
 
             await container.ollama_client.close()
             await container.process_manager.stop()

@@ -352,6 +352,44 @@ class TestNPCMemoryInit:
         assert npc.memory.npc_id == "explicit_id"
 
 
+class TestNPCMemoryTruncation:
+    """Tests for conversation history truncation behavior."""
+
+    def test_add_to_memory_respects_max_history(self):
+        npc = NPC(
+            id="trunc_test",
+            name="T",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Test",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+        )
+        for i in range(60):
+            npc.add_to_memory("user", f"message {i}", max_history=50)
+        assert len(npc.memory.conversation_history) == 50
+        assert npc.memory.conversation_history[0].content == "message 10"
+
+    def test_add_to_memory_default_max_history(self):
+        npc = NPC(
+            id="default_test",
+            name="T",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Test",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+        )
+        for i in range(55):
+            npc.add_to_memory("user", f"msg {i}")
+        # Default is 50
+        assert len(npc.memory.conversation_history) == 50
+
+
 class TestNPCSystemPrompt:
     """Tests for the refined NPC system prompt."""
 

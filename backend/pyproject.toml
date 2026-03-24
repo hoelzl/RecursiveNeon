@@ -82,7 +82,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = [
+    "--verbose",
     "--strict-markers",
     "--tb=short",
     "--cov=recursive_neon",
@@ -90,6 +92,18 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
 ]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may require external services)",
+    "slow: Slow tests (may take longer to run)",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore:Core Pydantic V1 functionality:UserWarning",
+]
+norecursedirs = [".git", ".tox", "dist", "build", "*.egg", "venv"]
 
 [tool.coverage.run]
 source = ["src/recursive_neon"]

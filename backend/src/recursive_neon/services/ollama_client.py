@@ -5,6 +5,7 @@ Refactored to implement IOllamaClient interface for better testability.
 """
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -181,8 +182,6 @@ class OllamaClient(IOllamaClient):
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line:
-                        import json
-
                         data = json.loads(line)
                         if chunk := data.get("response"):
                             yield chunk
@@ -232,3 +231,9 @@ class OllamaClient(IOllamaClient):
     async def close(self):
         """Close the HTTP client"""
         await self.client.aclose()
+
+    async def __aenter__(self) -> "OllamaClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()

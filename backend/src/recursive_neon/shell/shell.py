@@ -246,6 +246,13 @@ class Shell:
         register_note_program(self.programs)
         register_task_program(self.programs)
 
+        # Cache help dicts — program registry is immutable after init
+        self._program_help: dict[str, str] = {
+            name: self.programs.get_help(name) or ""
+            for name in self.programs.list_programs()
+        }
+        self._builtin_help: dict[str, str] = dict(BUILTIN_HELP)
+
     async def run(self) -> None:
         """Main REPL loop."""
         self.output.write(WELCOME_BANNER)
@@ -378,11 +385,6 @@ class Shell:
         if self.data_dir:
             env["_data_dir"] = self.data_dir
 
-        program_help = {
-            name: self.programs.get_help(name) or ""
-            for name in self.programs.list_programs()
-        }
-
         return ProgramContext(
             args=args,
             stdout=self.output,
@@ -390,8 +392,8 @@ class Shell:
             env=env,
             services=self.session.container,
             cwd_id=self.session.cwd_id,
-            builtin_help=dict(BUILTIN_HELP),
-            program_help=program_help,
+            builtin_help=self._builtin_help,
+            program_help=self._program_help,
         )
 
     def _build_prompt(self) -> str:

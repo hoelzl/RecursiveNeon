@@ -241,7 +241,9 @@ class TestLifespanNPCPersistence:
         from pathlib import Path
 
         # Parse main.py and check that create_default_npcs is not called in lifespan
-        main_path = Path(__file__).parent.parent.parent / "src" / "recursive_neon" / "main.py"
+        main_path = (
+            Path(__file__).parent.parent.parent / "src" / "recursive_neon" / "main.py"
+        )
         source = main_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 
@@ -250,9 +252,37 @@ class TestLifespanNPCPersistence:
             if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan":
                 # Check that no call to create_default_npcs exists
                 for child in ast.walk(node):
-                    if isinstance(child, ast.Attribute) and child.attr == "create_default_npcs":
+                    if (
+                        isinstance(child, ast.Attribute)
+                        and child.attr == "create_default_npcs"
+                    ):
                         pytest.fail(
                             "lifespan() calls create_default_npcs() — "
                             "this overwrites NPCs loaded from disk"
                         )
+                break
+
+    def test_lifespan_saves_all_state_not_just_filesystem(self):
+        """Verify main.py lifespan calls save_all_to_disk and save_npcs_to_disk."""
+        import ast
+        from pathlib import Path
+
+        main_path = (
+            Path(__file__).parent.parent.parent / "src" / "recursive_neon" / "main.py"
+        )
+        source = main_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan":
+                attrs = set()
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Attribute):
+                        attrs.add(child.attr)
+                assert "save_all_to_disk" in attrs, (
+                    "lifespan should call save_all_to_disk, not just save_filesystem_to_disk"
+                )
+                assert "save_npcs_to_disk" in attrs, (
+                    "lifespan should call save_npcs_to_disk to persist NPC state"
+                )
                 break

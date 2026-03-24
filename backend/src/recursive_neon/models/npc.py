@@ -155,14 +155,19 @@ Rules:
 - Respond directly to what the player says. No meta-commentary.
 """
 
-    def add_to_memory(self, role: str, content: str):
-        """Add a message to conversation history"""
+    def add_to_memory(self, role: str, content: str, max_history: int = 50) -> None:
+        """Add a message to conversation history.
+
+        Args:
+            role: 'user' or 'assistant'
+            content: Message content
+            max_history: Maximum messages to retain. Defaults to 50.
+        """
         message = ConversationMessage(role=role, content=content)
         self.memory.conversation_history.append(message)
         self.memory.last_interaction = datetime.now()
 
-        # Keep only last N messages to avoid token overflow
-        max_history = 20
+        # Keep only last N messages to avoid unbounded growth
         if len(self.memory.conversation_history) > max_history:
             self.memory.conversation_history = self.memory.conversation_history[
                 -max_history:

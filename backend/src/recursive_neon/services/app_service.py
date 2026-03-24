@@ -215,7 +215,9 @@ class AppService:
                 if len(new_tasks) == len(tl.tasks):
                     raise ValueError(f"Task not found: {task_id}")
                 self.game_state.tasks.lists[i] = TaskList(
-                    id=tl.id, name=tl.name, tasks=new_tasks,
+                    id=tl.id,
+                    name=tl.name,
+                    tasks=new_tasks,
                 )
                 return
         raise ValueError(f"Task list not found: {list_id}")
@@ -299,33 +301,49 @@ class AppService:
         return file
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
+        node = self.get_file(file_id)  # O(1) fail-fast via index
         timestamp = datetime.now().isoformat()
-        for i, node in enumerate(self.game_state.filesystem.nodes):
-            if node.id == file_id:
-                updated = FileNode(
-                    id=node.id,
-                    name=data.get("name", node.name),
-                    type=node.type,
-                    parent_id=node.parent_id,
-                    content=data.get("content", node.content),
-                    mime_type=data.get("mime_type", node.mime_type),
-                    created_at=node.created_at,
-                    updated_at=timestamp,
-                )
+        updated = FileNode(
+            id=node.id,
+            name=data.get("name", node.name),
+            type=node.type,
+            parent_id=node.parent_id,
+            content=data.get("content", node.content),
+            mime_type=data.get("mime_type", node.mime_type),
+            created_at=node.created_at,
+            updated_at=timestamp,
+        )
+        for i, n in enumerate(self.game_state.filesystem.nodes):
+            if n.id == file_id:
                 self.game_state.filesystem.nodes[i] = updated
-                self._node_index[file_id] = updated
-                return updated
-        raise ValueError(f"File not found: {file_id}")
+                break
+        self._node_index[file_id] = updated
+        return updated
 
     def delete_file(self, file_id: str) -> None:
-        node = self.get_file(file_id)
-        if node.type == "directory":
-            for child in self.list_directory(file_id):
-                self.delete_file(child.id)
-        self._unindex_node(node)
+        self.get_file(file_id)  # validate exists
+        # Collect all IDs to remove (descendants + self)
+        ids_to_remove = self._collect_descendant_ids(file_id)
+        ids_to_remove.add(file_id)
+        # Unindex all nodes before removing from canonical list
+        for nid in ids_to_remove:
+            node = self._node_index.get(nid)
+            if node is not None:
+                self._unindex_node(node)
+        # Single bulk removal from canonical list
         self.game_state.filesystem.nodes = [
-            n for n in self.game_state.filesystem.nodes if n.id != file_id
+            n for n in self.game_state.filesystem.nodes if n.id not in ids_to_remove
         ]
+
+    def _collect_descendant_ids(self, dir_id: str) -> set[str]:
+        """Recursively collect all descendant node IDs."""
+        result: set[str] = set()
+        for cid in self._children_index.get(dir_id, []):
+            result.add(cid)
+            child = self._node_index.get(cid)
+            if child is not None and child.type == "directory":
+                result |= self._collect_descendant_ids(cid)
+        return result
 
     def copy_file(
         self, file_id: str, target_parent_id: str, new_name: str | None = None
@@ -350,7 +368,7 @@ class AppService:
         return copy
 
     def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
-        file = self.get_file(file_id)
+        file = self.get_file(file_id)  # O(1) fail-fast via index
         timestamp = datetime.now().isoformat()
         if file.type == "directory":
             current: str | None = target_parent_id
@@ -361,23 +379,23 @@ class AppService:
                     )
                 parent = self.get_file(current)
                 current = parent.parent_id
-        for i, node in enumerate(self.game_state.filesystem.nodes):
-            if node.id == file_id:
-                self._unindex_node(file)
-                updated = FileNode(
-                    id=file.id,
-                    name=file.name,
-                    type=file.type,
-                    parent_id=target_parent_id,
-                    content=file.content,
-                    mime_type=file.mime_type,
-                    created_at=file.created_at,
-                    updated_at=timestamp,
-                )
+        self._unindex_node(file)
+        updated = FileNode(
+            id=file.id,
+            name=file.name,
+            type=file.type,
+            parent_id=target_parent_id,
+            content=file.content,
+            mime_type=file.mime_type,
+            created_at=file.created_at,
+            updated_at=timestamp,
+        )
+        for i, n in enumerate(self.game_state.filesystem.nodes):
+            if n.id == file_id:
                 self.game_state.filesystem.nodes[i] = updated
-                self._index_node(updated)
-                return updated
-        raise ValueError(f"File not found: {file_id}")
+                break
+        self._index_node(updated)
+        return updated
 
     def list_directory(self, dir_id: str) -> list[FileNode]:
         self.get_file(dir_id)  # validate dir exists
@@ -443,10 +461,16 @@ class AppService:
             return None
 
     def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(data_dir, "filesystem.json", {
-            "nodes": [node.model_dump() for node in self.game_state.filesystem.nodes],
-            "root_id": self.game_state.filesystem.root_id,
-        })
+        self._save_json(
+            data_dir,
+            "filesystem.json",
+            {
+                "nodes": [
+                    node.model_dump() for node in self.game_state.filesystem.nodes
+                ],
+                "root_id": self.game_state.filesystem.root_id,
+            },
+        )
 
     def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         data = self._load_json(data_dir, "filesystem.json")
@@ -464,9 +488,13 @@ class AppService:
             return False
 
     def save_notes_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(data_dir, "notes.json", {
-            "notes": [note.model_dump() for note in self.game_state.notes.notes],
-        })
+        self._save_json(
+            data_dir,
+            "notes.json",
+            {
+                "notes": [note.model_dump() for note in self.game_state.notes.notes],
+            },
+        )
 
     def load_notes_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         data = self._load_json(data_dir, "notes.json")
@@ -484,9 +512,13 @@ class AppService:
             return False
 
     def save_tasks_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(data_dir, "tasks.json", {
-            "lists": [tl.model_dump() for tl in self.game_state.tasks.lists],
-        })
+        self._save_json(
+            data_dir,
+            "tasks.json",
+            {
+                "lists": [tl.model_dump() for tl in self.game_state.tasks.lists],
+            },
+        )
 
     def load_tasks_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         data = self._load_json(data_dir, "tasks.json")
