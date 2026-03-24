@@ -53,10 +53,10 @@ class TestChatConversation:
     """Test the interactive chat conversation loop."""
 
     async def test_exit_command(self, chat, make_ctx, output):
-        """User types 'exit' to leave chat."""
+        """User types '/exit' to leave chat."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["exit"])
+            session.prompt_async = AsyncMock(side_effect=["/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -95,7 +95,7 @@ class TestChatConversation:
 
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["Hello!", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["Hello!", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
 
@@ -107,7 +107,7 @@ class TestChatConversation:
         """Empty input lines are skipped."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["", "   ", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["", "   ", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -116,7 +116,7 @@ class TestChatConversation:
         """/help shows chat commands."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/help", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["/help", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -127,7 +127,7 @@ class TestChatConversation:
         """/relationship shows level."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/relationship", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["/relationship", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -137,7 +137,7 @@ class TestChatConversation:
         """/status shows NPC info."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/status", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["/status", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -148,7 +148,7 @@ class TestChatConversation:
         """/bogus shows error."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/bogus", "exit"])
+            session.prompt_async = AsyncMock(side_effect=["/bogus", "/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             code = await chat.run(ctx)
         assert code == 0
@@ -158,7 +158,7 @@ class TestChatConversation:
         """NPC greeting is shown when entering chat."""
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["exit"])
+            session.prompt_async = AsyncMock(side_effect=["/exit"])
             ctx = make_ctx(["chat", "receptionist_aria"])
             await chat.run(ctx)
         assert "Welcome! How can I assist you today?" in output.text

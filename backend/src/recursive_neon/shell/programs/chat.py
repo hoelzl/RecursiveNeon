@@ -7,6 +7,8 @@ Uses NPCManager from the service container.
 
 from __future__ import annotations
 
+import asyncio
+
 from recursive_neon.models.npc import NPC
 from recursive_neon.shell.output import BOLD, CYAN, DIM, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
@@ -56,7 +58,7 @@ class ChatProgram:
             )
         ctx.stdout.writeln()
         ctx.stdout.writeln(
-            ctx.stdout.styled("Type 'exit' or Ctrl+D to disconnect.", DIM)
+            ctx.stdout.styled("Type /exit or Ctrl+D to disconnect.", DIM)
         )
         ctx.stdout.writeln()
 
@@ -90,18 +92,18 @@ class ChatProgram:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() == "exit":
-                break
 
             # Slash commands within chat
             if user_input.startswith("/"):
                 cmd = user_input[1:].lower().strip()
-                if cmd == "help":
+                if cmd == "exit":
+                    break
+                elif cmd == "help":
                     ctx.stdout.writeln(ctx.stdout.styled("Chat commands:", BOLD))
                     ctx.stdout.writeln("  /help          Show this help")
                     ctx.stdout.writeln("  /relationship  Show relationship level")
                     ctx.stdout.writeln("  /status        Show NPC info")
-                    ctx.stdout.writeln("  exit           Leave conversation")
+                    ctx.stdout.writeln("  /exit          Leave conversation")
                 elif cmd == "relationship":
                     level = npc.memory.relationship_level
                     ctx.stdout.writeln(
@@ -122,8 +124,22 @@ class ChatProgram:
                 continue
 
             try:
-                response = await npc_manager.chat(npc_id, user_input, player_id)
-                ctx.stdout.writeln()
+                typing_msg = ctx.stdout.styled(
+                    f"{npc.name} is typing...", DIM
+                )
+                ctx.stdout.write(f"\r{typing_msg}")
+                spinner = asyncio.create_task(
+                    _typing_spinner(ctx, npc.name)
+                )
+                try:
+                    response = await npc_manager.chat(
+                        npc_id, user_input, player_id
+                    )
+                finally:
+                    spinner.cancel()
+                    # Clear the typing indicator line
+                    ctx.stdout.write("\r\033[2K")
+
                 ctx.stdout.writeln(
                     f"[{ctx.stdout.styled(npc.name, YELLOW)}]: {response.message}"
                 )
@@ -133,6 +149,23 @@ class ChatProgram:
 
         ctx.stdout.writeln("Connection closed.")
         return 0
+
+
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+async def _typing_spinner(ctx: ProgramContext, name: str) -> None:
+    """Animate a spinner while the NPC is generating a response."""
+    try:
+        i = 0
+        while True:
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            text = ctx.stdout.styled(f"{frame} {name} is typing...", DIM)
+            ctx.stdout.write(f"\r{text}")
+            i += 1
+            await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        pass
 
 
 def register_chat_program(registry: ProgramRegistry) -> None:
@@ -145,5 +178,5 @@ def register_chat_program(registry: ProgramRegistry) -> None:
         "Usage: chat [NPC_ID]\n"
         "\n"
         "With no argument, list available NPCs. With NPC_ID, start a\n"
-        "conversation. Type 'exit' or Ctrl+D to disconnect.",
+        "conversation. Type /exit or Ctrl+D to disconnect.",
     )
