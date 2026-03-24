@@ -296,6 +296,10 @@ class Shell:
 
         name = tokens[0]
 
+        # Handle -h / --help for any known command
+        if len(tokens) >= 2 and tokens[1] in ("-h", "--help"):
+            return self._show_command_help(name)
+
         # 1. Check builtins
         if name in self.builtins:
             try:
@@ -316,6 +320,19 @@ class Shell:
 
         # 3. Future: check PATH for executable scripts
 
+        self.output.error(f"nsh: command not found: {name}")
+        return 127
+
+    def _show_command_help(self, name: str) -> int:
+        """Print help text for a builtin or program. Returns exit code."""
+        help_text = BUILTIN_HELP.get(name)
+        if help_text:
+            self.output.writeln(f"{name} (builtin): {help_text}")
+            return 0
+        help_text = self.programs.get_help(name)
+        if help_text:
+            self.output.writeln(f"{name}: {help_text}")
+            return 0
         self.output.error(f"nsh: command not found: {name}")
         return 127
 

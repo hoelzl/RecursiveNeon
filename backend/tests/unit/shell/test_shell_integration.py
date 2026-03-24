@@ -82,3 +82,24 @@ class TestShellExecuteLine:
         assert "cd" in text
         assert "ls" in text
         assert "cat" in text
+
+    async def test_dash_h_for_program(self, shell):
+        code = await shell.execute_line("ls -h")
+        assert code == 0
+        assert "ls:" in shell.output.text
+        assert "List" in shell.output.text
+
+    async def test_dash_dash_help_for_program(self, shell):
+        code = await shell.execute_line("cat --help")
+        assert code == 0
+        assert "cat:" in shell.output.text
+
+    async def test_dash_h_for_builtin(self, shell):
+        code = await shell.execute_line("cd -h")
+        assert code == 0
+        assert "cd (builtin):" in shell.output.text
+
+    async def test_dash_h_unknown_command(self, shell):
+        code = await shell.execute_line("nonexistent -h")
+        assert code == 127
+        assert "command not found" in shell.output.error_text
