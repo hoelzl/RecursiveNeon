@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-24)
-> **Status**: Phases 0-2 complete. Phase 3 (browser terminal + desktop GUI) not started.
+> **Status**: Phases 0-2 complete. Phase 3 (WebSocket terminal protocol + CLI client) not started. Phases 4-5 planned.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -253,7 +253,7 @@ scripts/
 
 6. ~~**Remote `origin/master` still exists**~~ — **Resolved.** Remote reorganized: old `master` (v1) → `legacy`, `main` (v2) → `master` (default branch).
 
-## 6. Implementation Plan (Phases 1-3)
+## 6. Implementation Plan (Phases 1-5)
 
 ### Phase 1: Build the Python CLI Shell — **COMPLETE**
 **Goal**: A working command-line shell that runs in any terminal via `python -m recursive_neon.shell`.
@@ -282,19 +282,47 @@ Completed:
 7. **TUI apps**: Deferred to Phase 3 (requires raw mode design, better co-designed with browser terminal).
 8. 255 total tests (83 new), all passing. Lint and type checks clean.
 
-### Phase 3: Browser Terminal + Desktop GUI
-**Goal**: The CLI experience runs in the browser, wrapped in the desktop UI.
+### Phase 3: WebSocket Terminal Protocol + CLI Client
+**Goal**: The shell runs over WebSocket with a structured protocol. Both Claude Code and humans can drive it from a terminal client, exercising the exact same code path the browser will use later.
+
+**Design decisions**:
+- **Separate `/ws/terminal` endpoint** — the existing `/ws` handles NPC/app queries (request/response); terminal sessions are long-lived and stream output. Clean separation.
+- **Client-side line editing** — server receives complete command lines, not keystrokes. Tab completion is a separate request/response message type. Lower latency sensitivity, simpler protocol.
+- **No prompt_toolkit over WebSocket** — prompt_toolkit is used only by the local CLI entry point. The WebSocket path uses its own input abstraction.
+- **ANSI codes pass through** — programs emit ANSI via `Output.styled()`, both xterm.js and real terminals render them natively. No translation layer.
+- **No new dependencies** — FastAPI + websockets (already installed) handles everything.
 
 Tasks:
-1. Set up xterm.js (or equivalent) in the frontend
-2. Create a WebSocket protocol for terminal sessions:
-   - Backend manages a virtual PTY/session
-   - Frontend sends keystrokes, receives screen updates
-3. Support cooked mode (shell) and raw mode (TUI apps) switching
-4. Add the desktop chrome: window manager, taskbar, desktop icons
-5. Terminal windows can run the same commands as the CLI
-6. Optionally add GUI apps (chat, file browser) that reuse the backend app core
-7. Restore and refine the CSS theme from v1
+1. **Transport abstraction in Shell**: Extract an `InputSource` protocol from the prompt_toolkit coupling in `shell.py`. The Shell receives lines from any source — prompt_toolkit (CLI), a WebSocket queue, or a test mock.
+2. **WebSocket output adapter**: `WebSocketOutput` subclass of `Output` that sends output as structured JSON messages instead of writing to a stream.
+3. **Terminal session manager**: New `/ws/terminal` endpoint. Each connection gets its own `Shell` instance backed by the shared `ServiceContainer`. Manages lifecycle: connect → create session → exchange commands/output → disconnect.
+4. **WebSocket message protocol** (cooked mode):
+   - Client → Server: `{"type": "input", "line": "ls -la"}`
+   - Server → Client: `{"type": "output", "text": "..."}`, `{"type": "prompt", "text": "user@neon:~$ "}`, `{"type": "exit"}`
+   - Tab completion: `{"type": "complete", "line": "ls Doc"}` → `{"type": "completions", "items": [...]}`
+5. **WebSocket CLI client** (`python -m recursive_neon.wsclient`): A readline-based terminal client that connects to the backend via WebSocket. Same experience as local shell, but through the network stack. Supports `--command` flag for non-interactive use (send one command, get output, disconnect).
+6. **Periodic auto-save**: Save game state on a timer (in addition to save-on-exit and manual `save` command), so WebSocket sessions don't lose progress on unexpected disconnect.
+7. **Tests**: WebSocket session lifecycle, command round-trips, tab completion over WS, concurrent sessions.
+
+### Phase 4: TUI Apps (Raw Mode)
+**Goal**: Interactive full-screen apps that run inside the terminal, driven by keystroke input. Testable via both the local CLI and the WebSocket client from Phase 3.
+
+Tasks:
+1. Design raw mode protocol (server tells client to switch modes; client sends individual keystrokes)
+2. TUI framework: screen buffer, cursor management, input handling
+3. Build TUI apps (minigames, file browser, etc. — scope TBD)
+4. Tests for raw mode switching and TUI app behavior
+
+### Phase 5: Browser Terminal + Desktop GUI
+**Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.
+
+Tasks:
+1. Set up xterm.js connecting to `/ws/terminal` (same protocol as CLI client)
+2. Cooked mode (shell) rendering in the browser
+3. Raw mode (TUI apps) rendering in the browser
+4. Desktop chrome: window manager, taskbar, desktop icons
+5. Restore and refine the cyberpunk CSS theme from v1
+6. Optionally add GUI-native apps (chat, file browser) that reuse the backend app core
 
 ## 7. Key Design Decisions for Future Sessions
 
