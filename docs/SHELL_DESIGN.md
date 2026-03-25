@@ -1,7 +1,7 @@
 # Shell Design Document
 
-> **Status**: Phases 1-2 implemented. Design document kept for architecture reference.
-> **Date**: 2026-03-23 (updated 2026-03-24)
+> **Status**: Phases 1-3 implemented. Design document kept for architecture reference.
+> **Date**: 2026-03-23 (updated 2026-03-25)
 
 ## 1. Overview
 
@@ -426,13 +426,13 @@ Connection closed.
 user@neon-proxy:/$
 ```
 
-The `chat` program enters a sub-REPL with its own prompt (`{npc_name}> `). The NPC response is rendered with the NPC's name colored. `exit` or Ctrl+D returns to the main shell.
+The `chat` program enters a sub-REPL with its own prompt (`{npc_name}> `). The NPC response is rendered with the NPC's name colored. `/exit` or Ctrl+D returns to the main shell. While waiting for the LLM response, an animated spinner ("NPC is typing...") indicates the model is generating.
 
-Internally, `chat` uses `services.npc_manager.chat(npc_id, message, player_id)` from its `ProgramContext`, which is async (Ollama HTTP call).
+Internally, `chat` uses `services.npc_manager.chat(npc_id, message, player_id)` from its `ProgramContext`, which is async (Ollama HTTP call). When running over WebSocket, `chat` reads input via `ProgramContext.get_line` (which delegates to the shell's `InputSource`) instead of creating its own `PromptSession`.
 
 `chat` is a good example of why the `Program` class is useful — it manages its own REPL loop and cleanup, but it still can't touch the shell's state.
 
-Chat also supports slash commands: `/help`, `/relationship`, `/status`. These are handled within the chat sub-REPL (prefixed with `/` to distinguish from messages to the NPC).
+Chat supports slash commands: `/exit`, `/help`, `/relationship`, `/status`. All commands use the `/` prefix to distinguish them from messages sent to the NPC.
 
 ### 5.4 Note Program (`programs/notes.py`)
 

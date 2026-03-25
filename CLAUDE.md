@@ -52,7 +52,7 @@ cd backend
 
 **Notes/Tasks**: `note` (list/show/create/edit/delete), `task` (lists/list/add/done/undone/delete)
 
-**NPC**: `chat` (list NPCs or enter conversation; supports `/help`, `/relationship`, `/status`)
+**NPC**: `chat` (list NPCs or enter conversation; supports `/exit`, `/help`, `/relationship`, `/status`)
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 

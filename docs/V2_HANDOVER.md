@@ -1,6 +1,6 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-03-24)
+> **Date**: 2025-03-23 (updated 2026-03-25)
 > **Status**: Phases 0-3 complete. Phase 4 (TUI apps / raw mode) not started. Phase 5 planned.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
@@ -305,9 +305,11 @@ Completed:
 2. **`QueueOutput` adapter**: `Output` subclass that pushes messages to an `asyncio.Queue` for WebSocket delivery. ANSI codes preserved.
 3. **`TerminalSessionManager`**: Owns Shell instances by UUID, independent of WebSocket lifecycle. Creates/removes sessions, manages auto-save background task.
 4. **`/ws/terminal` endpoint**: JSON protocol with `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` message types. Concurrent reader/writer tasks per connection.
-5. **WebSocket CLI client** (`python -m recursive_neon.wsclient`): Interactive prompt_toolkit-based client with `--host`/`--port` flags. `--command` batch mode deferred (architecture supports it; persistent sessions needed first for it to be useful).
+5. **WebSocket CLI client** (`python -m recursive_neon.wsclient`): Interactive prompt_toolkit-based client with `--host`/`--port` flags. Tab completion via `_WebSocketCompleter` (async generator). ANSI colors rendered correctly via `patch_stdout(raw=True)` + Windows VT processing. `--command` batch mode deferred (architecture supports it; persistent sessions needed first for it to be useful).
 6. **Periodic auto-save**: Background task saves game state every 60s while WebSocket sessions are active. Also saves on session disconnect.
-7. **Tests**: 26 new tests — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion, auto-save, and 8 WebSocket integration tests. 343 total tests, all passing.
+7. **`ProgramContext.get_line`**: Programs can read user input through the shell's `InputSource`, so sub-REPLs (like `chat`) work over both CLI and WebSocket.
+8. **Chat UX improvements**: All slash commands use `/` prefix (`/exit`, `/help`, `/relationship`, `/status`). Animated typing indicator ("NPC is typing...") while waiting for LLM response.
+9. **Tests**: 28 new tests — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion (incl. `get_completions_ext`), WebSocket completer, auto-save, and 8 WebSocket integration tests. 345 total tests, all passing.
 
 ### Phase 4: TUI Apps (Raw Mode)
 **Goal**: Interactive full-screen apps that run inside the terminal, driven by keystroke input. Testable via both the local CLI and the WebSocket client from Phase 3.

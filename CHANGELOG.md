@@ -11,13 +11,24 @@ All notable changes to Recursive://Neon are documented here.
 - **`/ws/terminal` WebSocket endpoint** — JSON protocol with `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` message types
 - **WebSocket CLI client** — `python -m recursive_neon.wsclient` connects to the backend over WebSocket with interactive prompt_toolkit REPL
 - **Periodic auto-save** — Background task saves game state every 60s while WebSocket sessions are active
-- **26 new tests** — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion over WS, 8 WebSocket integration tests (343 total)
+- **Tab completion over WebSocket** — `_WebSocketCompleter` (async generator) sends completion requests to server; server returns items + replacement length
+- **`ProgramContext.get_line`** — Callback so programs (e.g. `chat`) can read user input through the shell's `InputSource`, enabling sub-REPLs over WebSocket
+- **Typing indicator** — Animated spinner ("NPC is typing...") shown while waiting for LLM response in chat
+- **28 new tests** — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion (incl. `get_completions_ext`), WebSocket completer unit test, 8 WebSocket integration tests (345 total)
 
 ### Changed
 - `shell.py` refactored: prompt_toolkit imports are now lazy (only loaded for local CLI); `PromptToolkitInput` class encapsulates all prompt_toolkit logic
 - `ShellCompleter` moved inside a factory function (`_make_shell_completer`) to keep prompt_toolkit deferred
 - `Shell.run()` accepts an optional `InputSource` parameter (defaults to `PromptToolkitInput`)
-- `Shell.get_completions()` method added for transport-agnostic tab completion
+- `Shell.get_completions()` method added for transport-agnostic tab completion; `get_completions_ext()` also returns replacement length
+- Chat commands now all use `/` prefix for consistency: `/exit`, `/help`, `/relationship`, `/status`
+- WebSocket client uses `patch_stdout(raw=True)` to preserve ANSI codes, `complete_while_typing=False` for Tab-only completion
+
+### Fixed
+- ANSI color codes rendered as literal text in chat prompt (missing `ANSI()` wrapper for prompt_toolkit)
+- ANSI color codes rendered as literal text in WebSocket client output (`patch_stdout` was stripping escape codes)
+- Chat sub-REPL hung over WebSocket (was creating local `PromptSession` instead of using shell's `InputSource`)
+- Windows console ANSI support enabled via `ENABLE_VIRTUAL_TERMINAL_PROCESSING` for older terminals
 
 ## Phase 2 — Deepen Core Features (2026-03-24)
 
