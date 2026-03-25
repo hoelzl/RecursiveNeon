@@ -81,7 +81,7 @@ left the door wide open.
 hacker_zero> /relationship
 Relationship with Zero: 0
 
-hacker_zero> exit
+hacker_zero> /exit
 Connection closed.
 ```
 

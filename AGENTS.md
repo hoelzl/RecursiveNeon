@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 343 tests
+../.venv/Scripts/pytest              # All 345 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
