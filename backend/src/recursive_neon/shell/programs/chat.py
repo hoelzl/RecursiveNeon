@@ -124,17 +124,11 @@ class ChatProgram:
                 continue
 
             try:
-                typing_msg = ctx.stdout.styled(
-                    f"{npc.name} is typing...", DIM
-                )
+                typing_msg = ctx.stdout.styled(f"{npc.name} is typing...", DIM)
                 ctx.stdout.write(f"\r{typing_msg}")
-                spinner = asyncio.create_task(
-                    _typing_spinner(ctx, npc.name)
-                )
+                spinner = asyncio.create_task(_typing_spinner(ctx, npc.name))
                 try:
-                    response = await npc_manager.chat(
-                        npc_id, user_input, player_id
-                    )
+                    response = await npc_manager.chat(npc_id, user_input, player_id)
                 finally:
                     spinner.cancel()
                     # Clear the typing indicator line

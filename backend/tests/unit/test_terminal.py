@@ -20,7 +20,11 @@ from recursive_neon.dependencies import (
 from recursive_neon.main import app
 from recursive_neon.models.game_state import SystemStatus
 from recursive_neon.shell.output import QueueOutput
-from recursive_neon.terminal import TerminalSessionManager, WebSocketInput
+from recursive_neon.terminal import (
+    TerminalSessionManager,
+    WebSocketInput,
+    WebSocketRawInput,
+)
 
 # ============================================================================
 # Fixtures
@@ -285,6 +289,96 @@ class TestTerminalSession:
 
 
 # ============================================================================
+# WebSocketRawInput tests
+# ============================================================================
+
+
+class TestWebSocketRawInput:
+    async def test_get_key_returns_from_queue(self):
+        q: asyncio.Queue[str | None] = asyncio.Queue()
+        raw = WebSocketRawInput(q)
+        q.put_nowait("ArrowUp")
+        key = await raw.get_key()
+        assert key == "ArrowUp"
+
+    async def test_get_key_eof_on_none(self):
+        q: asyncio.Queue[str | None] = asyncio.Queue()
+        raw = WebSocketRawInput(q)
+        q.put_nowait(None)
+        with pytest.raises(EOFError):
+            await raw.get_key()
+
+    async def test_get_key_sequence(self):
+        q: asyncio.Queue[str | None] = asyncio.Queue()
+        raw = WebSocketRawInput(q)
+        for key in ["a", "b", "Enter"]:
+            q.put_nowait(key)
+        assert await raw.get_key() == "a"
+        assert await raw.get_key() == "b"
+        assert await raw.get_key() == "Enter"
+
+
+# ============================================================================
+# TerminalSession raw mode tests
+# ============================================================================
+
+
+class TestTerminalSessionRawMode:
+    async def test_initial_mode_is_cooked(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        assert session.mode == "cooked"
+        await mgr.remove_session(session.session_id)
+
+    async def test_feed_key_queues_keystroke(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        session.feed_key("ArrowUp")
+        key = session.key_queue.get_nowait()
+        assert key == "ArrowUp"
+        await mgr.remove_session(session.session_id)
+
+    async def test_enter_raw_mode_sends_message(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        session._enter_raw_mode()
+        assert session.mode == "raw"
+        msg = session.output_queue.get_nowait()
+        assert msg == {"type": "mode", "mode": "raw"}
+        await mgr.remove_session(session.session_id)
+
+    async def test_exit_raw_mode_sends_message(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        session._enter_raw_mode()
+        session.output_queue.get_nowait()  # drain the enter message
+
+        session._exit_raw_mode()
+        assert session.mode == "cooked"
+        msg = session.output_queue.get_nowait()
+        assert msg == {"type": "mode", "mode": "cooked"}
+        await mgr.remove_session(session.session_id)
+
+    async def test_stop_sends_eof_to_key_queue(self, container):
+        """Stopping a session should send None to key_queue for TUI cleanup."""
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        await session.start()
+        await session.stop()
+        # key_queue should have received None
+        key = session.key_queue.get_nowait()
+        assert key is None
+
+    async def test_run_tui_factory_is_wired(self, container):
+        """After start(), the shell should have a _run_tui_factory set."""
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        await session.start()
+        assert session.shell._run_tui_factory is not None
+        await session.stop()
+
+
+# ============================================================================
 # WebSocketCompleter unit test
 # ============================================================================
 
@@ -415,6 +509,46 @@ class TestTerminalWebSocket:
             messages = _recv_all_sync(ws, timeout=5.0)
             assert any(m.get("type") == "exit" for m in messages)
 
+    def test_codebreaker_raw_mode(self, client):
+        """Launching codebreaker should produce mode:raw, screen, then mode:cooked on exit."""
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            ws.send_json({"type": "input", "line": "codebreaker"})
+
+            # Collect messages until we see mode:raw
+            messages = _recv_until_type_sync(ws, "mode", timeout=5.0)
+            mode_msg = next(m for m in messages if m.get("type") == "mode")
+            assert mode_msg["mode"] == "raw"
+
+            # Should receive a screen message (initial render)
+            screen_msg = ws.receive_json()
+            assert screen_msg["type"] == "screen"
+            assert "CODEBREAKER" in screen_msg["lines"][0]
+
+            # Send Escape to exit the game
+            ws.send_json({"type": "key", "key": "Escape"})
+
+            # Should get mode:cooked back, then eventually a prompt
+            messages = _recv_until_prompt_sync(ws, timeout=5.0)
+            assert any(
+                m.get("type") == "mode" and m.get("mode") == "cooked" for m in messages
+            )
+
+    def test_key_message_ignored_in_cooked_mode(self, client):
+        """Key messages in cooked mode should be silently ignored."""
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            # Send a key message while in cooked mode — should not crash
+            ws.send_json({"type": "key", "key": "a"})
+
+            # Shell should still work normally
+            ws.send_json({"type": "input", "line": "pwd"})
+            messages = _recv_until_prompt_sync(ws, timeout=5.0)
+            output_texts = [m["text"] for m in messages if m["type"] == "output"]
+            assert "/" in "".join(output_texts)
+
 
 # ============================================================================
 # Test helpers
@@ -453,6 +587,23 @@ def _recv_until_prompt_sync(ws, timeout: float = 5.0) -> list[dict]:
             msg = ws.receive_json()
             messages.append(msg)
             if msg.get("type") in ("prompt", "exit"):
+                break
+        except Exception:
+            break
+    return messages
+
+
+def _recv_until_type_sync(ws, msg_type: str, timeout: float = 5.0) -> list[dict]:
+    """Receive WebSocket messages until a specific message type (synchronous)."""
+    import time
+
+    messages = []
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        try:
+            msg = ws.receive_json()
+            messages.append(msg)
+            if msg.get("type") == msg_type:
                 break
         except Exception:
             break

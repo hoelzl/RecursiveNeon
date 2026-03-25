@@ -3,6 +3,7 @@ WebSocket terminal client implementation.
 
 Connects to the server's /ws/terminal endpoint and runs an interactive
 REPL using prompt_toolkit for local line editing and tab completion.
+Supports both cooked mode (line editing) and raw mode (TUI apps).
 """
 
 from __future__ import annotations
@@ -17,6 +18,9 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
+
+# Sentinel used to signal mode changes through the input queue
+_MODE_CHANGE = "__mode_change__"
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +77,144 @@ class _WebSocketCompleter(Completer):
 
 
 # ---------------------------------------------------------------------------
+# Raw key reading — platform-specific
+# ---------------------------------------------------------------------------
+
+
+async def _read_raw_key() -> str:
+    """Read a single keystroke from the terminal in raw mode.
+
+    Returns a canonical key string matching the TuiApp key encoding.
+    Runs blocking I/O in a thread executor.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _read_raw_key_blocking)
+
+
+def _read_raw_key_blocking() -> str:
+    """Blocking raw key read, platform-specific."""
+    if sys.platform == "win32":
+        return _read_raw_key_windows()
+    else:
+        return _read_raw_key_unix()
+
+
+def _read_raw_key_windows() -> str:
+    """Read a single key on Windows using msvcrt."""
+    import msvcrt
+
+    ch = msvcrt.getwch()
+
+    # Special keys start with \x00 or \xe0
+    if ch in ("\x00", "\xe0"):
+        ch2 = msvcrt.getwch()
+        return _WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
+
+    # Ctrl combinations
+    if ord(ch) < 32:
+        return _CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+
+    # Escape
+    if ch == "\x1b":
+        return "Escape"
+
+    return ch
+
+
+def _read_raw_key_unix() -> str:  # pragma: no cover (Unix only)
+    """Read a single key on Unix using tty/termios."""
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)  # type: ignore[attr-defined]
+    try:
+        tty.setraw(fd)  # type: ignore[attr-defined]
+        ch = sys.stdin.read(1)
+
+        if ch == "\x1b":
+            # Could be an escape sequence
+            # Read with a short timeout to distinguish Escape from sequences
+            import select
+
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    return _ANSI_SEQUENCES.get(ch3, f"Unknown-[{ch3}")
+                return f"Alt-{ch2}"
+            return "Escape"
+
+        # Ctrl combinations
+        if ord(ch) < 32:
+            return _CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+
+        # Backspace (DEL)
+        if ch == "\x7f":
+            return "Backspace"
+
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore[attr-defined]
+
+
+# Key lookup tables
+_WINDOWS_SPECIAL_KEYS = {
+    "H": "ArrowUp",
+    "P": "ArrowDown",
+    "K": "ArrowLeft",
+    "M": "ArrowRight",
+    "G": "Home",
+    "O": "End",
+    "I": "PageUp",
+    "Q": "PageDown",
+    "S": "Delete",
+    "R": "Insert",
+    ";": "F1",
+    "<": "F2",
+    "=": "F3",
+    ">": "F4",
+}
+
+_ANSI_SEQUENCES = {
+    "A": "ArrowUp",
+    "B": "ArrowDown",
+    "C": "ArrowRight",
+    "D": "ArrowLeft",
+    "H": "Home",
+    "F": "End",
+}
+
+_CTRL_KEYS = {
+    "\r": "Enter",
+    "\n": "Enter",
+    "\t": "Tab",
+    "\x08": "Backspace",
+    "\x03": "C-c",
+    "\x04": "C-d",
+    "\x11": "C-q",
+    "\x17": "C-w",
+}
+
+
+# ---------------------------------------------------------------------------
+# Screen rendering
+# ---------------------------------------------------------------------------
+
+
+def _render_screen(lines: list[str], cursor: list[int]) -> None:
+    """Render a screen buffer to the terminal using ANSI escape codes."""
+    # Clear screen + move to home
+    sys.stdout.write("\033[2J\033[H")
+    for i, line in enumerate(lines):
+        sys.stdout.write(f"\033[{i + 1};1H{line}")
+    # Position cursor
+    if len(cursor) >= 2:
+        sys.stdout.write(f"\033[{cursor[0] + 1};{cursor[1] + 1}H")
+    sys.stdout.flush()
+
+
+# ---------------------------------------------------------------------------
 # Client session
 # ---------------------------------------------------------------------------
 
@@ -88,18 +230,99 @@ async def run_client(url: str) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Headless client — JSON stdin/stdout, no prompt_toolkit
+# ---------------------------------------------------------------------------
+
+
+async def run_headless_client(url: str) -> None:
+    """Connect and run a headless session reading JSON from stdin.
+
+    Each line on stdin is a JSON message sent to the server::
+
+        {"type": "input", "line": "ls"}
+        {"type": "key", "key": "ArrowUp"}
+
+    Server responses are written to stdout as one JSON object per line.
+    This mode requires no terminal and works with piped input, making
+    it suitable for automation, scripting, and Claude Code interaction.
+    """
+    try:
+        async with connect(url) as ws:
+            await _headless_loop(ws)
+    except OSError as e:
+        print(json.dumps({"type": "error", "message": f"Connection failed: {e}"}))
+        sys.exit(1)
+
+
+async def _headless_loop(ws) -> None:
+    """Headless client loop: JSON on stdin → WS, WS → JSON on stdout."""
+    reader_task = asyncio.create_task(_headless_server_reader(ws))
+    writer_task = asyncio.create_task(_headless_stdin_sender(ws))
+
+    done, pending = await asyncio.wait(
+        [reader_task, writer_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    for task in pending:
+        task.cancel()
+
+    for task in done:
+        exc = task.exception()
+        if exc is not None and not isinstance(
+            exc, (ConnectionClosed, asyncio.CancelledError)
+        ):
+            raise exc
+
+
+async def _headless_server_reader(ws) -> None:
+    """Read server messages and write them as JSON lines to stdout."""
+    try:
+        async for raw in ws:
+            msg = json.loads(raw)
+            sys.stdout.write(json.dumps(msg) + "\n")
+            sys.stdout.flush()
+
+            if msg.get("type") == "exit":
+                break
+    except ConnectionClosed:
+        pass
+
+
+async def _headless_stdin_sender(ws) -> None:
+    """Read JSON lines from stdin and send them to the server."""
+    loop = asyncio.get_running_loop()
+
+    while True:
+        # Read a line from stdin in a thread to avoid blocking the event loop
+        line = await loop.run_in_executor(None, sys.stdin.readline)
+        if not line:
+            # EOF — send exit
+            await ws.send(json.dumps({"type": "input", "line": "exit"}))
+            break
+
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            # Treat plain text as a shell command for convenience
+            msg = {"type": "input", "line": line}
+
+        await ws.send(json.dumps(msg))
+
+
 async def _session_loop(ws) -> None:
     """Main client loop: read server messages, send user input."""
     completer = _WebSocketCompleter(ws)
 
-    input_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    input_queue: asyncio.Queue[str | tuple[str, str] | None] = asyncio.Queue()
 
-    reader_task = asyncio.create_task(
-        _server_reader(ws, input_queue, completer)
-    )
-    writer_task = asyncio.create_task(
-        _user_input_sender(ws, input_queue, completer)
-    )
+    reader_task = asyncio.create_task(_server_reader(ws, input_queue, completer))
+    writer_task = asyncio.create_task(_user_input_sender(ws, input_queue, completer))
 
     done, pending = await asyncio.wait(
         [reader_task, writer_task],
@@ -120,7 +343,7 @@ async def _session_loop(ws) -> None:
 
 async def _server_reader(
     ws,
-    input_queue: asyncio.Queue[str | None],
+    input_queue: asyncio.Queue[str | tuple[str, str] | None],
     completer: _WebSocketCompleter,
 ) -> None:
     """Read messages from the server and display them."""
@@ -144,6 +367,15 @@ async def _server_reader(
                 replace = msg.get("replace", 0)
                 completer.feed_completions(items, replace)
 
+            elif msg_type == "mode":
+                mode = msg.get("mode", "cooked")
+                input_queue.put_nowait((_MODE_CHANGE, mode))
+
+            elif msg_type == "screen":
+                lines = msg.get("lines", [])
+                cursor = msg.get("cursor", [0, 0])
+                _render_screen(lines, cursor)
+
             elif msg_type == "exit":
                 break
 
@@ -157,7 +389,7 @@ async def _server_reader(
 
 async def _user_input_sender(
     ws,
-    input_queue: asyncio.Queue[str | None],
+    input_queue: asyncio.Queue[str | tuple[str, str] | None],
     completer: _WebSocketCompleter,
 ) -> None:
     """Read lines from the user (via prompt_toolkit) and send them to the server."""
@@ -170,21 +402,61 @@ async def _user_input_sender(
         complete_while_typing=False,
     )
 
+    mode = "cooked"
+
     with patch_stdout(raw=True):
         while True:
-            # Wait for the server to send a prompt
-            prompt_text = await input_queue.get()
-            if prompt_text is None:
-                break
+            if mode == "cooked":
+                # Wait for the server to send a prompt or mode change
+                item = await input_queue.get()
+                if item is None:
+                    break
 
-            try:
-                line = await session.prompt_async(ANSI(prompt_text))
-            except KeyboardInterrupt:
-                sys.stdout.write("\n")
-                continue
-            except EOFError:
-                # User pressed Ctrl-D — send exit command
-                await ws.send(json.dumps({"type": "input", "line": "exit"}))
-                break
+                # Check for mode change
+                if isinstance(item, tuple):
+                    if item[0] == _MODE_CHANGE:
+                        mode = item[1]
+                    continue
 
-            await ws.send(json.dumps({"type": "input", "line": line}))
+                prompt_text: str = item
+
+                try:
+                    line = await session.prompt_async(ANSI(prompt_text))
+                except KeyboardInterrupt:
+                    sys.stdout.write("\n")
+                    continue
+                except EOFError:
+                    # User pressed Ctrl-D — send exit command
+                    await ws.send(json.dumps({"type": "input", "line": "exit"}))
+                    break
+
+                await ws.send(json.dumps({"type": "input", "line": line}))
+
+            else:
+                # Raw mode: read keystrokes and send them directly
+                # Use asyncio.wait to handle both key input and queue signals
+                key_task = asyncio.ensure_future(_read_raw_key())
+                queue_task = asyncio.ensure_future(input_queue.get())
+
+                done, pending = await asyncio.wait(
+                    [key_task, queue_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                for task in pending:
+                    task.cancel()
+
+                for task in done:
+                    result = task.result()
+
+                    if task is key_task:
+                        await ws.send(json.dumps({"type": "key", "key": result}))
+                    elif task is queue_task:
+                        if result is None:
+                            return
+                        if isinstance(result, tuple) and result[0] == _MODE_CHANGE:
+                            mode = result[1]
+                            if mode == "cooked":
+                                # Clear screen to prepare for cooked mode
+                                sys.stdout.write("\033[2J\033[H")
+                                sys.stdout.flush()

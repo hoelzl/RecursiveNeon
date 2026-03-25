@@ -8,7 +8,7 @@ They cannot modify shell state (cwd, env vars, aliases).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Awaitable, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Protocol
 
 from recursive_neon.models.app_models import FileNode
 from recursive_neon.shell.output import Output
@@ -36,6 +36,7 @@ class ProgramContext:
     builtin_help: dict[str, str] | None = None
     program_help: dict[str, str] | None = None
     get_line: Callable[[str], Awaitable[str]] | None = None
+    run_tui: Callable[[Any], Awaitable[int]] | None = None
 
     def resolve_path(self, path: str) -> FileNode:
         """Resolve a path string to a FileNode."""

@@ -7,7 +7,7 @@ import asyncio
 import contextlib
 import sys
 
-from recursive_neon.wsclient.client import run_client
+from recursive_neon.wsclient.client import run_client, run_headless_client
 
 
 def _enable_ansi_on_windows() -> None:
@@ -40,13 +40,23 @@ def main() -> None:
         default=8000,
         help="Server port (default: 8000)",
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Headless mode: read JSON commands from stdin, write JSON to stdout. "
+        "No terminal required. Suitable for automation and scripting.",
+    )
     args = parser.parse_args()
 
     url = f"ws://{args.host}:{args.port}/ws/terminal"
 
-    _enable_ansi_on_windows()
-    with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(run_client(url))
+    if args.headless:
+        with contextlib.suppress(KeyboardInterrupt):
+            asyncio.run(run_headless_client(url))
+    else:
+        _enable_ansi_on_windows()
+        with contextlib.suppress(KeyboardInterrupt):
+            asyncio.run(run_client(url))
 
     sys.exit(0)
 

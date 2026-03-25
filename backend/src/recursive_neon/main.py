@@ -338,13 +338,16 @@ async def terminal_websocket(websocket: WebSocket):
 
     Protocol (JSON messages):
         Client → Server:
-            {"type": "input", "line": "ls -la"}
-            {"type": "complete", "line": "ls Doc"}
+            {"type": "input", "line": "ls -la"}        # cooked mode
+            {"type": "complete", "line": "ls Doc"}      # cooked mode
+            {"type": "key", "key": "ArrowUp"}           # raw mode
 
         Server → Client:
             {"type": "output", "text": "..."}
             {"type": "prompt", "text": "user@neon:~$ "}
             {"type": "completions", "items": ["Documents/"]}
+            {"type": "mode", "mode": "raw"|"cooked"}    # mode switch
+            {"type": "screen", "lines": [...], ...}      # raw mode frame
             {"type": "exit"}
             {"type": "error", "message": "..."}
     """
@@ -378,15 +381,24 @@ async def _ws_reader(websocket: WebSocket, session) -> None:
         msg_type = data.get("type")
 
         if msg_type == "input":
-            line = data.get("line", "")
-            session.feed_line(line)
+            if session.mode == "cooked":
+                line = data.get("line", "")
+                session.feed_line(line)
+            # Ignore input messages in raw mode
+
+        elif msg_type == "key":
+            if session.mode == "raw":
+                key = data.get("key", "")
+                session.feed_key(key)
+            # Ignore key messages in cooked mode
 
         elif msg_type == "complete":
-            line = data.get("line", "")
-            items, replace = session.shell.get_completions_ext(line)
-            await websocket.send_json(
-                {"type": "completions", "items": items, "replace": replace}
-            )
+            if session.mode == "cooked":
+                line = data.get("line", "")
+                items, replace = session.shell.get_completions_ext(line)
+                await websocket.send_json(
+                    {"type": "completions", "items": items, "replace": replace}
+                )
 
         else:
             await websocket.send_json(

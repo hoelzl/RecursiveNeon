@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from recursive_neon.dependencies import ServiceContainer
 from recursive_neon.shell.output import QueueOutput
 from recursive_neon.shell.shell import Shell
+from recursive_neon.shell.tui import TuiApp
+from recursive_neon.shell.tui.runner import run_tui_app
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,24 @@ class WebSocketInput:
 
 
 # ---------------------------------------------------------------------------
+# WebSocketRawInput — feeds individual keystrokes for TUI apps
+# ---------------------------------------------------------------------------
+
+
+class WebSocketRawInput:
+    """RawInputSource backed by the WebSocket key queue."""
+
+    def __init__(self, key_queue: asyncio.Queue[str | None]) -> None:
+        self._key_queue = key_queue
+
+    async def get_key(self) -> str:
+        key = await self._key_queue.get()
+        if key is None:
+            raise EOFError
+        return key
+
+
+# ---------------------------------------------------------------------------
 # TerminalSession — one per WebSocket connection
 # ---------------------------------------------------------------------------
 
@@ -65,13 +85,16 @@ class TerminalSession:
     """A single terminal session driven over WebSocket.
 
     Owns a Shell, an input queue (WS handler → Shell), and an output
-    queue (Shell → WS handler).
+    queue (Shell → WS handler).  Supports both cooked mode (line input)
+    and raw mode (keystroke input for TUI apps).
     """
 
     session_id: str
     shell: Shell
     input_queue: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
     output_queue: asyncio.Queue[dict] = field(default_factory=asyncio.Queue)
+    key_queue: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
+    mode: str = "cooked"
     _shell_task: asyncio.Task | None = field(default=None, repr=False)
 
     async def start(self) -> None:
@@ -79,6 +102,27 @@ class TerminalSession:
         ws_input = WebSocketInput(self.input_queue, self.output_queue)
         # Replace the shell's output with one that writes to our queue
         self.shell.output = QueueOutput(self.output_queue)
+
+        # Wire up TUI support: the shell can launch TUI apps over WebSocket
+        session = self  # capture for closure
+
+        def _run_tui_factory():
+            raw_input = WebSocketRawInput(session.key_queue)
+
+            async def _run_tui(app: TuiApp) -> int:
+                return await run_tui_app(
+                    app,
+                    raw_input,
+                    session.shell.output,
+                    enter_raw=lambda: session._enter_raw_mode(),
+                    exit_raw=lambda: session._exit_raw_mode(),
+                    send_screen=lambda msg: session.output_queue.put_nowait(msg),
+                )
+
+            return _run_tui
+
+        self.shell._run_tui_factory = _run_tui_factory
+
         self._shell_task = asyncio.create_task(
             self._run_shell(ws_input),
             name=f"terminal-{self.session_id}",
@@ -96,8 +140,9 @@ class TerminalSession:
 
     async def stop(self) -> None:
         """Stop the shell (e.g. on WebSocket disconnect)."""
-        # Send EOF to the shell so it exits cleanly
+        # Send EOF to both queues so the shell and any TUI app exit cleanly
         self.input_queue.put_nowait(None)
+        self.key_queue.put_nowait(None)
         if self._shell_task is not None:
             # Give the shell a moment to shut down gracefully
             try:
@@ -111,6 +156,20 @@ class TerminalSession:
     def feed_line(self, line: str) -> None:
         """Send a command line into the shell (called by the WS handler)."""
         self.input_queue.put_nowait(line)
+
+    def feed_key(self, key: str) -> None:
+        """Send a keystroke to the active TUI app (called by the WS handler)."""
+        self.key_queue.put_nowait(key)
+
+    def _enter_raw_mode(self) -> None:
+        """Switch to raw mode and notify the client."""
+        self.mode = "raw"
+        self.output_queue.put_nowait({"type": "mode", "mode": "raw"})
+
+    def _exit_raw_mode(self) -> None:
+        """Switch back to cooked mode and notify the client."""
+        self.mode = "cooked"
+        self.output_queue.put_nowait({"type": "mode", "mode": "cooked"})
 
 
 # ---------------------------------------------------------------------------
