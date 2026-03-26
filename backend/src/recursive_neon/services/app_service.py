@@ -5,6 +5,7 @@ Manages state for game applications: virtual filesystem, notes, and tasks.
 Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 """
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -25,6 +26,9 @@ from recursive_neon.models.game_state import GameState
 
 logger = logging.getLogger(__name__)
 
+# Maximum file size (in bytes) loaded from initial_fs into the virtual filesystem.
+MAX_INITIAL_FILE_SIZE = 1_048_576  # 1 MB
+
 
 class AppService:
     """
@@ -34,10 +38,19 @@ class AppService:
     - FileSystem (virtual filesystem with security isolation)
     - Notes
     - Tasks and TaskLists
+
+    **Concurrency note:** In the current single-player design, all WebSocket
+    sessions share a single ``AppService`` / ``GameState`` instance.  Individual
+    methods are synchronous (no ``await`` points), so they cannot be preempted
+    by another coroutine mid-execution.  For compound operations that span
+    multiple method calls (e.g. move + rename), callers should use ``self.lock``
+    to serialize access.  If multi-player support is added later, each player
+    will need their own ``GameState``.
     """
 
     def __init__(self, game_state: GameState):
         self.game_state = game_state
+        self.lock = asyncio.Lock()
         # O(1) lookup indexes — mirrors game_state.filesystem.nodes
         self._node_index: dict[str, FileNode] = {}
         self._children_index: dict[str | None, list[str]] = {}
@@ -277,13 +290,24 @@ class AppService:
             raise ValueError(f"File not found: {file_id}")
         return node
 
+    def _validate_parent_id(self, parent_id: str | None) -> None:
+        """Validate that parent_id refers to an existing directory."""
+        if parent_id is not None:
+            parent = self._node_index.get(parent_id)
+            if parent is None:
+                raise ValueError(f"Parent directory not found: {parent_id}")
+            if parent.type != "directory":
+                raise ValueError(f"Parent is not a directory: {parent_id}")
+
     def create_directory(self, data: dict[str, Any]) -> FileNode:
+        parent_id = data.get("parent_id")
+        self._validate_parent_id(parent_id)
         timestamp = datetime.now(tz=UTC)
         directory = FileNode(
             id=str(uuid.uuid4()),
             name=data.get("name", "Untitled Folder"),
             type="directory",
-            parent_id=data.get("parent_id"),
+            parent_id=parent_id,
             created_at=timestamp,
             updated_at=timestamp,
         )
@@ -292,12 +316,14 @@ class AppService:
         return directory
 
     def create_file(self, data: dict[str, Any]) -> FileNode:
+        parent_id = data.get("parent_id")
+        self._validate_parent_id(parent_id)
         timestamp = datetime.now(tz=UTC)
         file = FileNode(
             id=str(uuid.uuid4()),
             name=data.get("name", "untitled.txt"),
             type="file",
-            parent_id=data.get("parent_id"),
+            parent_id=parent_id,
             content=data.get("content", ""),
             mime_type=data.get("mime_type", "text/plain"),
             created_at=timestamp,
@@ -377,7 +403,12 @@ class AppService:
                 self.copy_file(child.id, copy.id)
         return copy
 
-    def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
+    def move_file(
+        self,
+        file_id: str,
+        target_parent_id: str,
+        new_name: str | None = None,
+    ) -> FileNode:
         file = self.get_file(file_id)  # O(1) fail-fast via index
         timestamp = datetime.now(tz=UTC)
         if file.type == "directory":
@@ -394,7 +425,7 @@ class AppService:
         self._unindex_node(file)
         updated = FileNode(
             id=file.id,
-            name=file.name,
+            name=new_name or file.name,
             type=file.type,
             parent_id=target_parent_id,
             content=file.content,
@@ -636,6 +667,15 @@ class AppService:
         return mime_types.get(extension.lower(), "application/octet-stream")
 
     def _read_file_content(self, file_path: Path, mime_type: str) -> str:
+        size = file_path.stat().st_size
+        if size > MAX_INITIAL_FILE_SIZE:
+            logger.warning(
+                "Skipping large file %s (%d bytes, limit %d)",
+                file_path,
+                size,
+                MAX_INITIAL_FILE_SIZE,
+            )
+            return f"[File too large: {file_path.name}]"
         if mime_type.startswith("text/") or mime_type in ["application/json"]:
             try:
                 with open(file_path, encoding="utf-8") as f:

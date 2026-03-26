@@ -228,6 +228,51 @@ class TestWebSocket:
 # ============================================================================
 
 
+class TestConnectionManager:
+    """Tests for ConnectionManager (fix #10)."""
+
+    def test_connect_and_disconnect(self):
+        from unittest.mock import AsyncMock
+
+        from recursive_neon.main import ConnectionManager
+
+        mgr = ConnectionManager()
+        ws = AsyncMock()
+        # Simulate connect (accept is async, but we test the set management)
+        mgr.active_connections.add(ws)
+        assert len(mgr.active_connections) == 1
+        mgr.disconnect(ws)
+        assert len(mgr.active_connections) == 0
+
+    def test_disconnect_missing_connection(self):
+        """Disconnecting a non-existent connection should not raise."""
+        from unittest.mock import AsyncMock
+
+        from recursive_neon.main import ConnectionManager
+
+        mgr = ConnectionManager()
+        ws = AsyncMock()
+        mgr.disconnect(ws)  # Should not raise
+        assert len(mgr.active_connections) == 0
+
+    async def test_broadcast_handles_failing_client(self):
+        """If one client errors during broadcast, others still receive."""
+        from unittest.mock import AsyncMock
+
+        from recursive_neon.main import ConnectionManager
+
+        mgr = ConnectionManager()
+        good_ws = AsyncMock()
+        bad_ws = AsyncMock()
+        bad_ws.send_json.side_effect = Exception("disconnected")
+
+        mgr.active_connections.add(good_ws)
+        mgr.active_connections.add(bad_ws)
+
+        await mgr.broadcast({"type": "test"})
+        good_ws.send_json.assert_called_once_with({"type": "test"})
+
+
 class TestLifespanNPCPersistence:
     """Regression test for Critical Issue #1: lifespan must not overwrite
     NPC state that was already loaded by create_production_container()."""

@@ -99,7 +99,7 @@ class OllamaClient(IOllamaClient):
     async def generate(
         self,
         prompt: str,
-        model: str = "phi3:mini",
+        model: str,
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 200,
@@ -152,7 +152,7 @@ class OllamaClient(IOllamaClient):
     async def generate_stream(
         self,
         prompt: str,
-        model: str = "phi3:mini",
+        model: str,
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 200,

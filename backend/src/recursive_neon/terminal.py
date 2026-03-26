@@ -205,7 +205,13 @@ class TerminalSessionManager:
         self._auto_save_task: asyncio.Task | None = None
 
     def create_session(self) -> TerminalSession:
-        """Create a new terminal session."""
+        """Create a new terminal session.
+
+        All sessions share the same ``ServiceContainer`` (and thus the same
+        ``GameState``).  Concurrent mutations are safe for individual method
+        calls (synchronous, no await points), but compound operations should
+        acquire ``container.app_service.lock`` to prevent interleaving.
+        """
         session_id = uuid.uuid4().hex[:12]
         shell = Shell(
             container=self._container,

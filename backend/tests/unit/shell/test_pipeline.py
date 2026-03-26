@@ -261,3 +261,33 @@ class TestCompletionAfterPipe:
         """After | grep, completion should show grep-specific completions."""
         items, _ = shell.get_completions_ext("cat foo | grep -")
         assert "-i" in items
+
+
+@pytest.mark.unit
+class TestPipeWithRedirectIntegration:
+    """End-to-end tests for multi-stage pipes with redirect (fix #16)."""
+
+    @pytest.mark.asyncio
+    async def test_echo_pipe_grep_redirect(self, shell, output):
+        """echo hello | grep hello > result.txt should write match to file."""
+        exit_code = await shell.execute_line("echo hello | grep hello > result.txt")
+        assert exit_code == 0
+
+        output.reset()
+        exit_code = await shell.execute_line("cat result.txt")
+        assert exit_code == 0
+        assert "hello" in output.text
+
+    @pytest.mark.asyncio
+    async def test_three_stage_pipe_with_redirect(self, shell, output):
+        """echo + cat + grep > file should chain correctly."""
+        await shell.execute_line('echo "alpha beta gamma" > source.txt')
+        exit_code = await shell.execute_line(
+            "cat source.txt | cat | grep alpha > match.txt"
+        )
+        assert exit_code == 0
+
+        output.reset()
+        exit_code = await shell.execute_line("cat match.txt")
+        assert exit_code == 0
+        assert "alpha" in output.text

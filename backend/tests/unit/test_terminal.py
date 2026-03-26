@@ -98,6 +98,14 @@ class TestQueueOutput:
         assert "\033[32m" in result
         assert "hi" in result
 
+    def test_styled_no_codes_returns_plain_text(self):
+        """styled() with no codes should return plain text (fix #5)."""
+        q: asyncio.Queue[dict] = asyncio.Queue()
+        out = QueueOutput(q)
+        result = out.styled("plain")
+        assert result == "plain"
+        assert "\033[" not in result
+
 
 # ============================================================================
 # WebSocketInput tests

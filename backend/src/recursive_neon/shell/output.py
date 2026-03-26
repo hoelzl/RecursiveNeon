@@ -124,3 +124,10 @@ class QueueOutput(Output):
 
     def error(self, text: str) -> None:
         self._queue.put_nowait({"type": "output", "text": f"{RED}{text}{RESET}\n"})
+
+    def styled(self, text: str, *codes: str) -> str:
+        """Wrap text in ANSI codes (always enabled for WebSocket transport)."""
+        if not codes:
+            return text
+        prefix = "".join(codes)
+        return f"{prefix}{text}{RESET}"

@@ -66,6 +66,7 @@ class NPCManager(INPCManager):
             ollama_port: Ollama server port (deprecated, use llm parameter instead)
         """
         self.npcs: dict[str, NPC] = {}
+        self._chat_locks: dict[str, asyncio.Lock] = {}
 
         # Support both new dependency injection and legacy initialization
         if llm is not None:
@@ -147,6 +148,12 @@ class NPCManager(INPCManager):
                 messages.append(AIMessage(content=msg["content"]))
         return messages
 
+    def _get_chat_lock(self, npc_id: str) -> asyncio.Lock:
+        """Return (or lazily create) an asyncio.Lock for the given NPC."""
+        if npc_id not in self._chat_locks:
+            self._chat_locks[npc_id] = asyncio.Lock()
+        return self._chat_locks[npc_id]
+
     async def chat(
         self, npc_id: str, message: str, player_id: str = "player_1"
     ) -> ChatResponse:
@@ -165,6 +172,11 @@ class NPCManager(INPCManager):
         if not npc:
             raise ValueError(f"NPC not found: {npc_id}")
 
+        async with self._get_chat_lock(npc_id):
+            return await self._chat_impl(npc, message)
+
+    async def _chat_impl(self, npc: NPC, message: str) -> ChatResponse:
+        """Inner chat implementation, called under per-NPC lock."""
         try:
             # Add player message to NPC's memory
             max_hist = settings.npc_max_conversation_history

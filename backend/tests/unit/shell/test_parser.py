@@ -1,8 +1,12 @@
-"""Tests for the command-line tokenizer."""
+"""Tests for the command-line tokenizer and parser helpers."""
 
 import pytest
 
-from recursive_neon.shell.parser import tokenize
+from recursive_neon.shell.parser import (
+    _skip_double_quoted,
+    _skip_single_quoted,
+    tokenize,
+)
 
 
 @pytest.mark.unit
@@ -75,3 +79,45 @@ class TestTokenize:
             "cat",
             "file with 'quotes'.txt",
         ]
+
+
+@pytest.mark.unit
+class TestSkipQuotedHelpers:
+    """Tests for shared quote-skipping helpers (fix #13)."""
+
+    def test_skip_double_simple(self):
+        i, closed = _skip_double_quoted('hello"rest', 0)
+        assert closed is True
+        assert 'hello"rest'[i - 1] == '"'
+
+    def test_skip_double_with_escape(self):
+        text = r'say \"hi\"" after'
+        # The content is: say \"hi\"
+        # Start scanning after the opening " (which isn't in text here)
+        i, closed = _skip_double_quoted(text, 0)
+        assert closed is True
+
+    def test_skip_double_unterminated(self):
+        i, closed = _skip_double_quoted("hello world", 0)
+        assert closed is False
+        assert i == len("hello world")
+
+    def test_skip_double_empty(self):
+        # Immediately finds closing "
+        i, closed = _skip_double_quoted('"rest', 0)
+        assert closed is True
+        assert i == 1
+
+    def test_skip_single_simple(self):
+        i, closed = _skip_single_quoted("hello'rest", 0)
+        assert closed is True
+
+    def test_skip_single_unterminated(self):
+        i, closed = _skip_single_quoted("hello world", 0)
+        assert closed is False
+        assert i == len("hello world")
+
+    def test_skip_single_empty(self):
+        i, closed = _skip_single_quoted("'rest", 0)
+        assert closed is True
+        assert i == 1

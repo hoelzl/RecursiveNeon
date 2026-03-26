@@ -68,3 +68,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Return the application settings singleton.
+
+    Enables future lazy initialization and simplifies test overrides.
+    Currently returns the module-level ``settings`` instance.
+    """
+    return settings

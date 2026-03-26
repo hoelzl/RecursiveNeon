@@ -14,6 +14,41 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+def _skip_double_quoted(text: str, i: int) -> tuple[int, bool]:
+    """Advance index past a ``"..."`` section starting after the opening ``"``.
+
+    Handles backslash escapes inside double quotes.  Returns ``(new_i, closed)``
+    where *new_i* is the index just past the closing ``"`` and *closed* is
+    ``True`` if a closing quote was found.
+
+    This is the single source of truth for double-quote skipping.  Used by
+    ``_last_pipe_segment``, ``parse_pipeline``, and ``get_current_argument``.
+    """
+    n = len(text)
+    while i < n and text[i] != '"':
+        if text[i] == "\\" and i + 1 < n:
+            i += 2
+        else:
+            i += 1
+    if i < n:
+        return i + 1, True  # skip closing quote
+    return i, False
+
+
+def _skip_single_quoted(text: str, i: int) -> tuple[int, bool]:
+    """Advance index past a ``'...'`` section starting after the opening ``'``.
+
+    Returns ``(new_i, closed)`` where *new_i* is the index just past the
+    closing ``'`` and *closed* is ``True`` if a closing quote was found.
+    """
+    n = len(text)
+    while i < n and text[i] != "'":
+        i += 1
+    if i < n:
+        return i + 1, True  # skip closing quote
+    return i, False
+
+
 @dataclass(slots=True)
 class Token:
     """A parsed token with quoting metadata.
@@ -191,23 +226,14 @@ def parse_pipeline(line: str) -> Pipeline:
             i += 2  # skip escaped char
 
         elif ch == '"':
-            i += 1
-            while i < n and line[i] != '"':
-                if line[i] == "\\" and i + 1 < n:
-                    i += 2
-                else:
-                    i += 1
-            if i >= n:
+            i, closed = _skip_double_quoted(line, i + 1)
+            if not closed:
                 raise ValueError("Unterminated double quote")
-            i += 1  # skip closing
 
         elif ch == "'":
-            i += 1
-            while i < n and line[i] != "'":
-                i += 1
-            if i >= n:
+            i, closed = _skip_single_quoted(line, i + 1)
+            if not closed:
                 raise ValueError("Unterminated single quote")
-            i += 1  # skip closing
 
         elif ch == "|":
             if redirect is not None:

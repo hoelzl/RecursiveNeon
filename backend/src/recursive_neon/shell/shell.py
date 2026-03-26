@@ -34,7 +34,13 @@ from recursive_neon.shell.output import (
     CapturedOutput,
     Output,
 )
-from recursive_neon.shell.parser import Redirect, parse_pipeline, tokenize
+from recursive_neon.shell.parser import (
+    Redirect,
+    _skip_double_quoted,
+    _skip_single_quoted,
+    parse_pipeline,
+    tokenize,
+)
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.codebreaker import register_codebreaker_program
@@ -111,9 +117,7 @@ def _last_pipe_segment(text: str) -> str:
     """Return text after the last unquoted ``|``.
 
     Used by completion to scope to the current pipeline segment.
-
-    NOTE: The quoting state machine here mirrors ``parser.parse_pipeline``
-    and ``parser.tokenize_ext``.  If quoting rules change, update all three.
+    Uses shared quote-skipping helpers from ``parser.py``.
     """
     last_pipe = -1
     i = 0
@@ -123,20 +127,9 @@ def _last_pipe_segment(text: str) -> str:
         if ch == "\\" and i + 1 < n:
             i += 2
         elif ch == '"':
-            i += 1
-            while i < n and text[i] != '"':
-                if text[i] == "\\" and i + 1 < n:
-                    i += 2
-                else:
-                    i += 1
-            if i < n:
-                i += 1
+            i, _ = _skip_double_quoted(text, i + 1)
         elif ch == "'":
-            i += 1
-            while i < n and text[i] != "'":
-                i += 1
-            if i < n:
-                i += 1
+            i, _ = _skip_single_quoted(text, i + 1)
         elif ch == "|":
             last_pipe = i
             i += 1

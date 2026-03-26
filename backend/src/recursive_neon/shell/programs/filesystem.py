@@ -357,16 +357,14 @@ async def prog_mv(ctx: ProgramContext) -> int:
             # Move into the directory
             ctx.services.app_service.move_file(src_node.id, dest_node.id)
         else:
-            # Destination is a file — rename (move to same parent with new name)
+            # Destination is a file — move + rename atomically
             parent, name = ctx.resolve_parent_and_name(dest_path)
-            ctx.services.app_service.move_file(src_node.id, parent.id)
-            ctx.services.app_service.update_file(src_node.id, {"name": name})
+            ctx.services.app_service.move_file(src_node.id, parent.id, new_name=name)
     except FileNotFoundError:
         # Destination doesn't exist — treat as rename
         try:
             parent, name = ctx.resolve_parent_and_name(dest_path)
-            ctx.services.app_service.move_file(src_node.id, parent.id)
-            ctx.services.app_service.update_file(src_node.id, {"name": name})
+            ctx.services.app_service.move_file(src_node.id, parent.id, new_name=name)
         except (FileNotFoundError, NotADirectoryError, ValueError) as e:
             ctx.stderr.error(f"mv: {e}")
             return 1

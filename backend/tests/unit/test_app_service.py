@@ -459,3 +459,99 @@ class TestFilesystemIndexConsistency:
         assert len(fresh._node_index) == len(fresh.game_state.filesystem.nodes)
         for node in fresh.game_state.filesystem.nodes:
             assert fresh._node_index[node.id] is node
+
+
+class TestParentIdValidation:
+    """Tests for parent_id validation in create_file/create_directory (fix #7)."""
+
+    @pytest.fixture
+    def svc(self):
+        svc = AppService(GameState())
+        svc.init_filesystem()
+        return svc
+
+    def test_create_file_invalid_parent_id(self, svc):
+        """Creating a file with a non-existent parent_id raises ValueError."""
+        with pytest.raises(ValueError, match="Parent directory not found"):
+            svc.create_file({"name": "orphan.txt", "parent_id": "nonexistent-uuid"})
+
+    def test_create_file_parent_is_file(self, svc):
+        """Creating a file under a file (not directory) raises ValueError."""
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file({"name": "parent.txt", "parent_id": root_id, "content": ""})
+        with pytest.raises(ValueError, match="Parent is not a directory"):
+            svc.create_file({"name": "child.txt", "parent_id": f.id})
+
+    def test_create_directory_invalid_parent_id(self, svc):
+        """Creating a directory with a non-existent parent_id raises ValueError."""
+        with pytest.raises(ValueError, match="Parent directory not found"):
+            svc.create_directory({"name": "orphan", "parent_id": "nonexistent-uuid"})
+
+    def test_create_directory_parent_is_file(self, svc):
+        """Creating a directory under a file raises ValueError."""
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file({"name": "parent.txt", "parent_id": root_id, "content": ""})
+        with pytest.raises(ValueError, match="Parent is not a directory"):
+            svc.create_directory({"name": "child", "parent_id": f.id})
+
+    def test_create_file_none_parent_id_ok(self, svc):
+        """Creating a file with parent_id=None is allowed (e.g. root node)."""
+        f = svc.create_file({"name": "rootfile.txt"})
+        assert f.parent_id is None
+
+
+class TestMoveFileWithRename:
+    """Tests for atomic move_file with new_name parameter (fix #6)."""
+
+    @pytest.fixture
+    def svc(self):
+        svc = AppService(GameState())
+        svc.init_filesystem()
+        return svc
+
+    def test_move_file_with_rename(self, svc):
+        """Move to a new parent with a new name in one operation."""
+        root_id = svc.game_state.filesystem.root_id
+        dir_a = svc.create_directory({"name": "A", "parent_id": root_id})
+        dir_b = svc.create_directory({"name": "B", "parent_id": root_id})
+        f = svc.create_file(
+            {"name": "old.txt", "parent_id": dir_a.id, "content": "data"}
+        )
+        moved = svc.move_file(f.id, dir_b.id, new_name="new.txt")
+        assert moved.parent_id == dir_b.id
+        assert moved.name == "new.txt"
+        assert moved.content == "data"
+        # Verify indexes
+        assert f.id in [n.id for n in svc.list_directory(dir_b.id)]
+        assert f.id not in [n.id for n in svc.list_directory(dir_a.id)]
+
+    def test_move_file_rename_only(self, svc):
+        """Move to the same parent with a new name (effectively a rename)."""
+        root_id = svc.game_state.filesystem.root_id
+        f = svc.create_file(
+            {"name": "old.txt", "parent_id": root_id, "content": "data"}
+        )
+        moved = svc.move_file(f.id, root_id, new_name="renamed.txt")
+        assert moved.parent_id == root_id
+        assert moved.name == "renamed.txt"
+
+    def test_move_file_no_rename(self, svc):
+        """Move without new_name keeps the original name."""
+        root_id = svc.game_state.filesystem.root_id
+        dir_a = svc.create_directory({"name": "A", "parent_id": root_id})
+        f = svc.create_file(
+            {"name": "keep.txt", "parent_id": root_id, "content": "data"}
+        )
+        moved = svc.move_file(f.id, dir_a.id)
+        assert moved.name == "keep.txt"
+
+
+class TestAppServiceLock:
+    """Verify the concurrency lock exists (fix #1)."""
+
+    def test_lock_attribute_exists(self):
+        import asyncio
+
+        svc = AppService(GameState())
+        assert hasattr(svc, "lock")
+        assert isinstance(svc.lock, asyncio.Lock)

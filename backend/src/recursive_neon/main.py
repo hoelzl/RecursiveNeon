@@ -208,26 +208,25 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
 
 
 class ConnectionManager:
-    """Manages WebSocket connections"""
+    """Manages WebSocket connections."""
 
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        self.active_connections: set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections.add(websocket)
         logger.info(f"Client connected. Total: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+        self.active_connections.discard(websocket)
         logger.info(f"Client disconnected. Total: {len(self.active_connections)}")
 
     async def send_personal(self, message: dict, websocket: WebSocket):
         await websocket.send_json(message)
 
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception as e:
@@ -365,6 +364,8 @@ async def terminal_websocket(websocket: WebSocket):
             task.cancel()
         # Re-raise exceptions from completed tasks (except disconnect)
         for task in done:
+            if task.cancelled():
+                continue
             exc = task.exception()
             if exc is not None and not isinstance(exc, WebSocketDisconnect):
                 raise exc

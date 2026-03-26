@@ -116,9 +116,11 @@ def quote_path(path: str) -> str:
 def get_current_argument(text_before_cursor: str) -> tuple[int, str]:
     """Parse text before the cursor to find the current incomplete argument.
 
-    Walks the text using the same quoting rules as our tokenizer, tracking
-    where each argument starts.  When we reach the end, whatever we've
-    accumulated is the current (possibly incomplete) argument.
+    Walks the text using the same quoting rules as the tokenizer (see
+    ``parser._skip_double_quoted`` / ``parser._skip_single_quoted``),
+    tracking where each argument starts.  Unlike the skip helpers, this
+    function must also collect the unquoted content, so it uses inline
+    loops instead of the shared helpers.
 
     Returns:
         ``(arg_start_pos, unquoted_content)`` where *arg_start_pos* is the

@@ -55,8 +55,13 @@ async def prog_clear(ctx: ProgramContext) -> int:
 
 
 def _expand_vars(text: str, env: dict[str, str]) -> str:
-    """Expand $VAR references inline. Unset variables stay as $VAR."""
-    return re.sub(r"\$(\w+)", lambda m: env.get(str(m.group(1)), m.group(0)), text)
+    """Expand $VAR and ${VAR} references inline. Unset variables stay as-is."""
+
+    def _replace(m: re.Match[str]) -> str:
+        name: str = m.group(1) or m.group(2) or ""
+        return env.get(name, m.group(0))
+
+    return re.sub(r"\$\{(\w+)\}|\$(\w+)", _replace, text)
 
 
 async def prog_echo(ctx: ProgramContext) -> int:
@@ -91,6 +96,8 @@ async def prog_hostname(ctx: ProgramContext) -> int:
 
 async def prog_date(ctx: ProgramContext) -> int:
     """Print current date and time."""
+    # Intentionally use naive local time (not UTC) to match real `date` behavior.
+    # The game simulates a local terminal — users expect local wall-clock time.
     ctx.stdout.writeln(datetime.now().strftime("%a %b %d %H:%M:%S %Y"))
     return 0
 

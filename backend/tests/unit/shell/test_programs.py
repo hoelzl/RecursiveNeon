@@ -13,6 +13,7 @@ from recursive_neon.shell.programs.filesystem import (
     prog_touch,
 )
 from recursive_neon.shell.programs.utility import (
+    _expand_vars,
     prog_echo,
     prog_env,
     prog_hostname,
@@ -350,3 +351,76 @@ class TestHostname:
         result = await prog_hostname(ctx)
         assert result == 0
         assert output.text.strip() == "test-host"
+
+
+@pytest.mark.unit
+class TestExpandVarsBrace:
+    """Tests for ${VAR} syntax in _expand_vars (fix #12)."""
+
+    def test_brace_syntax(self):
+        assert _expand_vars("${HOME}/foo", {"HOME": "/root"}) == "/root/foo"
+
+    def test_mixed_syntax(self):
+        result = _expand_vars("$USER at ${HOME}", {"USER": "neo", "HOME": "/root"})
+        assert result == "neo at /root"
+
+    def test_unset_brace_preserved(self):
+        assert _expand_vars("${UNDEFINED}", {}) == "${UNDEFINED}"
+
+    def test_brace_and_dollar_same_var(self):
+        env = {"X": "val"}
+        assert _expand_vars("$X ${X}", env) == "val val"
+
+    def test_empty_env(self):
+        assert _expand_vars("${A} $B", {}) == "${A} $B"
+
+
+@pytest.mark.unit
+class TestEchoBraceExpansion:
+    """Integration test for echo with ${VAR} syntax."""
+
+    async def test_echo_brace_var(self, make_ctx, output):
+        ctx = make_ctx(["echo", "${USER}"])
+        result = await prog_echo(ctx)
+        assert result == 0
+        assert output.text.strip() == "test"
+
+    async def test_echo_mixed_vars(self, make_ctx, output):
+        ctx = make_ctx(["echo", "${USER}@$HOSTNAME"])
+        result = await prog_echo(ctx)
+        assert result == 0
+        assert output.text.strip() == "test@test-host"
+
+
+@pytest.mark.unit
+class TestTouchErrors:
+    """Tests for error paths in prog_touch (fix #16)."""
+
+    async def test_touch_not_a_directory_parent(self, make_ctx, test_container, output):
+        """touch existingfile/newfile should fail with NotADirectoryError."""
+        root_id = test_container.game_state.filesystem.root_id
+        test_container.app_service.create_file(
+            {"name": "existingfile", "parent_id": root_id, "content": ""}
+        )
+        ctx = make_ctx(["touch", "existingfile/newfile"])
+        result = await prog_touch(ctx)
+        assert result == 1
+        assert output.error_text
+
+
+@pytest.mark.unit
+class TestMkdirErrors:
+    """Tests for error paths in prog_mkdir (fix #16)."""
+
+    async def test_mkdir_p_non_directory_segment(
+        self, make_ctx, test_container, output
+    ):
+        """mkdir -p existingfile/subdir should fail when segment is a file."""
+        root_id = test_container.game_state.filesystem.root_id
+        test_container.app_service.create_file(
+            {"name": "blocker", "parent_id": root_id, "content": ""}
+        )
+        ctx = make_ctx(["mkdir", "-p", "blocker/subdir"])
+        result = await prog_mkdir(ctx)
+        assert result == 1
+        assert output.error_text

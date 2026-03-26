@@ -443,3 +443,60 @@ class TestNPCManagerBackwardCompatibility:
             # Should have created LLM internally
             assert manager.llm is mock_llm
             mock_ollama.assert_called_once()
+
+
+class TestNPCChatConcurrency:
+    """Tests for per-NPC chat lock (fix #9)."""
+
+    async def test_concurrent_chat_serialized(self):
+        """Two concurrent chat() calls for the same NPC produce clean history."""
+        import asyncio
+
+        from langchain_core.messages import AIMessage
+
+        call_count = 0
+
+        def slow_invoke(messages):
+            nonlocal call_count
+            call_count += 1
+            return AIMessage(content=f"Response {call_count}")
+
+        mock_llm = Mock()
+        mock_llm.invoke = slow_invoke
+
+        manager = NPCManager(llm=mock_llm)
+        npc = NPC(
+            id="concurrent_test",
+            name="Conc",
+            personality=NPCPersonality.FRIENDLY,
+            role=NPCRole.INFORMANT,
+            background="bg",
+            occupation="Tester",
+            location="Lab",
+            greeting="Hi",
+            conversation_style="casual",
+        )
+        manager.register_npc(npc)
+
+        # Fire two concurrent chat calls
+        r1, r2 = await asyncio.gather(
+            manager.chat("concurrent_test", "Hello 1"),
+            manager.chat("concurrent_test", "Hello 2"),
+        )
+
+        # Both should succeed
+        assert r1.message.startswith("Response")
+        assert r2.message.startswith("Response")
+
+        # History should alternate user/assistant cleanly
+        hist = npc.memory.conversation_history
+        for i in range(0, len(hist) - 1, 2):
+            assert hist[i].role == "user"
+            assert hist[i + 1].role == "assistant"
+
+    def test_chat_locks_dict_exists(self):
+        """NPCManager has a _chat_locks dict."""
+        mock_llm = Mock()
+        manager = NPCManager(llm=mock_llm)
+        assert hasattr(manager, "_chat_locks")
+        assert isinstance(manager._chat_locks, dict)
