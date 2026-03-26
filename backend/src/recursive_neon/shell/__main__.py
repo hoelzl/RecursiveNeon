@@ -6,16 +6,6 @@ import asyncio
 import contextlib
 import logging
 import sys
-import warnings
-
-# Suppress pydantic.v1 warning on Python 3.14+ (langchain-core imports it internally).
-# TECH-DEBT: Remove once langchain-core drops the pydantic.v1 import.
-# Track: docs/TECH_DEBT.md #TD-001
-warnings.filterwarnings(
-    "ignore",
-    message=r"Core Pydantic V1 functionality isn't compatible with Python 3\.14",
-    category=UserWarning,
-)
 
 from recursive_neon.config import settings
 from recursive_neon.dependencies import ServiceFactory

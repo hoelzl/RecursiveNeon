@@ -169,10 +169,6 @@ ignore = [
 ]
 "src/recursive_neon/main.py" = [
     "B008",   # Depends() in defaults is standard FastAPI pattern
-    "E402",   # warnings.filterwarnings must run before langchain imports (TD-001)
-]
-"src/recursive_neon/shell/__main__.py" = [
-    "E402",   # warnings.filterwarnings must run before langchain imports (TD-001)
 ]
 
 [tool.ruff.lint.isort]

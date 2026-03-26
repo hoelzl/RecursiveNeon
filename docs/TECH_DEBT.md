@@ -9,16 +9,21 @@ Check this file during dependency upgrades.
 
 **Added**: 2026-03-24
 **Affected files**:
-- `backend/src/recursive_neon/shell/__main__.py` — `warnings.filterwarnings` block
-- `backend/src/recursive_neon/main.py` — `warnings.filterwarnings` block
-- `backend/pyproject.toml` — `E402` per-file-ignores for both entry points
+- `backend/src/recursive_neon/__init__.py` — `warnings.filterwarnings` block
 
 **Problem**: `langchain-core` imports `pydantic.v1.fields` at module level
 (`langchain_core/_api/deprecation.py:25`), which emits a `UserWarning` on
 Python 3.14 because Pydantic V1 compatibility isn't supported on 3.14+.
 
-**Workaround**: `warnings.filterwarnings("ignore", ...)` before any langchain
-imports in both entry points.
+The filter must live in `recursive_neon/__init__.py` (the package root)
+because `python -m recursive_neon.shell` loads the `shell` sub-package
+**before** `shell/__main__.py` runs, and the transitive import chain
+(`shell → services → npc_manager → langchain_core`) triggers the warning
+during that early package load.
+
+**Workaround**: `warnings.filterwarnings("ignore", ...)` in
+`recursive_neon/__init__.py`, which is the first module loaded for any
+entry point.
 
 **Remove when**: `langchain-core` drops the `pydantic.v1` import, **or**
 `pydantic >= 2.13` ships stable (which backports 3.14 support into the V1
@@ -29,8 +34,7 @@ python -W all -m recursive_neon.shell
 ```
 
 If no `pydantic.v1` warning appears, delete the `warnings.filterwarnings`
-blocks, remove the `E402` per-file-ignores from `pyproject.toml`, and delete
-this entry.
+block from `__init__.py` and delete this entry.
 
 **Upstream refs**:
 - https://github.com/langchain-ai/langchain/issues/33926
