@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-5 complete. Phase 6 (text editor + TUI apps) next. Browser GUI deferred to Phase 7.
+> **Status**: Phases 0-5 complete. Phase 6a-1 (buffer primitives) and 6a-2 (undo + kill ring) complete. Phase 6a-3 (command system + keymaps) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -357,18 +357,68 @@ Completed:
 **Goal**: A capable TUI text editor ("neon-edit") and additional TUI apps that leverage it. The editor should work both in the terminal and (later) as a GUI app, making it a key investment before the browser phase.
 
 #### 6a. Text editor ("neon-edit")
-A lightweight Emacs-inspired TUI editor that the player can extend with Python scripts. This is a substantial feature — design carefully before implementing.
+A lightweight Emacs-inspired TUI editor. The editor is structured as a set of Python classes and functions for editing text, wrapped by a thin TUI shell. The architecture draws from the Zwei → Hemlock → GNU Emacs lineage:
 
-Tasks:
-1. **Core editor model** — buffer abstraction (text + cursor + selection + undo), gap buffer or rope for efficient editing.
-   *Design needed*: the editor model should be independent of the TUI framework so it can later be driven by a GUI. Consider a model-view split: `EditorBuffer` (pure logic, testable) + `EditorView` (TuiApp rendering).
-2. **Basic editing** — cursor movement, insert/delete, line operations, scrolling, word wrap or horizontal scroll.
-3. **Keybindings** — Emacs-like defaults (C-f/b/n/p for movement, C-a/e for line start/end, C-k for kill line, C-y for yank, C-x C-s for save, C-x C-c for quit). Keybinding table should be configurable.
-4. **File I/O** — open/save virtual filesystem files. `neon-edit <path>` shell command.
-5. **Python extension API** — player can write `.py` scripts that register commands, keybindings, or modes. Scripts run in a sandboxed environment with access to the editor buffer API.
-   *Design needed*: how much of Emacs do we replicate? Start minimal (buffer, basic commands, configurable keybindings). Extension API can grow iteratively. Security boundary: scripts access the virtual filesystem, not the real one.
-6. **Syntax highlighting** — at minimum for Python and the game's own scripting. Can start with a regex-based highlighter.
-7. Tests for buffer operations, cursor movement, keybindings, file I/O round-trips.
+- **Text storage**: List of Python strings (one per line), inspired by Zwei/Hemlock's linked-list-of-lines model. Newlines are implicit between lines.
+- **Positions**: `Mark(line, col, kind)` following Hemlock — with left-inserting / right-inserting kinds for correct behavior during insertions.
+- **Commands**: Named functions with prefix arg (Hemlock's `defcommand` model), registered in a command table.
+- **Key binding**: Layered keymaps with inheritance (Hemlock ordering: buffer > minor modes > major mode > global). Prefix keys (C-x) are sub-keymaps.
+- **Undo**: Emacs-style unlimited undo list with boundary markers between command groups. Undo is itself undoable.
+- **Kill ring**: List of strings with yank pointer (Emacs model). Consecutive kills merge.
+
+The implementation is split into incremental sub-phases:
+
+##### 6a-1. Buffer Primitives — COMPLETE
+Pure data model — no TUI, no keybindings, just text manipulation and movement.
+
+- `Buffer` class: `name`, `lines: list[str]`, `point: Mark`, `mark: Mark | None`, `modified: bool`, `filepath: str | None`
+- `Mark` class: `line: int`, `col: int`, `kind: str` (temporary / left-inserting / right-inserting)
+- Primitive operations: `insert_char`, `insert_string`, `delete_char_forward`, `delete_char_backward`, `delete_region`, `get_region_text`
+- Mark maintenance: all marks adjust correctly when text is inserted/deleted (left-inserting stays left of new text, right-inserting stays right)
+- Line splitting/joining: Enter splits a line, backspace at col 0 joins with previous
+- Point movement: `forward_char`, `backward_char`, `forward_line`, `backward_line`, `beginning_of_line`, `end_of_line`, `beginning_of_buffer`, `end_of_buffer`
+- Thorough tests for all primitives and mark behavior
+
+##### 6a-2. Undo + Kill Ring — COMPLETE
+Non-destructive editing support.
+
+- Undo list (Emacs-style): `UndoInsert`, `UndoDelete`, `UndoBoundary` entries. Primitives push undo records automatically. Undo walks backwards through one command group. Undo itself is undoable.
+- Kill ring: `push`, `append_to_top` (for consecutive kills), `yank`, `rotate`. Last-command-type tracking for kill merging.
+- Kill commands: `kill_line` (C-k), `kill_region` (C-w), `kill_word_forward` (M-d)
+- Yank: `yank` (C-y), `yank_pop` (M-y)
+- Tests for undo/redo round-trips, kill merging, yank rotation
+
+##### 6a-3. Command System + Keymaps
+Dispatch layer connecting keystrokes to buffer operations.
+
+- `Command` dataclass: `name`, `function(editor, prefix)`, `doc`
+- Command registry: `@defcommand` decorator, `COMMANDS` dict
+- `Keymap` class: `bindings: dict[tuple[str,...], str | Keymap]`, `parent` for inheritance. Prefix keys (C-x) are sub-keymaps.
+- Keymap resolution: global → major mode → minor modes → buffer-local (Hemlock ordering)
+- `Editor` class: owns buffer list, current buffer, global keymap, command dispatch loop
+- Prefix argument (C-u): repeat count for commands
+- Register all 6a-1/6a-2 operations as named commands with Emacs keybindings
+- Tests for keymap lookup, prefix keys, command dispatch
+
+##### 6a-4. TUI View + Shell Integration
+The thin shell that renders the editor in the terminal.
+
+- `EditorView` (TuiApp implementation): renders buffer text, status line, cursor position into ScreenBuffer. Scrolling/viewport tracking.
+- Status line: filename, modified flag, line:col, mode name (Emacs-style modeline)
+- Key translation: map TUI key events to editor key notation (`"C-f"`, `"M-x"`, `"C-x C-s"`)
+- `neon-edit <path>` shell command: opens file from virtual filesystem
+- File I/O: load from / save to virtual filesystem FileNodes
+- Minibuffer (stretch): single-line input for save-as, M-x command-by-name
+- Tests for rendering, scrolling, file round-trips, shell integration
+
+##### 6a-5. Modes (optional, after 6a-4 if warranted)
+- `Mode` dataclass: `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`
+- Fundamental mode (default), Text mode as examples
+- Buffer-local variable overrides
+
+##### Future 6a extensions (not yet scheduled)
+- Python extension API (player scripts register commands/keybindings/modes in sandboxed env)
+- Syntax highlighting (regex-based, at minimum for Python)
 
 #### 6b. Improved notes integration
 With an editor available, the notes workflow improves dramatically.

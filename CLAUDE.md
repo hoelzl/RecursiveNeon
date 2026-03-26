@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-5 complete. Phase 6 (text editor + TUI apps) next.
+**Status**: V2 reboot. Phases 0-5 complete. Phase 6a-1 + 6a-2 (buffer, undo, kill ring) complete. Phase 6a-3 (command system + keymaps) next.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -72,6 +72,7 @@ cd backend
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
+- Editor core: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark` — pure text model, no I/O)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)
 - Backend main: `backend/src/recursive_neon/main.py` (includes `/ws/terminal` endpoint)
