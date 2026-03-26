@@ -7,6 +7,7 @@ Subcommands: lists, list, add, done, undone, delete.
 from __future__ import annotations
 
 from recursive_neon.models.app_models import TaskList
+from recursive_neon.shell.completion import CompletionContext, complete_choices
 from recursive_neon.shell.output import BOLD, CYAN, DIM, GREEN, RED, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -251,6 +252,62 @@ async def _task_delete(ctx: ProgramContext) -> int:
     return 0
 
 
+_TASK_SUBCOMMANDS = [
+    "lists",
+    "list",
+    "ls",
+    "add",
+    "new",
+    "done",
+    "undone",
+    "delete",
+    "rm",
+]
+_TASK_REF_SUBCOMMANDS = {"done", "undone", "delete", "rm"}
+_TASK_LIST_NAME_SUBCOMMANDS = {"list", "ls"}
+
+
+def _complete_task(ctx: CompletionContext) -> list[str]:
+    if ctx.arg_index == 1:
+        return complete_choices(_TASK_SUBCOMMANDS, ctx.current)
+    if ctx.arg_index == 2 and len(ctx.args) >= 2:
+        sub = ctx.args[1]
+        if sub in _TASK_LIST_NAME_SUBCOMMANDS:
+            return _complete_task_list_names(ctx)
+        if sub in _TASK_REF_SUBCOMMANDS:
+            return _complete_task_refs(ctx)
+        if sub in ("add", "new") and ctx.current.startswith("-"):
+            return complete_choices(["--list", "-l"], ctx.current)
+    # --list flag completion for add/done/undone/delete
+    if len(ctx.args) >= 2 and ctx.current.startswith("-"):
+        return complete_choices(["--list", "-l"], ctx.current)
+    # After --list flag, complete list names
+    if len(ctx.args) >= 3 and ctx.args[-1] in ("--list", "-l"):
+        return _complete_task_list_names(ctx)
+    return []
+
+
+def _complete_task_list_names(ctx: CompletionContext) -> list[str]:
+    lists = ctx.services.app_service.get_task_lists()
+    return sorted(tl.name for tl in lists if tl.name.startswith(ctx.current))
+
+
+def _complete_task_refs(ctx: CompletionContext) -> list[str]:
+    # Determine which task list is active
+    lists = ctx.services.app_service.get_task_lists()
+    tl = None
+    if len(lists) == 1:
+        tl = lists[0]
+    else:
+        for candidate in lists:
+            if candidate.name.lower() == DEFAULT_LIST_NAME:
+                tl = candidate
+                break
+    if tl is None:
+        return []
+    return [str(i) for i, _ in enumerate(tl.tasks, 1) if str(i).startswith(ctx.current)]
+
+
 def register_task_program(registry: ProgramRegistry) -> None:
     """Register the task program."""
     registry.register_fn(
@@ -267,4 +324,5 @@ def register_task_program(registry: ProgramRegistry) -> None:
         "  done <ref>         Mark task as complete\n"
         "  undone <ref>       Mark task as incomplete\n"
         "  delete <ref>       Delete a task",
+        completer=_complete_task,
     )

@@ -10,6 +10,11 @@ import re
 from fnmatch import fnmatch
 
 from recursive_neon.models.app_models import FileNode
+from recursive_neon.shell.completion import (
+    CompletionContext,
+    complete_flags_or_paths,
+    complete_paths,
+)
 from recursive_neon.shell.output import CYAN, DIM, GREEN, MAGENTA
 from recursive_neon.shell.path_resolver import get_node_path
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
@@ -534,6 +539,48 @@ async def prog_write(ctx: ProgramContext) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Completers
+# ---------------------------------------------------------------------------
+
+
+def _complete_ls(ctx: CompletionContext) -> list[str]:
+    return complete_flags_or_paths(["-l", "-a", "-la", "-al"], ctx)
+
+
+def _complete_mkdir(ctx: CompletionContext) -> list[str]:
+    return complete_flags_or_paths(["-p"], ctx, dirs_only=True)
+
+
+def _complete_rm(ctx: CompletionContext) -> list[str]:
+    return complete_flags_or_paths(["-r", "-R", "-rf"], ctx)
+
+
+def _complete_grep(ctx: CompletionContext) -> list[str]:
+    flags = ["-i", "-r", "-n"]
+    if ctx.current.startswith("-"):
+        return sorted(f for f in flags if f.startswith(ctx.current))
+    # First non-flag arg is the pattern (no completion)
+    non_flag_count = sum(1 for a in ctx.args[1:] if not a.startswith("-"))
+    if non_flag_count == 0:
+        return []
+    return complete_paths(ctx)
+
+
+def _complete_find(ctx: CompletionContext) -> list[str]:
+    if ctx.current.startswith("-"):
+        return ["-name"]
+    return complete_paths(ctx, dirs_only=True)
+
+
+def _complete_write(ctx: CompletionContext) -> list[str]:
+    # Only the first non-flag arg (the file path) gets completion
+    non_flag_count = sum(1 for a in ctx.args[1:] if not a.startswith("-"))
+    if non_flag_count == 0:
+        return complete_paths(ctx)
+    return []
+
+
 def register_filesystem_programs(registry: ProgramRegistry) -> None:
     """Register all filesystem programs."""
     registry.register_fn("pwd", prog_pwd, "Print current working directory")
@@ -547,6 +594,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Options:\n"
         "  -l    Long listing format (type, permissions, timestamp)\n"
         "  -a    Show hidden entries (names starting with .)",
+        completer=_complete_ls,
     )
     registry.register_fn(
         "cat",
@@ -556,6 +604,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Usage: cat FILE...\n"
         "\n"
         "Concatenate and print the contents of one or more files.",
+        completer=lambda ctx: complete_paths(ctx),
     )
     registry.register_fn(
         "mkdir",
@@ -566,6 +615,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "\n"
         "Options:\n"
         "  -p    Create parent directories as needed",
+        completer=_complete_mkdir,
     )
     registry.register_fn(
         "touch",
@@ -575,6 +625,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Usage: touch FILE...\n"
         "\n"
         "Create each FILE if it does not exist, or update its timestamp.",
+        completer=lambda ctx: complete_paths(ctx),
     )
     registry.register_fn(
         "rm",
@@ -585,6 +636,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "\n"
         "Options:\n"
         "  -r, -R    Remove directories and their contents recursively",
+        completer=_complete_rm,
     )
     registry.register_fn(
         "cp",
@@ -594,6 +646,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Usage: cp SOURCE DEST\n"
         "\n"
         "Copy SOURCE to DEST. If DEST is a directory, copy into it.",
+        completer=lambda ctx: complete_paths(ctx),
     )
     registry.register_fn(
         "mv",
@@ -603,6 +656,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "Usage: mv SOURCE DEST\n"
         "\n"
         "Move SOURCE to DEST. If DEST is a directory, move into it.",
+        completer=lambda ctx: complete_paths(ctx),
     )
     registry.register_fn(
         "grep",
@@ -616,6 +670,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "\n"
         "Options:\n"
         "  -i    Case-insensitive matching",
+        completer=_complete_grep,
     )
     registry.register_fn(
         "find",
@@ -626,6 +681,7 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "\n"
         "Find files whose name matches PATTERN (glob). Searches recursively\n"
         "from PATH (default: current directory).",
+        completer=_complete_find,
     )
     registry.register_fn(
         "write",
@@ -636,4 +692,5 @@ def register_filesystem_programs(registry: ProgramRegistry) -> None:
         "\n"
         "Write CONTENT to FILE (creates if needed, overwrites if exists).\n"
         "Without CONTENT, creates an empty file.",
+        completer=_complete_write,
     )

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 
 from recursive_neon.models.npc import NPC
+from recursive_neon.shell.completion import CompletionContext
 from recursive_neon.shell.output import BOLD, CYAN, DIM, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -164,6 +165,13 @@ async def _typing_spinner(ctx: ProgramContext, name: str) -> None:
         pass
 
 
+def _complete_chat(ctx: CompletionContext) -> list[str]:
+    if ctx.arg_index == 1:
+        npcs = ctx.services.npc_manager.list_npcs()
+        return sorted(n.id for n in npcs if n.id.startswith(ctx.current))
+    return []
+
+
 def register_chat_program(registry: ProgramRegistry) -> None:
     """Register the chat program."""
     registry.register(
@@ -175,4 +183,5 @@ def register_chat_program(registry: ProgramRegistry) -> None:
         "\n"
         "With no argument, list available NPCs. With NPC_ID, start a\n"
         "conversation. Type /exit or Ctrl+D to disconnect.",
+        completer=_complete_chat,
     )

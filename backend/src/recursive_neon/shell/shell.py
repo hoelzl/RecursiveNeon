@@ -13,7 +13,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Protocol
 
-from recursive_neon.shell.builtins import BUILTIN_HELP, get_builtins
+from recursive_neon.shell.builtins import BUILTIN_COMPLETERS, BUILTIN_HELP, get_builtins
+from recursive_neon.shell.completion import (
+    CompletionContext,
+    CompletionFn,
+    complete_choices,
+    complete_paths,
+    get_current_argument,
+    quote_path,
+)
 from recursive_neon.shell.output import (
     BOLD,
     CYAN,
@@ -37,6 +45,10 @@ from recursive_neon.shell.session import ShellSession
 if TYPE_CHECKING:
     from recursive_neon.dependencies import ServiceContainer
     from recursive_neon.shell.tui import TuiApp
+
+# Backward-compatible aliases — tests import these from here.
+_get_current_argument = get_current_argument
+_quote_path = quote_path
 
 # A factory that creates a ``run_tui`` callback for a ProgramContext.
 # Set by the terminal session or local CLI to enable TUI apps.
@@ -93,11 +105,7 @@ WELCOME_BANNER = """\
 """
 
 
-def _make_shell_completer(
-    builtin_names: list[str],
-    program_registry: ProgramRegistry,
-    session: ShellSession,
-):
+def _make_shell_completer(shell: Shell):
     """Create a prompt_toolkit Completer for the shell.
 
     Factory function so the prompt_toolkit import stays lazy — only
@@ -108,154 +116,16 @@ def _make_shell_completer(
     class ShellCompleter(Completer):
         """Tab completion for the shell.
 
-        Completes command names (builtins + programs) for the first word,
-        and virtual filesystem paths for subsequent words.
-
-        Uses our own quoting-aware argument parser instead of prompt_toolkit's
-        word detection, so that paths like "My Folder"/a are handled correctly.
+        Delegates to per-command completers registered on the Shell.
+        Falls back to filesystem path completion for unknown commands.
         """
 
         def get_completions(self, document, complete_event):
-            text = document.text_before_cursor
-
-            arg_start, raw_content = _get_current_argument(text)
-            arg_text_len = len(text) - arg_start
-            is_first_arg = not text[:arg_start].strip()
-
-            if is_first_arg:
-                all_commands = builtin_names + program_registry.list_programs()
-                for name in sorted(set(all_commands)):
-                    if name.startswith(raw_content):
-                        yield Completion(name, start_position=-arg_text_len)
-            else:
-                yield from self._path_completions(raw_content, arg_text_len)
-
-        def _path_completions(self, raw_path: str, replace_len: int):
-            app_svc = session.container.app_service
-
-            if "/" in raw_path:
-                last_slash = raw_path.rfind("/")
-                dir_part = raw_path[: last_slash + 1] or "/"
-                prefix = raw_path[last_slash + 1 :]
-            else:
-                dir_part = ""
-                prefix = raw_path
-
-            try:
-                if dir_part:
-                    dir_node = session.resolve_path(dir_part)
-                else:
-                    dir_node = app_svc.get_file(session.cwd_id)
-            except (FileNotFoundError, NotADirectoryError, ValueError):
-                return
-
-            if dir_node.type != "directory":
-                return
-
-            children = app_svc.list_directory(dir_node.id)
-            for child in sorted(children, key=lambda n: n.name.lower()):
-                if child.name.lower().startswith(prefix.lower()):
-                    suffix = "/" if child.type == "directory" else ""
-                    display_name = child.name + suffix
-                    full_path = dir_part + child.name + suffix
-                    completion_text = _quote_path(full_path)
-
-                    yield Completion(
-                        completion_text,
-                        start_position=-replace_len,
-                        display=display_name,
-                    )
+            items, replace_len = shell.get_completions_ext(document.text_before_cursor)
+            for item in items:
+                yield Completion(item, start_position=-replace_len)
 
     return ShellCompleter()
-
-
-def _get_current_argument(text_before_cursor: str) -> tuple[int, str]:
-    """Parse text before the cursor to find the current incomplete argument.
-
-    Walks the text using the same quoting rules as our tokenizer, tracking
-    where each argument starts. When we reach the end, whatever we've
-    accumulated is the current (possibly incomplete) argument.
-
-    Returns:
-        (arg_start_pos, unquoted_content) where arg_start_pos is the index
-        in text_before_cursor where the current argument starts, and
-        unquoted_content is the argument with quotes/escapes resolved.
-    """
-    i = 0
-    n = len(text_before_cursor)
-    arg_start = 0
-    current_raw: list[str] = []
-
-    while i < n:
-        ch = text_before_cursor[i]
-
-        if ch == "\\" and i + 1 < n:
-            current_raw.append(text_before_cursor[i + 1])
-            i += 2
-
-        elif ch == '"':
-            i += 1
-            while i < n and text_before_cursor[i] != '"':
-                if text_before_cursor[i] == "\\" and i + 1 < n:
-                    current_raw.append(text_before_cursor[i + 1])
-                    i += 2
-                else:
-                    current_raw.append(text_before_cursor[i])
-                    i += 1
-            if i < n:
-                i += 1  # skip closing quote
-            # If unclosed, that's fine — we're mid-argument
-
-        elif ch == "'":
-            i += 1
-            while i < n and text_before_cursor[i] != "'":
-                current_raw.append(text_before_cursor[i])
-                i += 1
-            if i < n:
-                i += 1  # skip closing quote
-
-        elif ch in (" ", "\t"):
-            # Whitespace — end of current token, start a new one
-            current_raw = []
-            i += 1
-            while i < n and text_before_cursor[i] in (" ", "\t"):
-                i += 1
-            arg_start = i
-
-        else:
-            current_raw.append(ch)
-            i += 1
-
-    return arg_start, "".join(current_raw)
-
-
-# Characters that require quoting when they appear in a filename
-_SHELL_SPECIAL = set(" \t'\"\\")
-
-
-def _quote_path(path: str) -> str:
-    """Quote a path for shell insertion, quoting individual segments as needed.
-
-    Only segments containing special characters get quoted. The /
-    separators stay unquoted so the path looks natural:
-        My Folder/another file.txt  →  "My Folder"/"another file.txt"
-        Documents/readme.txt        →  Documents/readme.txt
-    """
-    trailing_slash = path.endswith("/")
-    segments = [s for s in path.split("/") if s]
-    quoted: list[str] = []
-    for seg in segments:
-        if any(ch in _SHELL_SPECIAL for ch in seg):
-            escaped = seg.replace("\\", "\\\\").replace('"', '\\"')
-            quoted.append(f'"{escaped}"')
-        else:
-            quoted.append(seg)
-    result = "/".join(quoted)
-    if path.startswith("/"):
-        result = "/" + result
-    if trailing_slash and not result.endswith("/"):
-        result += "/"
-    return result or "/"
 
 
 class Shell:
@@ -294,6 +164,21 @@ class Shell:
             for name in self.programs.list_programs()
         }
         self._builtin_help: dict[str, str] = dict(BUILTIN_HELP)
+
+        # Builtin completers
+        self._builtin_completers: dict[str, CompletionFn] = dict(BUILTIN_COMPLETERS)
+
+        # Register `help` completer now that all command names are known
+        all_cmd_names = sorted(set(list(self.builtins) + self.programs.list_programs()))
+
+        def _complete_help(ctx: CompletionContext) -> list[str]:
+            if ctx.arg_index == 1:
+                return complete_choices(all_cmd_names, ctx.current)
+            return []
+
+        help_entry = self.programs._programs.get("help")
+        if help_entry is not None:
+            help_entry.completer = _complete_help
 
     async def run(self, input_source: InputSource | None = None) -> None:
         """Main REPL loop.
@@ -447,53 +332,47 @@ class Shell:
     def get_completions_ext(self, text: str) -> tuple[list[str], int]:
         """Like ``get_completions`` but also returns the replacement length.
 
+        Delegates to per-command completers when available; falls back to
+        filesystem path completion for unknown commands.
+
         Returns:
             (items, replace_len) where *replace_len* is the number of
             characters before the cursor that the completions replace.
         """
-        arg_start, raw_content = _get_current_argument(text)
+        arg_start, raw_content = get_current_argument(text)
         replace_len = len(text) - arg_start
-        is_first_arg = not text[:arg_start].strip()
+        completed_text = text[:arg_start].strip()
 
-        if is_first_arg:
+        if not completed_text:
+            # First argument — complete command names
             all_commands = list(self.builtins.keys()) + self.programs.list_programs()
             items = sorted({n for n in all_commands if n.startswith(raw_content)})
-        else:
-            items = self._path_completion_strings(raw_content)
+            return items, replace_len
 
-        return items, replace_len
-
-    def _path_completion_strings(self, raw_path: str) -> list[str]:
-        """Return matching path strings for a partial path."""
-        app_service = self.session.container.app_service
-
-        if "/" in raw_path:
-            last_slash = raw_path.rfind("/")
-            dir_part = raw_path[: last_slash + 1] or "/"
-            prefix = raw_path[last_slash + 1 :]
-        else:
-            dir_part = ""
-            prefix = raw_path
-
+        # Non-first argument — try command-specific completer
         try:
-            if dir_part:
-                dir_node = self.session.resolve_path(dir_part)
-            else:
-                dir_node = app_service.get_file(self.session.cwd_id)
-        except (FileNotFoundError, NotADirectoryError, ValueError):
-            return []
+            preceding_tokens = tokenize(completed_text)
+        except ValueError:
+            return [], replace_len
 
-        if dir_node.type != "directory":
-            return []
+        if not preceding_tokens:
+            return [], replace_len
 
-        children = app_service.list_directory(dir_node.id)
-        results: list[str] = []
-        for child in sorted(children, key=lambda n: n.name.lower()):
-            if child.name.lower().startswith(prefix.lower()):
-                suffix = "/" if child.type == "directory" else ""
-                full_path = dir_part + child.name + suffix
-                results.append(_quote_path(full_path))
-        return results
+        command = preceding_tokens[0]
+        completer = self._builtin_completers.get(
+            command
+        ) or self.programs.get_completer(command)
+
+        ctx = CompletionContext(
+            args=preceding_tokens,
+            current=raw_content,
+            arg_index=len(preceding_tokens),
+            services=self.session.container,
+            cwd_id=self.session.cwd_id,
+        )
+
+        items = completer(ctx) if completer is not None else complete_paths(ctx)
+        return items, replace_len
 
     def _build_prompt(self) -> str:
         """Build the colored shell prompt string."""
@@ -533,11 +412,7 @@ class PromptToolkitInput:
         from prompt_toolkit import PromptSession
         from prompt_toolkit.history import FileHistory, InMemoryHistory
 
-        completer = _make_shell_completer(
-            builtin_names=list(shell.builtins.keys()),
-            program_registry=shell.programs,
-            session=shell.session,
-        )
+        completer = _make_shell_completer(shell)
 
         history: FileHistory | InMemoryHistory
         if data_dir:

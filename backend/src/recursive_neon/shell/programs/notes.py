@@ -6,6 +6,7 @@ Subcommands: list, show, create, edit, delete.
 
 from __future__ import annotations
 
+from recursive_neon.shell.completion import CompletionContext, complete_choices
 from recursive_neon.shell.output import BOLD, DIM, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -168,6 +169,34 @@ async def _note_delete(ctx: ProgramContext) -> int:
     return 0
 
 
+_NOTE_SUBCOMMANDS = ["list", "ls", "show", "create", "new", "edit", "delete", "rm"]
+_NOTE_REF_SUBCOMMANDS = {"show", "edit", "delete", "rm"}
+
+
+def _complete_note(ctx: CompletionContext) -> list[str]:
+    if ctx.arg_index == 1:
+        return complete_choices(_NOTE_SUBCOMMANDS, ctx.current)
+    if ctx.arg_index == 2 and len(ctx.args) >= 2:
+        sub = ctx.args[1]
+        if sub in _NOTE_REF_SUBCOMMANDS:
+            return _complete_note_refs(ctx)
+        if sub in ("create", "new") and ctx.current.startswith("-"):
+            return complete_choices(["-c", "--content"], ctx.current)
+    if (
+        len(ctx.args) >= 2
+        and ctx.args[1] == "edit"
+        and ctx.arg_index >= 3
+        and ctx.current.startswith("-")
+    ):
+        return complete_choices(["-t", "--title", "-c", "--content"], ctx.current)
+    return []
+
+
+def _complete_note_refs(ctx: CompletionContext) -> list[str]:
+    notes = ctx.services.app_service.get_notes()
+    return [str(i) for i, _ in enumerate(notes, 1) if str(i).startswith(ctx.current)]
+
+
 def register_note_program(registry: ProgramRegistry) -> None:
     """Register the note program."""
     registry.register_fn(
@@ -183,4 +212,5 @@ def register_note_program(registry: ProgramRegistry) -> None:
         "  create <title>     Create a note (-c <content>)\n"
         "  edit <ref>         Edit a note (-t <title> -c <content>)\n"
         "  delete <ref>       Delete a note",
+        completer=_complete_note,
     )

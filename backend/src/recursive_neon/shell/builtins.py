@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Awaitable, Callable
 
+from recursive_neon.shell.completion import CompletionFn, complete_paths
 from recursive_neon.shell.output import Output
 
 if TYPE_CHECKING:
@@ -89,6 +90,12 @@ def get_builtins() -> dict[str, BuiltinFn]:
         "exit": builtin_exit,
         "export": builtin_export,
     }
+
+
+# Completion callbacks for builtins that need context-sensitive completion.
+BUILTIN_COMPLETERS: dict[str, CompletionFn] = {
+    "cd": lambda ctx: complete_paths(ctx, dirs_only=True),
+}
 
 
 # Help text for builtins (used by the help program).

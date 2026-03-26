@@ -16,6 +16,7 @@ from recursive_neon.shell.path_resolver import resolve_parent_and_name, resolve_
 
 if TYPE_CHECKING:
     from recursive_neon.dependencies import ServiceContainer
+    from recursive_neon.shell.completion import CompletionFn
 
 
 @dataclass
@@ -72,6 +73,7 @@ class ProgramEntry:
 
     program: Program
     help_text: str
+    completer: CompletionFn | None = None
 
 
 class ProgramRegistry:
@@ -80,20 +82,39 @@ class ProgramRegistry:
     def __init__(self) -> None:
         self._programs: dict[str, ProgramEntry] = {}
 
-    def register(self, name: str, program: Program, help_text: str) -> None:
+    def register(
+        self,
+        name: str,
+        program: Program,
+        help_text: str,
+        completer: CompletionFn | None = None,
+    ) -> None:
         """Register a program by name."""
-        self._programs[name] = ProgramEntry(program=program, help_text=help_text)
+        self._programs[name] = ProgramEntry(
+            program=program, help_text=help_text, completer=completer
+        )
 
-    def register_fn(self, name: str, fn: ProgramFn, help_text: str) -> None:
+    def register_fn(
+        self,
+        name: str,
+        fn: ProgramFn,
+        help_text: str,
+        completer: CompletionFn | None = None,
+    ) -> None:
         """Register a plain async function as a program."""
         self._programs[name] = ProgramEntry(
-            program=FunctionProgram(fn), help_text=help_text
+            program=FunctionProgram(fn), help_text=help_text, completer=completer
         )
 
     def get(self, name: str) -> Program | None:
         """Look up a program by name."""
         entry = self._programs.get(name)
         return entry.program if entry else None
+
+    def get_completer(self, name: str) -> CompletionFn | None:
+        """Get the completion callback for a program."""
+        entry = self._programs.get(name)
+        return entry.completer if entry else None
 
     def list_programs(self) -> list[str]:
         """Return sorted list of registered program names."""

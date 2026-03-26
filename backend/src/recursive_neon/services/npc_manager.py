@@ -140,9 +140,7 @@ class NPCManager(INPCManager):
         messages: list[SystemMessage | HumanMessage | AIMessage] = [
             SystemMessage(content=npc.get_system_prompt())
         ]
-        for msg in npc.get_recent_conversation(
-            n=settings.npc_memory_context_length
-        ):
+        for msg in npc.get_recent_conversation(n=settings.npc_memory_context_length):
             if msg["role"] == "user":
                 messages.append(HumanMessage(content=msg["content"]))
             elif msg["role"] == "assistant":
