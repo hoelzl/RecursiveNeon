@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-4 complete. Phase 5 (browser terminal + desktop GUI) planned.
+> **Status**: Phases 0-4 complete. Phase 5 (shell improvements) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -328,7 +328,77 @@ Completed:
 5. **WebSocket client raw mode**: Platform-specific raw key reading (Windows `msvcrt` / Unix `tty.setraw`). Headless mode (`--headless`) for automation.
 6. **Tests**: 57 new tests — TUI framework (19), CodeBreaker (27), terminal raw mode + WS integration (11). 402 total tests, all passing.
 
-### Phase 5: Browser Terminal + Desktop GUI
+### Phase 5: Context-Sensitive Completion + Shell Improvements
+**Goal**: Make the shell genuinely pleasant to use. Invest in completion infrastructure, glob expansion, and I/O redirection before adding new features — depth over breadth.
+
+#### 5a. Context-sensitive tab completion
+The current completer only knows about command names (first arg) and filesystem paths (subsequent args). This needs to become a framework where each command can declare its own completions.
+
+Tasks:
+1. **Per-command completion protocol** — design a way for programs/builtins to register completion callbacks (e.g. `chat` completes NPC IDs, `note` completes subcommands then note names, `task` completes subcommands then task names).
+   *Design needed*: should completions be declared statically (metadata) or dynamically (callback)? Static is simpler; dynamic handles computed values (NPC IDs from the service). Likely need both.
+2. **Flag/option completion** — commands that accept flags (`ls -l`, `grep -i`, `find -name`) should complete their flags.
+3. **Subcommand completion** — `note <tab>` → `list show create edit delete`, then context-appropriate completions for each subcommand.
+4. **Directory "drill-down" on tab** — when tab-completing a directory name, pressing Tab (or Right Arrow) again should descend into it and complete its contents, rather than undoing the completion. This requires changes to the prompt_toolkit completer integration.
+   *Design needed*: prompt_toolkit's completion model may need a custom `Completer` that tracks state, or we may need to use prompt_toolkit's `NestedCompleter` or patch in acceptance behavior on Right Arrow.
+5. **WebSocket parity** — ensure the new completion framework works over the WS protocol (the `complete`/`completions` message flow already exists; the server just needs to call the richer completer).
+6. Tests for per-command completion, flag completion, subcommand completion, directory drill-down.
+
+#### 5b. Shell glob expansion
+Currently glob patterns are handled ad-hoc by individual commands (`find` supports them, most others don't). The shell itself should expand globs before dispatching to programs, like a real Unix shell.
+
+Tasks:
+1. **Shell-level glob expansion** — expand `*`, `?`, `[...]` patterns against the virtual filesystem in the shell's argument processing (after tokenizing, before dispatch). Unmatched globs pass through as literals (POSIX behavior).
+   *Design needed*: where in the pipeline does expansion happen? Likely in `Shell.execute_line()` after `tokenize()` but before builtin/program dispatch. Needs to handle quoting correctly (quoted globs are not expanded).
+2. **`ls *`, `cat Documents/*.txt`**, etc. should work without any per-command changes.
+3. Tests for glob expansion with wildcards, character classes, quoting, and no-match passthrough.
+
+#### 5c. Pipes and output redirection
+`echo "Hello" > foo.txt` and `cat foo.txt | grep hello` should work.
+
+Tasks:
+1. **Output redirection** (`>`, `>>`) — parser recognizes redirect operators, shell opens the target virtual file and wires `stdout` to it.
+   *Design needed*: the current `Output` abstraction writes ANSI-styled text. Redirection needs raw text (no ANSI codes). May need a `RawOutput` variant, or a flag on `Output` to suppress styling.
+2. **Pipes** (`|`) — parser splits the command line at pipe operators, shell runs commands in sequence, passing the output of one as input to the next.
+   *Design needed*: pipe semantics in a virtual filesystem are tricky. Programs currently write to `Output` objects, not stdout streams. Need to decide whether to buffer entire output and pass as string, or introduce a streaming model. Buffered is simpler and sufficient for now.
+3. Tests for `>`, `>>`, `|`, combined with quoting and globs.
+
+### Phase 6: Text Editor + TUI Apps
+**Goal**: A capable TUI text editor ("neon-edit") and additional TUI apps that leverage it. The editor should work both in the terminal and (later) as a GUI app, making it a key investment before the browser phase.
+
+#### 6a. Text editor ("neon-edit")
+A lightweight Emacs-inspired TUI editor that the player can extend with Python scripts. This is a substantial feature — design carefully before implementing.
+
+Tasks:
+1. **Core editor model** — buffer abstraction (text + cursor + selection + undo), gap buffer or rope for efficient editing.
+   *Design needed*: the editor model should be independent of the TUI framework so it can later be driven by a GUI. Consider a model-view split: `EditorBuffer` (pure logic, testable) + `EditorView` (TuiApp rendering).
+2. **Basic editing** — cursor movement, insert/delete, line operations, scrolling, word wrap or horizontal scroll.
+3. **Keybindings** — Emacs-like defaults (C-f/b/n/p for movement, C-a/e for line start/end, C-k for kill line, C-y for yank, C-x C-s for save, C-x C-c for quit). Keybinding table should be configurable.
+4. **File I/O** — open/save virtual filesystem files. `neon-edit <path>` shell command.
+5. **Python extension API** — player can write `.py` scripts that register commands, keybindings, or modes. Scripts run in a sandboxed environment with access to the editor buffer API.
+   *Design needed*: how much of Emacs do we replicate? Start minimal (buffer, basic commands, configurable keybindings). Extension API can grow iteratively. Security boundary: scripts access the virtual filesystem, not the real one.
+6. **Syntax highlighting** — at minimum for Python and the game's own scripting. Can start with a regex-based highlighter.
+7. Tests for buffer operations, cursor movement, keybindings, file I/O round-trips.
+
+#### 6b. Improved notes integration
+With an editor available, the notes workflow improves dramatically.
+
+Tasks:
+1. `note edit <id>` opens the note in neon-edit instead of requiring inline `-c` flag
+2. `note create` with no `-c` flag opens a blank editor
+3. Optional: an editor "notes mode" that shows the note list as a sidebar/buffer
+   *Design needed*: how tightly coupled should the editor and notes system be? Loose coupling via command-line args is simplest.
+
+#### 6c. Additional TUI apps
+More minigames and utilities to flesh out the game world.
+
+Tasks (scope TBD — pick based on what's fun and tests the framework):
+- File browser TUI (navigate virtual filesystem, preview files, open in editor)
+- Port scanner minigame (network puzzle)
+- Memory dump minigame (hex viewer puzzle)
+- System monitor (fake htop showing game processes)
+
+### Phase 7: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.
 
 Tasks:
@@ -337,7 +407,7 @@ Tasks:
 3. Raw mode (TUI apps) rendering in the browser
 4. Desktop chrome: window manager, taskbar, desktop icons
 5. Restore and refine the cyberpunk CSS theme from v1
-6. Optionally add GUI-native apps (chat, file browser) that reuse the backend app core
+6. Optionally add GUI-native apps (chat, file browser, editor) that reuse the backend app core
 
 ## 7. Key Design Decisions for Future Sessions
 
