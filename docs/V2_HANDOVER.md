@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-5 complete. Phase 6a-1 (buffer primitives) and 6a-2 (undo + kill ring) complete. Phase 6a-3 (command system + keymaps) next. Browser GUI deferred to Phase 7.
+> **Status**: Phases 0-5 complete. Phase 6a-1 through 6a-3 complete (buffer, undo, kill ring, commands, keymaps, Editor). Phase 6a-4 (TUI view + shell integration) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -388,7 +388,7 @@ Non-destructive editing support.
 - Yank: `yank` (C-y), `yank_pop` (M-y)
 - Tests for undo/redo round-trips, kill merging, yank rotation
 
-##### 6a-3. Command System + Keymaps
+##### 6a-3. Command System + Keymaps — COMPLETE
 Dispatch layer connecting keystrokes to buffer operations.
 
 - `Command` dataclass: `name`, `function(editor, prefix)`, `doc`

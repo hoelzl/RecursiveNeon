@@ -9,11 +9,16 @@ Architecture follows the Zwei → Hemlock → GNU Emacs lineage:
 - Text stored as a list of line strings (Hemlock-style)
 - Marks with left/right-inserting kinds (Hemlock)
 - Named commands with prefix arg (Hemlock defcommand model)
+- Layered keymaps with prefix key support (Hemlock)
 - Unlimited undo via an undo list with boundaries (Emacs)
 - Kill ring with consecutive-kill merging (Emacs)
 """
 
 from recursive_neon.editor.buffer import Buffer
+from recursive_neon.editor.commands import COMMANDS, Command, defcommand, get_command
+from recursive_neon.editor.default_commands import build_default_keymap
+from recursive_neon.editor.editor import Editor
+from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
 from recursive_neon.editor.undo import (
@@ -26,6 +31,10 @@ from recursive_neon.editor.undo import (
 
 __all__ = [
     "Buffer",
+    "COMMANDS",
+    "Command",
+    "Editor",
+    "Keymap",
     "KillRing",
     "Mark",
     "UndoBoundary",
@@ -33,4 +42,7 @@ __all__ = [
     "UndoDelete",
     "UndoEntry",
     "UndoInsert",
+    "build_default_keymap",
+    "defcommand",
+    "get_command",
 ]
