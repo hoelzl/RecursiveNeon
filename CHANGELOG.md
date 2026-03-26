@@ -2,6 +2,31 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 5 — Shell Improvements (2026-03-26)
+
+### Added
+- **Context-sensitive tab completion** (5a) — Per-command completion framework. Programs register `CompletionFn` callbacks via `ProgramRegistry`. New `shell/completion.py` with `CompletionContext`, shared helpers (`complete_paths`, `complete_flags_or_paths`, `complete_choices`).
+  - `cd` completes directories only
+  - `ls`, `rm`, `grep`, `find`, `mkdir` complete their flags
+  - `note` / `task` complete subcommands, then dynamic note indices / task list names / task refs
+  - `chat` completes NPC IDs dynamically
+  - `help` completes all command names
+  - Unknown commands fall back to path completion
+  - Works over WebSocket (same `get_completions_ext` path)
+- **Shell-level glob expansion** (5b) — `tokenize_ext()` returns `Token(value, quoted)` with quoting metadata. New `shell/glob.py` expands unquoted `*`, `?`, `[...]` against the virtual filesystem before dispatch. Quoted tokens pass through unchanged (POSIX behavior). Unmatched globs are literal.
+- **Pipes and output redirection** (5c) — `parse_pipeline()` splits command lines at unquoted `|`, `>`, `>>`. Pipeline segments execute sequentially with buffered stdout passing. `CapturedOutput` (no ANSI codes) used for pipes/redirects. `ProgramContext.stdin` field added; `cat` and `grep` read from it when piped. Redirect writes to virtual files. Stderr always goes to real output.
+- **Pipe-aware tab completion** — `_last_pipe_segment()` scopes completions to the current segment after `|`.
+- **125 new tests** — context-sensitive completion (58), glob expansion (33), pipes/redirection (34). 527 total tests.
+
+### Changed
+- `ProgramRegistry.register` / `register_fn` accept optional `completer` parameter
+- `ProgramEntry` gains `completer` field; `get_completer()` method added
+- `Shell.get_completions_ext` delegates to per-command completers; `ShellCompleter` simplified to wrapper
+- `Shell.execute_line` uses `parse_pipeline` → `expand_globs` → segment execution pipeline
+- `builtins.py` exports `BUILTIN_COMPLETERS` dict
+- `_get_current_argument` and `_quote_path` moved to `completion.py` (re-exported from `shell.py` for compat)
+- Integration test for `find -name` now quotes the glob pattern (required by shell-level expansion)
+
 ## Post-Phase 4 Fixes (2026-03-26)
 
 ### Changed

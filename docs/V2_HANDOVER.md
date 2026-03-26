@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-4 complete. Phase 5 (shell improvements) next. Browser GUI deferred to Phase 7.
+> **Status**: Phases 0-5 complete. Phase 6 (text editor + TUI apps) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -172,15 +172,17 @@ backend/
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
     terminal.py                       # WebSocket terminal session manager (Phase 3)
-    shell/                            # CLI shell package (Phase 1-4)
+    shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
-      builtins.py                     # cd, exit, export (modify shell state)
+      builtins.py                     # cd, exit, export (modify shell state) + BUILTIN_COMPLETERS
+      completion.py                   # CompletionContext, CompletionFn, per-command completers (Phase 5a)
+      glob.py                         # Shell-level glob expansion against virtual FS (Phase 5b)
       output.py                       # ANSI output abstraction + CapturedOutput + QueueOutput
-      parser.py                       # Argv-style tokenizer (quoting, escaping)
+      parser.py                       # Tokenizer (Token, tokenize_ext), pipeline parser (Phase 5b/5c)
       path_resolver.py                # Virtual path → FileNode resolution
       session.py                      # ShellSession (cwd, env, history)
-      shell.py                        # REPL loop, dispatch, InputSource protocol, tab completion
+      shell.py                        # REPL loop, pipeline dispatch, InputSource protocol, completion
       tui/                            # TUI framework (Phase 4)
         __init__.py                   # ScreenBuffer, TuiApp protocol, RawInputSource protocol
         runner.py                     # run_tui_app() lifecycle: mode switching, keystroke routing
@@ -215,7 +217,10 @@ backend/
     unit/shell/__init__.py
     unit/shell/conftest.py            # Shell test fixtures (test_container, make_ctx, output)
     unit/shell/test_builtins.py       # cd, exit, export tests
-    unit/shell/test_completion.py     # Tab completion tests
+    unit/shell/test_completion.py     # Tab completion helper tests (cursor parsing, quoting)
+    unit/shell/test_context_completion.py  # Context-sensitive per-command completion (Phase 5a)
+    unit/shell/test_glob.py           # Glob expansion: tokenize_ext, expand_globs (Phase 5b)
+    unit/shell/test_pipeline.py       # Pipes, redirection, parse_pipeline (Phase 5c)
     unit/shell/test_filesystem_enhanced.py  # grep, find, write tests
     unit/shell/test_note_program.py   # Note CLI program tests
     unit/shell/test_parser.py         # Tokenizer tests
@@ -328,40 +333,21 @@ Completed:
 5. **WebSocket client raw mode**: Platform-specific raw key reading (Windows `msvcrt` / Unix `tty.setraw`). Headless mode (`--headless`) for automation.
 6. **Tests**: 57 new tests — TUI framework (19), CodeBreaker (27), terminal raw mode + WS integration (11). 402 total tests, all passing.
 
-### Phase 5: Context-Sensitive Completion + Shell Improvements
+### Phase 5: Context-Sensitive Completion + Shell Improvements — **COMPLETE**
 **Goal**: Make the shell genuinely pleasant to use. Invest in completion infrastructure, glob expansion, and I/O redirection before adding new features — depth over breadth.
 
-#### 5a. Context-sensitive tab completion
-The current completer only knows about command names (first arg) and filesystem paths (subsequent args). This needs to become a framework where each command can declare its own completions.
+**Design decisions**:
+- **Hybrid static + dynamic completion** — `CompletionFn` callbacks receive a `CompletionContext` with parsed args, partial text, and service access. Static subcommand lists and dynamic service queries (NPC IDs, note indices) use the same callback interface.
+- **Glob expansion in the pipeline** — `tokenize_ext()` returns `Token(value, quoted)` with quoting metadata. Expansion runs after tokenization, before dispatch. Quoted tokens are never expanded. Unmatched globs pass through as literals (POSIX).
+- **Buffered pipe semantics** — `CapturedOutput(color=False)` captures stdout as plain text. Piped text is passed via `ProgramContext.stdin`. Stderr always goes to real output. Builtins don't participate in pipes (deferred).
+- **`**` recursive globs deferred** — single-level patterns (`*`, `?`, `[...]`) cover 95% of use cases.
+- **Stderr redirection (`2>`, `2>&1`) out of scope** — only stdout redirection implemented.
 
-Tasks:
-1. **Per-command completion protocol** — design a way for programs/builtins to register completion callbacks (e.g. `chat` completes NPC IDs, `note` completes subcommands then note names, `task` completes subcommands then task names).
-   *Design needed*: should completions be declared statically (metadata) or dynamically (callback)? Static is simpler; dynamic handles computed values (NPC IDs from the service). Likely need both.
-2. **Flag/option completion** — commands that accept flags (`ls -l`, `grep -i`, `find -name`) should complete their flags.
-3. **Subcommand completion** — `note <tab>` → `list show create edit delete`, then context-appropriate completions for each subcommand.
-4. **Directory "drill-down" on tab** — when tab-completing a directory name, pressing Tab (or Right Arrow) again should descend into it and complete its contents, rather than undoing the completion. This requires changes to the prompt_toolkit completer integration.
-   *Design needed*: prompt_toolkit's completion model may need a custom `Completer` that tracks state, or we may need to use prompt_toolkit's `NestedCompleter` or patch in acceptance behavior on Right Arrow.
-5. **WebSocket parity** — ensure the new completion framework works over the WS protocol (the `complete`/`completions` message flow already exists; the server just needs to call the richer completer).
-6. Tests for per-command completion, flag completion, subcommand completion, directory drill-down.
-
-#### 5b. Shell glob expansion
-Currently glob patterns are handled ad-hoc by individual commands (`find` supports them, most others don't). The shell itself should expand globs before dispatching to programs, like a real Unix shell.
-
-Tasks:
-1. **Shell-level glob expansion** — expand `*`, `?`, `[...]` patterns against the virtual filesystem in the shell's argument processing (after tokenizing, before dispatch). Unmatched globs pass through as literals (POSIX behavior).
-   *Design needed*: where in the pipeline does expansion happen? Likely in `Shell.execute_line()` after `tokenize()` but before builtin/program dispatch. Needs to handle quoting correctly (quoted globs are not expanded).
-2. **`ls *`, `cat Documents/*.txt`**, etc. should work without any per-command changes.
-3. Tests for glob expansion with wildcards, character classes, quoting, and no-match passthrough.
-
-#### 5c. Pipes and output redirection
-`echo "Hello" > foo.txt` and `cat foo.txt | grep hello` should work.
-
-Tasks:
-1. **Output redirection** (`>`, `>>`) — parser recognizes redirect operators, shell opens the target virtual file and wires `stdout` to it.
-   *Design needed*: the current `Output` abstraction writes ANSI-styled text. Redirection needs raw text (no ANSI codes). May need a `RawOutput` variant, or a flag on `Output` to suppress styling.
-2. **Pipes** (`|`) — parser splits the command line at pipe operators, shell runs commands in sequence, passing the output of one as input to the next.
-   *Design needed*: pipe semantics in a virtual filesystem are tricky. Programs currently write to `Output` objects, not stdout streams. Need to decide whether to buffer entire output and pass as string, or introduce a streaming model. Buffered is simpler and sufficient for now.
-3. Tests for `>`, `>>`, `|`, combined with quoting and globs.
+Completed:
+1. **Context-sensitive completion** (5a): New `shell/completion.py` with `CompletionContext`, `CompletionFn`, shared helpers. `ProgramRegistry` gains optional `completer` param. Per-command completers for all commands: `cd` (dirs-only), `ls`/`rm`/`grep`/`find` (flags + paths), `note`/`task` (subcommands + dynamic refs), `chat` (NPC IDs), `help` (all command names). Builtin completers via `BUILTIN_COMPLETERS` dict. `ShellCompleter` simplified to delegate to `get_completions_ext`. Works over WebSocket unchanged.
+2. **Shell-level glob expansion** (5b): `Token` dataclass with `quoted` flag in `tokenize_ext()`. New `shell/glob.py` with `expand_globs()`. Pipeline: `tokenize_ext → expand_globs → dispatch`. Single-level patterns (`*`, `?`, `[...]`) matched via `fnmatch` against virtual filesystem children. Directories get trailing `/` in results.
+3. **Pipes and output redirection** (5c): `parse_pipeline()` splits at unquoted `|`, `>`, `>>`. Pipeline segments execute sequentially with `CapturedOutput` for piping. `ProgramContext.stdin` added; `cat` and `grep` read from it. Redirect writes to virtual files (create or overwrite/append). Pipe-aware completion via `_last_pipe_segment()`.
+4. **Tests**: 125 new tests — context-sensitive completion (58), glob expansion (33), pipes/redirection (34). 527 total tests, all passing. Lint and type checks clean.
 
 ### Phase 6: Text Editor + TUI Apps
 **Goal**: A capable TUI text editor ("neon-edit") and additional TUI apps that leverage it. The editor should work both in the terminal and (later) as a GUI app, making it a key investment before the browser phase.

@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-4 complete. Phase 5 (browser terminal + desktop GUI) planned.
+**Status**: V2 reboot. Phases 0-5 complete. Phase 6 (text editor + TUI apps) next.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -58,6 +58,8 @@ cd backend
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
+**Shell features**: Glob expansion (`*.txt`, `Documents/*.txt`), pipes (`cat file | grep pattern`), output redirection (`echo hello > file.txt`, `>> file.txt`). Tab completion is context-sensitive (per-command flags, subcommands, dynamic note/task/NPC refs).
+
 **Persistence**: Game state auto-saves on exit to `game_data/`, and periodically during WebSocket sessions. Manual save via `save` command. Files: `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`, `history.txt`.
 
 ## Key Entry Points
@@ -65,6 +67,9 @@ cd backend
 - Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)
 - Shell REPL: `backend/src/recursive_neon/shell/shell.py` (transport-agnostic via `InputSource` protocol)
 - Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, utility)
+- Completion: `backend/src/recursive_neon/shell/completion.py` (`CompletionContext`, per-command completers)
+- Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, virtual filesystem matching)
+- Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)

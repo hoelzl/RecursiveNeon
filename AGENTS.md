@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-4 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame). Phase 5 (browser terminal + desktop GUI) is planned.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-5 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection). Phase 6 (text editor + TUI apps) is next.
 
 ## Architecture at a Glance
 
@@ -25,7 +25,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 2. Use `ctx.services.app_service` (or other services) for business logic
 3. Write to `ctx.stdout` / `ctx.stderr` for output
 4. Return 0 for success, nonzero for error
-5. Register via `registry.register_fn("mycommand", prog_mycommand, "Help text")` in a `register_*` function
+5. Register via `registry.register_fn("mycommand", prog_mycommand, "Help text", completer=my_completer)` in a `register_*` function
 6. Call the registration function from `Shell.__init__` in `shell.py`
 7. Write tests using the `make_ctx` fixture from `tests/unit/shell/conftest.py`
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 402 tests
+../.venv/Scripts/pytest              # All 527 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -69,6 +69,9 @@ All three must pass before committing.
 |---------|------|
 | Shell entry point | `backend/src/recursive_neon/shell/__main__.py` |
 | Shell REPL + dispatch | `backend/src/recursive_neon/shell/shell.py` |
+| Completion framework | `backend/src/recursive_neon/shell/completion.py` |
+| Glob expansion | `backend/src/recursive_neon/shell/glob.py` |
+| Tokenizer + pipeline parser | `backend/src/recursive_neon/shell/parser.py` |
 | WS terminal sessions | `backend/src/recursive_neon/terminal.py` |
 | WS client entry point | `backend/src/recursive_neon/wsclient/__main__.py` |
 | Program registry | `backend/src/recursive_neon/shell/programs/__init__.py` |
@@ -107,12 +110,20 @@ Full-screen apps run inside the terminal via raw mode. Key concepts:
 4. Register a shell command that calls `ctx.run_tui(my_app)`
 5. See `programs/codebreaker.py` for the reference implementation
 
-## What's Next (Phase 5)
+## Shell Features (Phase 5)
 
-Phase 5 is the browser terminal + desktop GUI:
-- xterm.js connecting to `/ws/terminal` (same protocol as CLI client)
-- Cooked mode (shell) + raw mode (TUI apps) rendering in the browser
-- Desktop chrome: window manager, taskbar, desktop icons
-- Restore the cyberpunk CSS theme from v1
+The shell supports Unix-like features:
+- **Context-sensitive completion** — per-command completers registered via `CompletionFn` callbacks. `completion.py` provides `CompletionContext`, shared helpers. Each program registers its completer during `register_*_programs()`.
+- **Glob expansion** — `tokenize_ext()` returns `Token(value, quoted)`. `glob.py` expands unquoted `*`, `?`, `[...]` against the virtual filesystem before dispatch. Quoted tokens are never expanded.
+- **Pipes** (`|`) — `parse_pipeline()` splits at unquoted operators. Segments run sequentially; stdout captured via `CapturedOutput` and passed as `ProgramContext.stdin`. `cat` and `grep` read from stdin when piped.
+- **Output redirection** (`>`, `>>`) — captured output written to virtual files.
+- **Pipe-aware completion** — `_last_pipe_segment()` scopes completions to the current segment.
 
-See `docs/V2_HANDOVER.md` Section 6 (Phase 5) for the full plan.
+## What's Next (Phase 6)
+
+Phase 6 is the text editor + TUI apps:
+- TUI text editor ("neon-edit") with model-view split
+- Improved notes integration (open notes in editor)
+- Additional TUI apps (file browser, minigames)
+
+See `docs/V2_HANDOVER.md` Section 6 (Phase 6) for the full plan.

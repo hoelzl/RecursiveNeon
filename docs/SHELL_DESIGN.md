@@ -1,6 +1,6 @@
 # Shell Design Document
 
-> **Status**: Phases 1-4 implemented. Design document kept for architecture reference.
+> **Status**: Phases 1-5 implemented. Design document kept for architecture reference.
 > **Date**: 2026-03-23 (updated 2026-03-26)
 
 ## 1. Overview
@@ -31,11 +31,13 @@ backend/src/recursive_neon/shell/
 ├── __init__.py
 ├── __main__.py          # Entry point: python -m recursive_neon.shell
 ├── session.py           # ShellSession: cwd, env vars, prompt, path resolution
-├── shell.py             # REPL loop using prompt_toolkit
-├── parser.py            # Command-line tokenizer (quoting, escaping)
+├── shell.py             # REPL loop, pipeline dispatch, completion delegation
+├── parser.py            # Tokenizer (Token, tokenize_ext), pipeline parser (parse_pipeline)
+├── completion.py        # CompletionContext, CompletionFn, per-command completers
+├── glob.py              # Shell-level glob expansion against virtual filesystem
 ├── output.py            # Output abstraction (ANSI helpers, write/error/table)
 ├── path_resolver.py     # Virtual path → FileNode resolution
-├── builtins.py          # Shell builtins (cd, exit, export)
+├── builtins.py          # Shell builtins (cd, exit, export) + BUILTIN_COMPLETERS
 ├── tui/
 │   ├── __init__.py      # ScreenBuffer, TuiApp protocol, RawInputSource protocol
 │   └── runner.py        # run_tui_app() lifecycle: mode switching, keystroke routing
