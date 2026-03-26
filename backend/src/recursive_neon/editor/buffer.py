@@ -39,6 +39,7 @@ class Buffer:
         self.name = name
         self.filepath = filepath
         self.modified: bool = False
+        self.read_only: bool = False
 
         # Text storage — always at least one line
         if text:
@@ -184,6 +185,8 @@ class Buffer:
 
     def insert_char(self, ch: str) -> None:
         """Insert a single character at point."""
+        if self.read_only:
+            return
         start = self.point.to_tuple()
         if ch == "\n":
             self._insert_newline()
@@ -199,6 +202,8 @@ class Buffer:
     def insert_string(self, s: str) -> None:
         """Insert a (possibly multi-line) string at point."""
         if not s:
+            return
+        if self.read_only:
             return
         start = self.point.to_tuple()
         # Split into lines and insert one segment at a time
@@ -287,6 +292,8 @@ class Buffer:
 
     def delete_char_forward(self) -> str | None:
         """Delete the character after point.  Returns the deleted char."""
+        if self.read_only:
+            return None
         ch = self.char_after_point()
         if ch is None:
             return None
@@ -303,6 +310,8 @@ class Buffer:
 
     def delete_char_backward(self) -> str | None:
         """Delete the character before point.  Returns the deleted char."""
+        if self.read_only:
+            return None
         ch = self.char_before_point()
         if ch is None:
             return None
@@ -322,6 +331,8 @@ class Buffer:
 
         Marks inside the deleted region collapse to the deletion point.
         """
+        if self.read_only and self._undo_recording:
+            return ""
         a, b = (start.copy(), end.copy()) if start <= end else (end.copy(), start.copy())
         deleted = self.get_text(a, b)
         if not deleted:
@@ -691,6 +702,21 @@ class Buffer:
         self.last_command_type = "kill"
         return killed
 
+    def kill_word_backward(self) -> str:
+        """Kill from point to the start of the current/previous word (M-Backspace)."""
+        end = self.point.copy()
+        self._move_word_backward()
+        start = self.point.copy()
+        if start == end:
+            return ""
+        killed = self.delete_region(start, end)
+        if self.last_command_type == "kill":
+            self.kill_ring.append_to_top(killed, before=True)
+        else:
+            self.kill_ring.push(killed)
+        self.last_command_type = "kill"
+        return killed
+
     def yank(self) -> str | None:
         """Yank (paste) the most recent kill at point (C-y).
 
@@ -728,8 +754,34 @@ class Buffer:
         self.last_command_type = "yank"
         return text
 
-    def _move_word_forward(self) -> None:
-        """Move point forward by one word (for kill-word)."""
+    def forward_word(self, n: int = 1) -> bool:
+        """Move point forward by *n* words (M-f).
+
+        A word is a sequence of alphanumeric or underscore characters.
+        Skips non-word chars first, then the word itself.
+        """
+        self._goal_col = -1
+        moved = False
+        for _ in range(n):
+            if self._move_word_forward():
+                moved = True
+        return moved
+
+    def backward_word(self, n: int = 1) -> bool:
+        """Move point backward by *n* words (M-b).
+
+        Moves to the beginning of the current or previous word.
+        """
+        self._goal_col = -1
+        moved = False
+        for _ in range(n):
+            if self._move_word_backward():
+                moved = True
+        return moved
+
+    def _move_word_forward(self) -> bool:
+        """Move point forward by one word.  Returns True if moved."""
+        start = self.point.to_tuple()
         # Skip non-word characters
         while self.point.col < len(self.lines[self.point.line]):
             ch = self.lines[self.point.line][self.point.col]
@@ -741,13 +793,39 @@ class Buffer:
             if self.point.line < len(self.lines) - 1:
                 self.point.line += 1
                 self.point.col = 0
-            return
+                return True
+            return self.point.to_tuple() != start
         # Skip word characters
         while self.point.col < len(self.lines[self.point.line]):
             ch = self.lines[self.point.line][self.point.col]
             if not (ch.isalnum() or ch == "_"):
                 break
             self.point.col += 1
+        return self.point.to_tuple() != start
+
+    def _move_word_backward(self) -> bool:
+        """Move point backward by one word.  Returns True if moved."""
+        start = self.point.to_tuple()
+        # Skip non-word characters backward
+        while self.point.col > 0:
+            ch = self.lines[self.point.line][self.point.col - 1]
+            if ch.isalnum() or ch == "_":
+                break
+            self.point.col -= 1
+        else:
+            if self.point.col == 0 and self.point.line > 0:
+                self.point.line -= 1
+                self.point.col = len(self.lines[self.point.line])
+                return True
+            if self.point.col == 0:
+                return False
+        # Skip word characters backward
+        while self.point.col > 0:
+            ch = self.lines[self.point.line][self.point.col - 1]
+            if not (ch.isalnum() or ch == "_"):
+                break
+            self.point.col -= 1
+        return self.point.to_tuple() != start
 
     # ------------------------------------------------------------------
     # Convenience

@@ -51,6 +51,16 @@ def end_of_line(ed: Editor, prefix: int | None) -> None:
     ed.buffer.end_of_line()
 
 
+@defcommand("forward-word", "Move point forward one word.")
+def forward_word(ed: Editor, prefix: int | None) -> None:
+    ed.buffer.forward_word(prefix if prefix is not None else 1)
+
+
+@defcommand("backward-word", "Move point backward one word.")
+def backward_word(ed: Editor, prefix: int | None) -> None:
+    ed.buffer.backward_word(prefix if prefix is not None else 1)
+
+
 @defcommand("beginning-of-buffer", "Move point to the beginning of the buffer.")
 def beginning_of_buffer(ed: Editor, prefix: int | None) -> None:
     ed.buffer.beginning_of_buffer()
@@ -117,6 +127,13 @@ def kill_word(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_word_forward()
+
+
+@defcommand("kill-backward-word", "Kill backward to the start of the current word.")
+def kill_backward_word(ed: Editor, prefix: int | None) -> None:
+    n = prefix if prefix is not None else 1
+    for _ in range(n):
+        ed.buffer.kill_word_backward()
 
 
 @defcommand("yank", "Yank (paste) the most recent kill.")
@@ -200,21 +217,29 @@ def build_default_keymap() -> Keymap:
     km.bind("M-<", "beginning-of-buffer")
     km.bind("M->", "end-of-buffer")
 
+    # Word movement
+    km.bind("M-f", "forward-word")
+    km.bind("M-b", "backward-word")
+
     # Arrow keys
     km.bind("ArrowRight", "forward-char")
     km.bind("ArrowLeft", "backward-char")
     km.bind("ArrowDown", "next-line")
     km.bind("ArrowUp", "previous-line")
+    km.bind("Home", "beginning-of-line")
+    km.bind("End", "end-of-line")
 
     # Editing
     km.bind("Enter", "newline")
     km.bind("C-d", "delete-char")
+    km.bind("Delete", "delete-char")
     km.bind("Backspace", "delete-backward-char")
 
     # Kill / Yank
     km.bind("C-k", "kill-line")
     km.bind("C-w", "kill-region")
     km.bind("M-d", "kill-word")
+    km.bind("M-Backspace", "kill-backward-word")
     km.bind("C-y", "yank")
     km.bind("M-y", "yank-pop")
 
