@@ -102,4 +102,16 @@ async def _run_edit(ctx: ProgramContext) -> int:
 
     view.editor.save_callback = save_callback
 
+    # Wire up open callback for C-x C-f (find-file)
+    def open_callback(path: str) -> str:
+        try:
+            node = ctx.resolve_path(path)
+            if node.type == "directory":
+                return ""
+            return node.content or ""
+        except (FileNotFoundError, ValueError):
+            return ""  # new file
+
+    view.editor.open_callback = open_callback
+
     return await ctx.run_tui(view)

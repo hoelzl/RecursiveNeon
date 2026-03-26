@@ -386,6 +386,59 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
         ed.minibuffer.process_key = patched_process  # type: ignore[method-assign]
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Help
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand("describe-key", "Show what command a key is bound to (C-h k).")
+def describe_key(ed: Editor, prefix: int | None) -> None:
+    """Enter a key-reading mode: the next keystroke is described."""
+    ed.message = "Describe key: "
+    # We need to intercept the NEXT keystroke. Use the minibuffer with
+    # a single-key handler that captures the first key and describes it.
+    ed._describing_key = True
+
+
+@defcommand("command-apropos", "Search commands by name or doc (C-h a).")
+def command_apropos(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.commands import COMMANDS
+
+    def callback(pattern: str) -> None:
+        pattern = pattern.strip().lower()
+        if not pattern:
+            return
+        matches = [
+            (name, cmd.doc)
+            for name, cmd in sorted(COMMANDS.items())
+            if pattern in name.lower() or pattern in cmd.doc.lower()
+        ]
+        if not matches:
+            ed.message = f"No commands matching '{pattern}'"
+            return
+        lines = [f"Commands matching '{pattern}':", ""]
+        for name, doc in matches:
+            lines.append(f"  {name}")
+            if doc:
+                lines.append(f"    {doc}")
+        text = "\n".join(lines)
+        _show_help_buffer(ed, text)
+
+    ed.start_minibuffer("Apropos command: ", callback)
+
+
+def _show_help_buffer(ed: Editor, text: str) -> None:
+    """Show text in a read-only *Help* buffer."""
+    if not ed.switch_to_buffer("*Help*"):
+        ed.create_buffer(name="*Help*")
+    buf = ed.buffer
+    buf.read_only = False
+    buf.lines = text.split("\n")
+    buf.point.move_to(0, 0)
+    buf.modified = False
+    buf.read_only = True
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     if ed.save_callback is None:
@@ -464,6 +517,12 @@ def build_default_keymap() -> Keymap:
 
     # M-x
     km.bind("M-x", "execute-extended-command")
+
+    # C-h prefix map (help)
+    ch = Keymap("C-h prefix")
+    ch.bind("k", "describe-key")
+    ch.bind("a", "command-apropos")
+    km.bind("C-h", ch)
 
     # C-x prefix map
     cx = Keymap("C-x prefix")

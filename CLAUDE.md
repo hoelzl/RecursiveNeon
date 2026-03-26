@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-5 + 6a (editor) complete. Phase 6b (notes integration) next.
+**Status**: V2 reboot. Phases 0-5 + 6a (editor) + E1-E5 (editor enhancements) complete. Phase 6b (notes integration) next.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction

@@ -60,6 +60,9 @@ class Editor:
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 
+        # Describe-key mode: when True, next keystroke is described
+        self._describing_key: bool = False
+
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
         self._last_command_name: str = ""
@@ -124,6 +127,12 @@ class Editor:
                 # Re-dispatch replayed key (isearch exit-and-replay)
                 if replay is not None:
                     self.process_key(replay)
+            return
+
+        # Describe-key mode: capture the next key and show its binding
+        if self._describing_key:
+            self._describing_key = False
+            self._do_describe_key(key)
             return
 
         # Clear previous message (commands can set new ones)
@@ -257,6 +266,47 @@ class Editor:
             initial=initial,
             on_change=on_change,
         )
+
+    def _do_describe_key(self, key: str) -> None:
+        """Look up what a key is bound to and show in *Help*."""
+        keymap = self._resolve_keymap()
+        target = keymap.lookup(key)
+
+        if isinstance(target, Keymap):
+            # It's a prefix key — wait for the next key to describe the full sequence
+            self._describing_key_prefix = key
+            self._describing_key_map = target
+            self._describing_key = True  # re-enter describe-key mode
+            self.message = f"Describe key: {key}-"
+            return
+
+        # Check if we're completing a prefix sequence
+        prefix_str = getattr(self, "_describing_key_prefix", "")
+        if prefix_str:
+            key_str = f"{prefix_str} {key}"
+            self._describing_key_prefix = ""
+            # Look up in the stored prefix map
+            prefix_map = getattr(self, "_describing_key_map", None)
+            if prefix_map:
+                target = prefix_map.lookup(key)
+        else:
+            key_str = key
+
+        if isinstance(target, str):
+            cmd = COMMANDS.get(target)
+            doc = cmd.doc if cmd else ""
+            lines = [
+                f"{key_str} runs the command {target}",
+                "",
+                f"  {doc}" if doc else "",
+            ]
+            from recursive_neon.editor.default_commands import _show_help_buffer
+
+            _show_help_buffer(self, "\n".join(lines))
+        elif len(key) == 1 and key.isprintable():
+            self.message = f"{key_str} runs self-insert-command"
+        else:
+            self.message = f"{key_str} is not bound"
 
     def quit(self) -> None:
         """Signal the editor to stop."""
