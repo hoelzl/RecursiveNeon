@@ -54,11 +54,22 @@ class InputSource(Protocol):
     is available (e.g. the user closed the connection).
     """
 
-    async def get_line(self, prompt: str) -> str:
+    async def get_line(
+        self,
+        prompt: str,
+        *,
+        complete: bool = True,
+        history_id: str | None = None,
+    ) -> str:
         """Read one line from the user.
 
         Args:
             prompt: The prompt string (may contain ANSI codes).
+            complete: Whether to offer tab-completion. Defaults to True.
+            history_id: If given, use a separate input history keyed by this
+                string instead of the main shell history. This prevents
+                program input (e.g. chat messages) from polluting the
+                shell's command history and vice versa.
 
         Returns:
             The raw line entered by the user.
@@ -540,6 +551,7 @@ class PromptToolkitInput:
             history=history,
             completer=completer,
         )
+        self._alt_sessions: dict[str, PromptSession[str]] = {}
         self._shell = shell
 
         # Wire up TUI support for the local terminal
@@ -563,11 +575,43 @@ class PromptToolkitInput:
 
         return _run_tui
 
-    async def get_line(self, prompt: str) -> str:
+    def _get_alt_session(self, history_id: str) -> Any:
+        """Return (or create) a PromptSession with its own InMemoryHistory."""
+        if history_id not in self._alt_sessions:
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.history import InMemoryHistory
+
+            self._alt_sessions[history_id] = PromptSession(
+                history=InMemoryHistory(),
+            )
+        return self._alt_sessions[history_id]
+
+    async def get_line(
+        self,
+        prompt: str,
+        *,
+        complete: bool = True,
+        history_id: str | None = None,
+    ) -> str:
         """Read a line using prompt_toolkit (supports ANSI prompts)."""
         from prompt_toolkit.formatted_text import ANSI
 
-        return await self._prompt_session.prompt_async(ANSI(prompt))
+        session = (
+            self._get_alt_session(history_id)
+            if history_id is not None
+            else self._prompt_session
+        )
+
+        if complete:
+            return await session.prompt_async(ANSI(prompt))
+
+        from prompt_toolkit.completion import WordCompleter
+
+        return await session.prompt_async(
+            ANSI(prompt),
+            completer=WordCompleter([]),
+            complete_while_typing=False,
+        )
 
 
 # ---------------------------------------------------------------------------

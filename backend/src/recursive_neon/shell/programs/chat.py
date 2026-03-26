@@ -80,7 +80,9 @@ class ChatProgram:
             try:
                 prompt = f"{ctx.stdout.styled(npc_id, YELLOW)}> "
                 if ctx.get_line is not None:
-                    user_input = await ctx.get_line(prompt)
+                    user_input = await ctx.get_line(
+                        prompt, complete=False, history_id="chat"
+                    )
                 elif _chat_session is not None:
                     user_input = await _chat_session.prompt_async(ANSI(prompt))
                 else:

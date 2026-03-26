@@ -48,7 +48,13 @@ class WebSocketInput:
         self._input = input_queue
         self._output = output_queue
 
-    async def get_line(self, prompt: str) -> str:
+    async def get_line(
+        self,
+        prompt: str,
+        *,
+        complete: bool = True,
+        history_id: str | None = None,
+    ) -> str:
         """Signal readiness via the output queue, then wait for input."""
         self._output.put_nowait({"type": "prompt", "text": prompt})
         line = await self._input.get()
