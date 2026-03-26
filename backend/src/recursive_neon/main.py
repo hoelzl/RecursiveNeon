@@ -9,9 +9,10 @@ FastAPI server that manages:
 """
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -152,7 +153,7 @@ async def root(container: ServiceContainer = Depends(get_container)):
 
 @app.get("/health", response_model=StatusResponse)
 async def health_check(container: ServiceContainer = Depends(get_container)):
-    uptime = (datetime.now() - container.start_time).total_seconds()
+    uptime = (datetime.now(tz=UTC) - container.start_time).total_seconds()
     container.system_state.uptime_seconds = uptime
     return StatusResponse(
         status="healthy"
@@ -267,6 +268,8 @@ async def websocket_endpoint(
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011, reason="Internal error")
 
 
 async def handle_ws_message(
@@ -350,11 +353,21 @@ async def terminal_websocket(websocket: WebSocket):
         await session.start()
         logger.info("Terminal WS connected, session %s", session.session_id)
 
-        # Run two concurrent tasks: read from WS, drain output to WS
-        await asyncio.gather(
-            _ws_reader(websocket, session),
-            _ws_writer(websocket, session),
+        # Run two concurrent tasks: read from WS, drain output to WS.
+        # When either finishes (e.g. writer sees "exit", or reader gets
+        # WebSocketDisconnect), cancel the other to avoid leaked tasks.
+        reader = asyncio.create_task(_ws_reader(websocket, session))
+        writer = asyncio.create_task(_ws_writer(websocket, session))
+        done, pending = await asyncio.wait(
+            [reader, writer], return_when=asyncio.FIRST_COMPLETED
         )
+        for task in pending:
+            task.cancel()
+        # Re-raise exceptions from completed tasks (except disconnect)
+        for task in done:
+            exc = task.exception()
+            if exc is not None and not isinstance(exc, WebSocketDisconnect):
+                raise exc
 
     except WebSocketDisconnect:
         logger.info("Terminal WS disconnected, session %s", session.session_id)

@@ -172,15 +172,15 @@ class OllamaProcessManager(IProcessManager):
             if self.process:
                 self.process.terminate()
 
-                # Wait for graceful shutdown
+                # Wait for graceful shutdown (in a thread to avoid blocking the event loop)
                 try:
-                    self.process.wait(timeout=timeout)
+                    await asyncio.to_thread(self.process.wait, timeout=timeout)
                     logger.info("Ollama server stopped gracefully")
                     return True
                 except subprocess.TimeoutExpired:
                     logger.warning("Graceful shutdown timed out, forcing kill")
                     self.process.kill()
-                    self.process.wait(timeout=5)
+                    await asyncio.to_thread(self.process.wait, timeout=5)
                     logger.info("Ollama server killed")
                     return True
 

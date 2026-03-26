@@ -31,6 +31,13 @@ def container(mock_llm):
     c.app_service.init_filesystem()
     npc_manager.create_default_npcs()
     c.system_state.status = SystemStatus.READY
+    # Configure mock return values for endpoints that call these
+    c.process_manager.get_status.return_value = {
+        "running": False,
+        "pid": None,
+        "memory_mb": 0,
+        "cpu_percent": 0,
+    }
     return c
 
 

@@ -197,14 +197,15 @@ class NPCManager(INPCManager):
 
             return ChatResponse(npc_id=npc.id, npc_name=npc.name, message=cleaned)
 
-        except Exception as e:
-            logger.error(f"Error in chat with {npc.name}: {e}")
-            # Return fallback response
-            return ChatResponse(
-                npc_id=npc.id,
-                npc_name=npc.name,
-                message="I... I'm not sure what to say. Perhaps we can talk later?",
-            )
+        except Exception:
+            # Roll back the user message that was already appended,
+            # so a failed LLM call doesn't leave asymmetric history.
+            if (
+                npc.memory.conversation_history
+                and npc.memory.conversation_history[-1].role == "user"
+            ):
+                npc.memory.conversation_history.pop()
+            raise
 
     def create_default_npcs(self) -> list[NPC]:
         """Create a set of default NPCs for the game"""

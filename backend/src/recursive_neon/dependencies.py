@@ -7,7 +7,7 @@ Implements the Service Locator pattern for clean dependency injection.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_ollama import ChatOllama
@@ -106,7 +106,7 @@ class ServiceFactory:
 
         system_state = SystemState()
         game_state = GameState()
-        start_time = datetime.now()
+        start_time = datetime.now(tz=UTC)
 
         app_service = AppService(game_state)
 
@@ -157,16 +157,23 @@ class ServiceFactory:
         mock_app_service: AppService | None = None,
         mock_start_time: datetime | None = None,
     ) -> ServiceContainer:
-        """Create a service container configured for testing."""
+        """Create a service container configured for testing.
+
+        When mocks are not provided, lightweight no-op stubs are used
+        instead of real service instances (which would try to connect to
+        Ollama, etc.).
+        """
+        from unittest.mock import AsyncMock, Mock
+
         logger.info("Creating test service container")
 
-        process_manager = mock_process_manager or cls.create_process_manager()
-        ollama_client = mock_ollama_client or cls.create_ollama_client()
-        npc_manager = mock_npc_manager or cls.create_npc_manager()
+        process_manager = mock_process_manager or Mock(spec=IProcessManager)
+        ollama_client = mock_ollama_client or AsyncMock(spec=IOllamaClient)
+        npc_manager = mock_npc_manager or Mock(spec=INPCManager)
         system_state = mock_system_state or SystemState()
         game_state = mock_game_state or GameState()
         app_service = mock_app_service or AppService(game_state)
-        start_time = mock_start_time or datetime.now()
+        start_time = mock_start_time or datetime.now(tz=UTC)
 
         container = ServiceContainer(
             process_manager=process_manager,

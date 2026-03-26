@@ -109,8 +109,7 @@ def _print_entry_long(ctx: ProgramContext, node) -> None:
     perms = "rwx" if node.type == "directory" else "rw-"
     timestamp = ""
     if node.updated_at:
-        # Show just the date and time portion
-        timestamp = node.updated_at[:16].replace("T", " ")
+        timestamp = node.updated_at.strftime("%Y-%m-%d %H:%M")
     name = node.name
     if node.type == "directory":
         name = ctx.stdout.styled(name + "/", CYAN)

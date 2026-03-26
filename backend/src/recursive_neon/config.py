@@ -4,7 +4,11 @@ Configuration for Recursive://Neon backend
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/ directory — resolved once at import time
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -21,13 +25,14 @@ class Settings(BaseSettings):
     ollama_binary_path: str = "../services/ollama"
     default_model: str = "qwen3:4b"  # Lightweight model for NPCs
 
-    # Paths
-    base_dir: Path = Path(__file__).parent.parent
-    models_dir: Path = base_dir / "services" / "ollama" / "models"
-    data_dir: Path = base_dir / "game_data"
-    game_data_path: Path = base_dir / "game_data"  # Alias for data_dir
-    chromadb_dir: Path = base_dir / "data" / "chromadb"
-    initial_fs_path: Path = Path(__file__).parent / "initial_fs"
+    # Paths — base_dir is the backend/ directory.
+    # Derived paths are recomputed from base_dir by _resolve_derived_paths
+    # so that overriding base_dir via env var propagates correctly.
+    base_dir: Path = _BACKEND_DIR
+    models_dir: Path = _BACKEND_DIR / "services" / "ollama" / "models"
+    data_dir: Path = _BACKEND_DIR / "game_data"
+    chromadb_dir: Path = _BACKEND_DIR / "data" / "chromadb"
+    initial_fs_path: Path = Path(__file__).resolve().parent / "initial_fs"
 
     # Game Configuration
     max_npcs: int = 20
@@ -43,6 +48,23 @@ class Settings(BaseSettings):
     websocket_timeout: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @model_validator(mode="after")
+    def _resolve_derived_paths(self) -> "Settings":
+        """Re-derive dependent paths from base_dir.
+
+        Only overrides fields that were NOT explicitly set (via env var,
+        .env file, or constructor kwargs).  Uses ``model_fields_set`` to
+        distinguish explicit values from defaults.
+        """
+        bd = self.base_dir
+        if "models_dir" not in self.model_fields_set:
+            self.models_dir = bd / "services" / "ollama" / "models"
+        if "data_dir" not in self.model_fields_set:
+            self.data_dir = bd / "game_data"
+        if "chromadb_dir" not in self.model_fields_set:
+            self.chromadb_dir = bd / "data" / "chromadb"
+        return self
 
 
 settings = Settings()

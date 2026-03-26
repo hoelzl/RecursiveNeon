@@ -110,8 +110,10 @@ class QueueOutput(Output):
     """
 
     def __init__(self, queue: asyncio.Queue[dict]) -> None:
-        # We override every write method, so the parent streams are unused.
-        super().__init__(color=True)
+        # We override every write method, so pass dummy streams to avoid
+        # holding references to sys.stdout/stderr.
+        dummy = io.StringIO()
+        super().__init__(stream=dummy, err_stream=dummy, color=True)
         self._queue = queue
 
     def write(self, text: str) -> None:

@@ -2,7 +2,7 @@
 NPC Data Models
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,7 +37,7 @@ class ConversationMessage(BaseModel):
 
     role: str = Field(..., description="'user' or 'assistant'")
     content: str = Field(..., description="Message content")
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 class NPCMemory(BaseModel):
@@ -165,7 +165,7 @@ Rules:
         """
         message = ConversationMessage(role=role, content=content)
         self.memory.conversation_history.append(message)
-        self.memory.last_interaction = datetime.now()
+        self.memory.last_interaction = datetime.now(tz=UTC)
 
         # Keep only last N messages to avoid unbounded growth
         if len(self.memory.conversation_history) > max_history:
@@ -199,4 +199,4 @@ class ChatResponse(BaseModel):
     npc_id: str
     npc_name: str
     message: str
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

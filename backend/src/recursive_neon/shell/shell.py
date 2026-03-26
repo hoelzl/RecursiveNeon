@@ -111,6 +111,9 @@ def _last_pipe_segment(text: str) -> str:
     """Return text after the last unquoted ``|``.
 
     Used by completion to scope to the current pipeline segment.
+
+    NOTE: The quoting state machine here mirrors ``parser.parse_pipeline``
+    and ``parser.tokenize_ext``.  If quoting rules change, update all three.
     """
     last_pipe = -1
     i = 0
@@ -215,9 +218,7 @@ class Shell:
                 return complete_choices(all_cmd_names, ctx.current)
             return []
 
-        help_entry = self.programs._programs.get("help")
-        if help_entry is not None:
-            help_entry.completer = _complete_help
+        self.programs.set_completer("help", _complete_help)
 
     async def run(self, input_source: InputSource | None = None) -> None:
         """Main REPL loop.
@@ -660,95 +661,6 @@ class LocalRawInput:
     """
 
     async def get_key(self) -> str:
-        import asyncio as _asyncio
+        from recursive_neon.shell.keys import read_key_async
 
-        loop = _asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._read_key_blocking)
-
-    @staticmethod
-    def _read_key_blocking() -> str:
-        import sys as _sys
-
-        if _sys.platform == "win32":
-            return _read_key_windows()
-        else:
-            return _read_key_unix()
-
-
-def _read_key_windows() -> str:
-    """Read a single key on Windows using msvcrt."""
-    import msvcrt
-
-    ch = msvcrt.getwch()
-
-    # Special keys start with \x00 or \xe0
-    if ch in ("\x00", "\xe0"):
-        ch2 = msvcrt.getwch()
-        _WIN_KEYS = {
-            "H": "ArrowUp",
-            "P": "ArrowDown",
-            "K": "ArrowLeft",
-            "M": "ArrowRight",
-            "G": "Home",
-            "O": "End",
-            "S": "Delete",
-        }
-        return _WIN_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
-
-    if ch == "\x1b":
-        return "Escape"
-    if ch == "\r":
-        return "Enter"
-    if ch == "\t":
-        return "Tab"
-    if ch == "\x08":
-        return "Backspace"
-    if ch == "\x03":
-        return "C-c"
-    if ch == "\x04":
-        return "C-d"
-
-    return ch
-
-
-def _read_key_unix() -> str:  # pragma: no cover (Unix only)
-    """Read a single key on Unix using tty/termios."""
-    import select
-    import sys as _sys
-    import termios
-    import tty
-
-    fd = _sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)  # type: ignore[attr-defined]
-    try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
-        ch = _sys.stdin.read(1)
-
-        if ch == "\x1b":
-            if select.select([_sys.stdin], [], [], 0.05)[0]:
-                ch2 = _sys.stdin.read(1)
-                if ch2 == "[":
-                    ch3 = _sys.stdin.read(1)
-                    _ANSI = {
-                        "A": "ArrowUp",
-                        "B": "ArrowDown",
-                        "C": "ArrowRight",
-                        "D": "ArrowLeft",
-                    }
-                    return _ANSI.get(ch3, f"Unknown-[{ch3}")
-            return "Escape"
-
-        if ch == "\r" or ch == "\n":
-            return "Enter"
-        if ch == "\t":
-            return "Tab"
-        if ch == "\x7f":
-            return "Backspace"
-        if ch == "\x03":
-            return "C-c"
-        if ch == "\x04":
-            return "C-d"
-
-        return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore[attr-defined]
+        return await read_key_async()

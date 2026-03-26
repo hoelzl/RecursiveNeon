@@ -183,18 +183,19 @@ class TestNPCManagerWithDependencyInjection:
 
     @pytest.mark.asyncio
     async def test_chat_error_handling(self, npc_manager, sample_npc, mock_llm):
-        """Test that chat errors are handled gracefully with fallback response."""
+        """Test that chat errors propagate and conversation history is rolled back."""
         mock_llm.invoke.side_effect = Exception("LLM error")
 
         npc_manager.register_npc(sample_npc)
+        history_before = len(sample_npc.memory.conversation_history)
 
-        response = await npc_manager.chat(
-            npc_id=sample_npc.id, message="Hello", player_id="test_player"
-        )
+        with pytest.raises(Exception, match="LLM error"):
+            await npc_manager.chat(
+                npc_id=sample_npc.id, message="Hello", player_id="test_player"
+            )
 
-        # Should return fallback response instead of crashing
-        assert response.npc_id == sample_npc.id
-        assert "not sure what to say" in response.message.lower()
+        # User message should be rolled back so history is unchanged
+        assert len(sample_npc.memory.conversation_history) == history_before
 
     def test_create_default_npcs(self, npc_manager):
         """Test creating default NPCs."""

@@ -125,3 +125,9 @@ class ProgramRegistry:
         """Get the help text for a program."""
         entry = self._programs.get(name)
         return entry.help_text if entry else None
+
+    def set_completer(self, name: str, completer: CompletionFn | None) -> None:
+        """Set (or replace) the completion callback for a registered program."""
+        entry = self._programs.get(name)
+        if entry is not None:
+            entry.completer = completer

@@ -77,7 +77,7 @@ class _WebSocketCompleter(Completer):
 
 
 # ---------------------------------------------------------------------------
-# Raw key reading — platform-specific
+# Raw key reading — delegates to shared keys module
 # ---------------------------------------------------------------------------
 
 
@@ -85,116 +85,11 @@ async def _read_raw_key() -> str:
     """Read a single keystroke from the terminal in raw mode.
 
     Returns a canonical key string matching the TuiApp key encoding.
-    Runs blocking I/O in a thread executor.
+    Delegates to the shared keys module (recursive_neon.shell.keys).
     """
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _read_raw_key_blocking)
+    from recursive_neon.shell.keys import read_key_async
 
-
-def _read_raw_key_blocking() -> str:
-    """Blocking raw key read, platform-specific."""
-    if sys.platform == "win32":
-        return _read_raw_key_windows()
-    else:
-        return _read_raw_key_unix()
-
-
-def _read_raw_key_windows() -> str:
-    """Read a single key on Windows using msvcrt."""
-    import msvcrt
-
-    ch = msvcrt.getwch()
-
-    # Special keys start with \x00 or \xe0
-    if ch in ("\x00", "\xe0"):
-        ch2 = msvcrt.getwch()
-        return _WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
-
-    # Ctrl combinations
-    if ord(ch) < 32:
-        return _CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
-
-    # Escape
-    if ch == "\x1b":
-        return "Escape"
-
-    return ch
-
-
-def _read_raw_key_unix() -> str:  # pragma: no cover (Unix only)
-    """Read a single key on Unix using tty/termios."""
-    import termios
-    import tty
-
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)  # type: ignore[attr-defined]
-    try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
-        ch = sys.stdin.read(1)
-
-        if ch == "\x1b":
-            # Could be an escape sequence
-            # Read with a short timeout to distinguish Escape from sequences
-            import select
-
-            if select.select([sys.stdin], [], [], 0.05)[0]:
-                ch2 = sys.stdin.read(1)
-                if ch2 == "[":
-                    ch3 = sys.stdin.read(1)
-                    return _ANSI_SEQUENCES.get(ch3, f"Unknown-[{ch3}")
-                return f"Alt-{ch2}"
-            return "Escape"
-
-        # Ctrl combinations
-        if ord(ch) < 32:
-            return _CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
-
-        # Backspace (DEL)
-        if ch == "\x7f":
-            return "Backspace"
-
-        return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore[attr-defined]
-
-
-# Key lookup tables
-_WINDOWS_SPECIAL_KEYS = {
-    "H": "ArrowUp",
-    "P": "ArrowDown",
-    "K": "ArrowLeft",
-    "M": "ArrowRight",
-    "G": "Home",
-    "O": "End",
-    "I": "PageUp",
-    "Q": "PageDown",
-    "S": "Delete",
-    "R": "Insert",
-    ";": "F1",
-    "<": "F2",
-    "=": "F3",
-    ">": "F4",
-}
-
-_ANSI_SEQUENCES = {
-    "A": "ArrowUp",
-    "B": "ArrowDown",
-    "C": "ArrowRight",
-    "D": "ArrowLeft",
-    "H": "Home",
-    "F": "End",
-}
-
-_CTRL_KEYS = {
-    "\r": "Enter",
-    "\n": "Enter",
-    "\t": "Tab",
-    "\x08": "Backspace",
-    "\x03": "C-c",
-    "\x04": "C-d",
-    "\x11": "C-q",
-    "\x17": "C-w",
-}
+    return await read_key_async()
 
 
 # ---------------------------------------------------------------------------

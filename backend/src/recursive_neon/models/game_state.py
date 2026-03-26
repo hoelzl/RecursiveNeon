@@ -2,7 +2,7 @@
 Game State Models
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -53,4 +53,4 @@ class StatusResponse(BaseModel):
 
     status: str
     system: SystemState
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

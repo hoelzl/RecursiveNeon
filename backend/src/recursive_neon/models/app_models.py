@@ -5,6 +5,7 @@ Core models for the virtual filesystem, notes, and tasks.
 These are presentation-agnostic and work with both CLI and GUI interfaces.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -28,8 +29,8 @@ class FileNode(BaseModel):
     parent_id: str | None = None
     content: str | None = None  # For files: text content or base64 for images
     mime_type: str | None = None  # For files: "text/plain", "image/jpeg", etc.
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class FileSystemState(BaseModel):
@@ -50,8 +51,8 @@ class Note(BaseModel):
     id: str
     title: str
     content: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class NotesState(BaseModel):

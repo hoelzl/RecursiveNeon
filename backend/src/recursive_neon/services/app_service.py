@@ -10,7 +10,7 @@ import contextlib
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,24 +41,29 @@ class AppService:
         # O(1) lookup indexes — mirrors game_state.filesystem.nodes
         self._node_index: dict[str, FileNode] = {}
         self._children_index: dict[str | None, list[str]] = {}
+        self._position_index: dict[str, int] = {}  # node_id → index in nodes list
         self._rebuild_indexes()
 
     def _rebuild_indexes(self) -> None:
         """Rebuild lookup indexes from the canonical nodes list."""
         self._node_index.clear()
         self._children_index.clear()
-        for node in self.game_state.filesystem.nodes:
+        self._position_index.clear()
+        for i, node in enumerate(self.game_state.filesystem.nodes):
             self._node_index[node.id] = node
             self._children_index.setdefault(node.parent_id, []).append(node.id)
+            self._position_index[node.id] = i
 
     def _index_node(self, node: FileNode) -> None:
         """Add a single node to the lookup indexes."""
         self._node_index[node.id] = node
         self._children_index.setdefault(node.parent_id, []).append(node.id)
+        self._position_index[node.id] = len(self.game_state.filesystem.nodes) - 1
 
     def _unindex_node(self, node: FileNode) -> None:
         """Remove a single node from the lookup indexes."""
         self._node_index.pop(node.id, None)
+        self._position_index.pop(node.id, None)
         children = self._children_index.get(node.parent_id)
         if children:
             with contextlib.suppress(ValueError):
@@ -90,7 +95,7 @@ class AppService:
         raise ValueError(f"Note not found: {note_id}")
 
     def create_note(self, data: dict[str, Any]) -> Note:
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         note = Note(
             id=str(uuid.uuid4()),
             title=data.get("title", "Untitled"),
@@ -102,7 +107,7 @@ class AppService:
         return note
 
     def update_note(self, note_id: str, data: dict[str, Any]) -> Note:
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         for i, n in enumerate(self.game_state.notes.notes):
             if n.id == note_id:
                 updated = Note(
@@ -126,13 +131,13 @@ class AppService:
 
     def _handle_notes_action(self, action: str, data: dict) -> dict:
         if action == "get_all":
-            return {"notes": [n.model_dump() for n in self.get_notes()]}
+            return {"notes": [n.model_dump(mode="json") for n in self.get_notes()]}
         elif action == "create":
             note = self.create_note(data)
-            return {"note": note.model_dump()}
+            return {"note": note.model_dump(mode="json")}
         elif action == "update":
             note = self.update_note(data["note_id"], data)
-            return {"note": note.model_dump()}
+            return {"note": note.model_dump(mode="json")}
         elif action == "delete":
             self.delete_note(data["note_id"])
             return {"success": True}
@@ -224,19 +229,21 @@ class AppService:
 
     def _handle_tasks_action(self, action: str, data: dict) -> dict:
         if action == "get_lists":
-            return {"lists": [tl.model_dump() for tl in self.get_task_lists()]}
+            return {
+                "lists": [tl.model_dump(mode="json") for tl in self.get_task_lists()]
+            }
         elif action == "create_list":
             tl = self.create_task_list(data)
-            return {"list": tl.model_dump()}
+            return {"list": tl.model_dump(mode="json")}
         elif action == "delete_list":
             self.delete_task_list(data["list_id"])
             return {"success": True}
         elif action == "create_task":
             task = self.create_task(data["list_id"], data)
-            return {"task": task.model_dump()}
+            return {"task": task.model_dump(mode="json")}
         elif action == "update_task":
             task = self.update_task(data["list_id"], data["task_id"], data)
-            return {"task": task.model_dump()}
+            return {"task": task.model_dump(mode="json")}
         elif action == "delete_task":
             self.delete_task(data["list_id"], data["task_id"])
             return {"success": True}
@@ -250,7 +257,7 @@ class AppService:
         """Initialize filesystem with root directory"""
         if self.game_state.filesystem.root_id:
             return self.get_file(self.game_state.filesystem.root_id)
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         root = FileNode(
             id=str(uuid.uuid4()),
             name="/",
@@ -271,7 +278,7 @@ class AppService:
         return node
 
     def create_directory(self, data: dict[str, Any]) -> FileNode:
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         directory = FileNode(
             id=str(uuid.uuid4()),
             name=data.get("name", "Untitled Folder"),
@@ -285,7 +292,7 @@ class AppService:
         return directory
 
     def create_file(self, data: dict[str, Any]) -> FileNode:
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         file = FileNode(
             id=str(uuid.uuid4()),
             name=data.get("name", "untitled.txt"),
@@ -302,7 +309,7 @@ class AppService:
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
         node = self.get_file(file_id)  # O(1) fail-fast via index
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         updated = FileNode(
             id=node.id,
             name=data.get("name", node.name),
@@ -313,10 +320,9 @@ class AppService:
             created_at=node.created_at,
             updated_at=timestamp,
         )
-        for i, n in enumerate(self.game_state.filesystem.nodes):
-            if n.id == file_id:
-                self.game_state.filesystem.nodes[i] = updated
-                break
+        # O(1) replacement via position index
+        pos = self._position_index[file_id]
+        self.game_state.filesystem.nodes[pos] = updated
         self._node_index[file_id] = updated
         return updated
 
@@ -334,6 +340,10 @@ class AppService:
         self.game_state.filesystem.nodes = [
             n for n in self.game_state.filesystem.nodes if n.id not in ids_to_remove
         ]
+        # Rebuild position index since list was rewritten
+        self._position_index = {
+            n.id: i for i, n in enumerate(self.game_state.filesystem.nodes)
+        }
 
     def _collect_descendant_ids(self, dir_id: str) -> set[str]:
         """Recursively collect all descendant node IDs."""
@@ -349,7 +359,7 @@ class AppService:
         self, file_id: str, target_parent_id: str, new_name: str | None = None
     ) -> FileNode:
         source = self.get_file(file_id)
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         copy = FileNode(
             id=str(uuid.uuid4()),
             name=new_name or source.name,
@@ -369,7 +379,7 @@ class AppService:
 
     def move_file(self, file_id: str, target_parent_id: str) -> FileNode:
         file = self.get_file(file_id)  # O(1) fail-fast via index
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=UTC)
         if file.type == "directory":
             current: str | None = target_parent_id
             while current:
@@ -379,6 +389,8 @@ class AppService:
                     )
                 parent = self.get_file(current)
                 current = parent.parent_id
+        # Grab position before unindexing (unindex clears it)
+        pos = self._position_index[file_id]
         self._unindex_node(file)
         updated = FileNode(
             id=file.id,
@@ -390,11 +402,11 @@ class AppService:
             created_at=file.created_at,
             updated_at=timestamp,
         )
-        for i, n in enumerate(self.game_state.filesystem.nodes):
-            if n.id == file_id:
-                self.game_state.filesystem.nodes[i] = updated
-                break
-        self._index_node(updated)
+        # O(1) replacement via saved position
+        self.game_state.filesystem.nodes[pos] = updated
+        self._node_index[updated.id] = updated
+        self._children_index.setdefault(updated.parent_id, []).append(updated.id)
+        self._position_index[updated.id] = pos
         return updated
 
     def list_directory(self, dir_id: str) -> list[FileNode]:
@@ -405,22 +417,22 @@ class AppService:
     def _handle_filesystem_action(self, action: str, data: dict) -> dict:
         if action == "init":
             root = self.init_filesystem()
-            return {"root": root.model_dump()}
+            return {"root": root.model_dump(mode="json")}
         elif action == "list":
             nodes = self.list_directory(data["dir_id"])
-            return {"nodes": [n.model_dump() for n in nodes]}
+            return {"nodes": [n.model_dump(mode="json") for n in nodes]}
         elif action == "get":
             node = self.get_file(data["file_id"])
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         elif action == "create_file":
             node = self.create_file(data)
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         elif action == "create_directory":
             node = self.create_directory(data)
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         elif action == "update":
             node = self.update_file(data["file_id"], data)
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         elif action == "delete":
             self.delete_file(data["file_id"])
             return {"success": True}
@@ -428,10 +440,10 @@ class AppService:
             node = self.copy_file(
                 data["file_id"], data["target_parent_id"], data.get("new_name")
             )
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         elif action == "move":
             node = self.move_file(data["file_id"], data["target_parent_id"])
-            return {"node": node.model_dump()}
+            return {"node": node.model_dump(mode="json")}
         raise ValueError(f"Unknown filesystem action: {action}")
 
     # ============================================================================
@@ -466,7 +478,8 @@ class AppService:
             "filesystem.json",
             {
                 "nodes": [
-                    node.model_dump() for node in self.game_state.filesystem.nodes
+                    node.model_dump(mode="json")
+                    for node in self.game_state.filesystem.nodes
                 ],
                 "root_id": self.game_state.filesystem.root_id,
             },
@@ -492,7 +505,9 @@ class AppService:
             data_dir,
             "notes.json",
             {
-                "notes": [note.model_dump() for note in self.game_state.notes.notes],
+                "notes": [
+                    note.model_dump(mode="json") for note in self.game_state.notes.notes
+                ],
             },
         )
 
@@ -516,7 +531,9 @@ class AppService:
             data_dir,
             "tasks.json",
             {
-                "lists": [tl.model_dump() for tl in self.game_state.tasks.lists],
+                "lists": [
+                    tl.model_dump(mode="json") for tl in self.game_state.tasks.lists
+                ],
             },
         )
 
@@ -562,12 +579,18 @@ class AppService:
         self._rebuild_indexes()
 
     def _load_directory_recursive(self, source_path: Path, parent_id: str) -> None:
+        """Load real directory contents into the virtual filesystem.
+
+        WARNING: This method appends to the nodes list but does NOT update
+        the lookup indexes.  Callers MUST call ``_rebuild_indexes()`` after
+        all recursive loading is complete.
+        """
         if not source_path.exists() or not source_path.is_dir():
             return
         for item in sorted(source_path.iterdir()):
             if item.name.startswith("."):
                 continue
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now(tz=UTC)
             if item.is_dir():
                 dir_node = FileNode(
                     id=str(uuid.uuid4()),

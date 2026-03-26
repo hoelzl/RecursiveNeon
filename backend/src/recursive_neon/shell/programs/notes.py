@@ -45,7 +45,7 @@ async def _note_list(ctx: ProgramContext) -> int:
     for i, note in enumerate(notes, 1):
         idx = ctx.stdout.styled(f"[{i}]", YELLOW)
         title = ctx.stdout.styled(note.title, BOLD)
-        date = ctx.stdout.styled(note.updated_at[:10], DIM)
+        date = ctx.stdout.styled(note.updated_at.strftime("%Y-%m-%d"), DIM)
         preview = note.content[:60].replace("\n", " ")
         if len(note.content) > 60:
             preview += "..."
