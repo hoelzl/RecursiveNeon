@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-3 complete. Phase 4 (TUI apps / raw mode) not started. Phase 5 planned.
+**Status**: V2 reboot. Phases 0-4 complete. Phase 5 (browser terminal + desktop GUI) planned.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -54,6 +54,8 @@ cd backend
 
 **NPC**: `chat` (list NPCs or enter conversation; supports `/exit`, `/help`, `/relationship`, `/status`)
 
+**TUI Apps**: `codebreaker` (Mastermind-style minigame; requires raw mode — works in local CLI and WebSocket client)
+
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
 **Persistence**: Game state auto-saves on exit to `game_data/`, and periodically during WebSocket sessions. Manual save via `save` command. Files: `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`, `history.txt`.
@@ -62,8 +64,9 @@ cd backend
 
 - Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)
 - Shell REPL: `backend/src/recursive_neon/shell/shell.py` (transport-agnostic via `InputSource` protocol)
-- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, utility)
-- WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`)
+- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, utility)
+- TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
+- WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)
 - Backend main: `backend/src/recursive_neon/main.py` (includes `/ws/terminal` endpoint)
 - DI container: `backend/src/recursive_neon/dependencies.py`

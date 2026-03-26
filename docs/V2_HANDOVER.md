@@ -1,7 +1,7 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-03-25)
-> **Status**: Phases 0-3 complete. Phase 4 (TUI apps / raw mode) not started. Phase 5 planned.
+> **Date**: 2025-03-23 (updated 2026-03-26)
+> **Status**: Phases 0-4 complete. Phase 5 (browser terminal + desktop GUI) planned.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -172,7 +172,7 @@ backend/
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
     terminal.py                       # WebSocket terminal session manager (Phase 3)
-    shell/                            # CLI shell package (Phase 1-2)
+    shell/                            # CLI shell package (Phase 1-4)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
       builtins.py                     # cd, exit, export (modify shell state)
@@ -181,9 +181,13 @@ backend/
       path_resolver.py                # Virtual path → FileNode resolution
       session.py                      # ShellSession (cwd, env, history)
       shell.py                        # REPL loop, dispatch, InputSource protocol, tab completion
+      tui/                            # TUI framework (Phase 4)
+        __init__.py                   # ScreenBuffer, TuiApp protocol, RawInputSource protocol
+        runner.py                     # run_tui_app() lifecycle: mode switching, keystroke routing
       programs/
         __init__.py                   # ProgramRegistry + ProgramContext + Program protocol
         chat.py                       # NPC conversation sub-REPL with /commands
+        codebreaker.py                # Mastermind-style TUI minigame (Phase 4)
         filesystem.py                 # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
         notes.py                      # note list/show/create/edit/delete
         tasks.py                      # task lists/list/add/done/undone/delete
@@ -219,6 +223,8 @@ backend/
     unit/shell/test_programs.py       # Filesystem + utility program tests
     unit/shell/test_shell_integration.py  # Shell.execute_line dispatch tests
     unit/shell/test_task_program.py   # Task CLI program tests
+    unit/shell/test_tui.py            # TUI framework: ScreenBuffer, runner lifecycle (Phase 4)
+    unit/shell/test_codebreaker.py    # CodeBreaker: game logic, TUI app, key handling (Phase 4)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -252,7 +258,7 @@ scripts/
 
 2. ~~**CLAUDE.md is outdated**~~ — **Resolved.** Rewritten for v2 with setup commands, quality tooling, and key entry points.
 
-3. **`npc_manager.py` uses LangChain ConversationChain** — this was marked for potential simplification. ConversationBufferMemory has unbounded growth. Not blocking, but worth noting. (Uses `langchain_classic` compat shim after upgrade to langchain 1.x.)
+3. ~~**`npc_manager.py` uses LangChain ConversationChain**~~ — **Resolved.** Migrated to direct LLM invocation via `langchain_core.messages`. `ConversationChain` and `ConversationBufferWindowMemory` removed; the NPC model's own conversation history is used directly.
 
 4. **`app_service.py` uses O(n) list scans** — all get/update operations iterate the full node/note/task lists. Fine for now, but should use dict-based lookup if collections grow large.
 
@@ -311,14 +317,16 @@ Completed:
 8. **Chat UX improvements**: All slash commands use `/` prefix (`/exit`, `/help`, `/relationship`, `/status`). Animated typing indicator ("NPC is typing...") while waiting for LLM response.
 9. **Tests**: 28 new tests — QueueOutput, WebSocketInput, session manager lifecycle, shell start/stop/feed/exit, tab completion (incl. `get_completions_ext`), WebSocket completer, auto-save, and 8 WebSocket integration tests. 345 total tests, all passing.
 
-### Phase 4: TUI Apps (Raw Mode)
+### Phase 4: TUI Apps (Raw Mode) — **COMPLETE**
 **Goal**: Interactive full-screen apps that run inside the terminal, driven by keystroke input. Testable via both the local CLI and the WebSocket client from Phase 3.
 
-Tasks:
-1. Design raw mode protocol (server tells client to switch modes; client sends individual keystrokes)
-2. TUI framework: screen buffer, cursor management, input handling
-3. Build TUI apps (minigames, file browser, etc. — scope TBD)
-4. Tests for raw mode switching and TUI app behavior
+Completed:
+1. **Raw mode protocol**: Server sends `{"type": "mode", "mode": "raw"|"cooked"}` to switch modes. Client sends `{"type": "key", "key": "..."}` for keystrokes in raw mode. Mode-aware message routing ignores wrong-mode messages.
+2. **TUI framework** (`shell/tui/`): `ScreenBuffer` (2D text grid with cursor), `TuiApp` protocol (`on_start`/`on_key`/`on_resize`), `RawInputSource` protocol, `run_tui_app()` lifecycle manager.
+3. **CodeBreaker minigame**: Mastermind-style TUI game with ANSI-colored rendering, arrow key navigation, symbol cycling, win/loss detection. Registered as `codebreaker` shell command.
+4. **Local terminal support**: `LocalRawInput` for platform-specific keystroke reading + alternate screen buffer.
+5. **WebSocket client raw mode**: Platform-specific raw key reading (Windows `msvcrt` / Unix `tty.setraw`). Headless mode (`--headless`) for automation.
+6. **Tests**: 57 new tests — TUI framework (19), CodeBreaker (27), terminal raw mode + WS integration (11). 402 total tests, all passing.
 
 ### Phase 5: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.

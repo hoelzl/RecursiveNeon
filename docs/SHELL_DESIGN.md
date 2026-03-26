@@ -1,7 +1,7 @@
 # Shell Design Document
 
-> **Status**: Phases 1-3 implemented. Design document kept for architecture reference.
-> **Date**: 2026-03-23 (updated 2026-03-25)
+> **Status**: Phases 1-4 implemented. Design document kept for architecture reference.
+> **Date**: 2026-03-23 (updated 2026-03-26)
 
 ## 1. Overview
 
@@ -22,7 +22,7 @@ Layer 4: Desktop GUI (Browser)         ← future
 - **Builtins vs programs.** Like a real Unix shell, only commands that *must* modify shell state (e.g., `cd`) are builtins. Everything else — including `ls`, `cat`, `chat` — is a standalone program with a restricted interface. This models real system behavior and opens the door for player-written scripts.
 - **Testable without a human.** Every command can be driven programmatically. Claude Code can play the game.
 - **Output abstraction.** Programs write to an `Output` object, not directly to stdout. This lets us later pipe the same output through a WebSocket to the browser terminal (Layer 3) without changing any program code.
-- **Two input modes.** Cooked mode (line-edited shell) and raw mode (future TUI apps/minigames get raw keystrokes). Only cooked mode is implemented in Phase 1.
+- **Two input modes.** Cooked mode (line-edited shell) and raw mode (TUI apps/minigames get raw keystrokes). Both modes implemented; see `shell/tui/` for the raw mode framework.
 
 ## 2. Package Structure
 
@@ -36,11 +36,15 @@ backend/src/recursive_neon/shell/
 ├── output.py            # Output abstraction (ANSI helpers, write/error/table)
 ├── path_resolver.py     # Virtual path → FileNode resolution
 ├── builtins.py          # Shell builtins (cd, exit, export)
+├── tui/
+│   ├── __init__.py      # ScreenBuffer, TuiApp protocol, RawInputSource protocol
+│   └── runner.py        # run_tui_app() lifecycle: mode switching, keystroke routing
 └── programs/
     ├── __init__.py      # ProgramRegistry + Program protocol + ProgramContext
     ├── filesystem.py    # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
     ├── utility.py       # help, clear, echo, env, whoami, hostname, date, save
     ├── chat.py          # chat <npc> — NPC conversation mode with /commands
+    ├── codebreaker.py   # Mastermind-style TUI minigame (raw mode)
     ├── notes.py         # note list/show/create/edit/delete
     └── tasks.py         # task lists/list/add/done/undone/delete
 ```

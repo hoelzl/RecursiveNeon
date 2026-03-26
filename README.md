@@ -94,7 +94,15 @@ Game state saved.
 
 Game state (filesystem, notes, tasks, NPC conversations) persists across sessions automatically on exit, or manually with `save`.
 
-**All commands:** `ls`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `grep`, `find`, `write`, `note`, `task`, `chat`, `save`, `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `export`, `exit`
+**Play minigames:**
+
+```
+user@neon-proxy:/$ codebreaker
+```
+
+Launches a full-screen Mastermind-style code-breaking game with ANSI colors, arrow key navigation, and symbol cycling.
+
+**All commands:** `ls`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `grep`, `find`, `write`, `note`, `task`, `chat`, `codebreaker`, `save`, `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `export`, `exit`
 
 ## Setting Up NPC Chat
 
@@ -131,9 +139,10 @@ The shell also runs over WebSocket, enabling remote connections via the same pro
 ```
 Layer 1: Application Core     AppService, NPCManager, GameState
 Layer 2: CLI Shell             prompt_toolkit REPL, commands, path resolver
-Layer 3: WebSocket Terminal    /ws/terminal endpoint + CLI client (complete)
-Layer 4: Browser Terminal      (planned) xterm.js over WebSocket
-Layer 5: Desktop GUI           (planned) window manager, taskbar
+Layer 3: WebSocket Terminal    /ws/terminal endpoint + CLI client
+Layer 4: TUI Apps              Raw mode, ScreenBuffer, CodeBreaker minigame
+Layer 5: Browser Terminal      (planned) xterm.js over WebSocket
+Layer 6: Desktop GUI           (planned) window manager, taskbar
 ```
 
 Every feature works in the CLI before touching the browser. See [docs/](docs/) for detailed design documents.

@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-3 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol). Phase 4 (TUI apps / raw mode) is not started.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-4 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame). Phase 5 (browser terminal + desktop GUI) is planned.
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 345 tests
+../.venv/Scripts/pytest              # All 402 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -76,6 +76,8 @@ All three must pass before committing.
 | Config | `backend/src/recursive_neon/config.py` |
 | App service | `backend/src/recursive_neon/services/app_service.py` |
 | NPC manager | `backend/src/recursive_neon/services/npc_manager.py` |
+| TUI framework | `backend/src/recursive_neon/shell/tui/` |
+| CodeBreaker minigame | `backend/src/recursive_neon/shell/programs/codebreaker.py` |
 | Models | `backend/src/recursive_neon/models/` |
 | Test fixtures | `backend/tests/conftest.py`, `backend/tests/unit/shell/conftest.py` |
 
@@ -85,15 +87,32 @@ The shell runs over WebSocket via `/ws/terminal`. Key concepts:
 - **`InputSource` protocol** in `shell.py` — abstracts where command lines come from (prompt_toolkit, WebSocket queue, test mock)
 - **`QueueOutput`** in `output.py` — pushes output to an `asyncio.Queue` for the WS handler to drain
 - **`TerminalSessionManager`** in `terminal.py` — owns Shell instances by UUID, decoupled from WS connection lifecycle
-- **Message protocol**: `input`, `output`, `prompt`, `complete`/`completions`, `exit`, `error` (all JSON)
-- **WebSocket CLI client**: `python -m recursive_neon.wsclient` for interactive sessions
+- **Message protocol**: `input`, `output`, `prompt`, `complete`/`completions`, `mode`, `screen`, `key`, `exit`, `error` (all JSON)
+- **WebSocket CLI client**: `python -m recursive_neon.wsclient` for interactive sessions; `--headless` for automation
 
-## What's Next (Phase 4)
+## TUI Framework (Phase 4)
 
-Phase 4 is TUI apps with raw mode. Key decisions ahead:
-- Raw mode protocol design (server tells client to switch modes; client sends keystrokes)
-- TUI framework: screen buffer, cursor management, input handling
-- Minigames, file browser, etc. (scope TBD)
-- Testable via both local CLI and WebSocket client
+Full-screen apps run inside the terminal via raw mode. Key concepts:
+- **`ScreenBuffer`** in `shell/tui/__init__.py` — 2D text grid with cursor, renders to ANSI or WebSocket `screen` messages
+- **`TuiApp` protocol** — apps implement `on_start()`, `on_key()`, `on_resize()`
+- **`run_tui_app()`** in `shell/tui/runner.py` — lifecycle manager: enters raw mode, routes keystrokes, delivers screens, exits cleanly
+- **Raw mode switching**: server sends `{"type": "mode", "mode": "raw"}`, client sends `{"type": "key", "key": "ArrowUp"}` etc.
+- **`ProgramContext.run_tui`** — callback wired by terminal session or local CLI to launch TUI apps
 
-See `docs/V2_HANDOVER.md` Section 6 (Phase 4) for the full plan.
+### How to Add a TUI App
+
+1. Create a class implementing `TuiApp` (`on_start`, `on_key`, `on_resize`)
+2. Use `ScreenBuffer` for rendering (set lines, move cursor, call `render_ansi()` or `to_message()`)
+3. Return exit code from `on_key` to signal app termination
+4. Register a shell command that calls `ctx.run_tui(my_app)`
+5. See `programs/codebreaker.py` for the reference implementation
+
+## What's Next (Phase 5)
+
+Phase 5 is the browser terminal + desktop GUI:
+- xterm.js connecting to `/ws/terminal` (same protocol as CLI client)
+- Cooked mode (shell) + raw mode (TUI apps) rendering in the browser
+- Desktop chrome: window manager, taskbar, desktop icons
+- Restore the cyberpunk CSS theme from v1
+
+See `docs/V2_HANDOVER.md` Section 6 (Phase 5) for the full plan.

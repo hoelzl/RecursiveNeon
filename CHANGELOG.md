@@ -2,6 +2,37 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Post-Phase 4 Fixes (2026-03-26)
+
+### Changed
+- **LangChain migration** — Replaced deprecated `ConversationChain` + `ConversationBufferWindowMemory` from `langchain_classic` with direct LLM message invocation using `langchain_core.messages`. The NPC model already tracked conversation history, making LangChain's memory abstraction redundant. Eliminates all `LangChainDeprecationWarning` messages.
+- **Simplified mock LLM** — Test fixtures no longer need `predict`, `generate_prompt`, `BaseChatModel` spec; only `invoke`/`ainvoke` returning `AIMessage`.
+
+### Fixed
+- **Chat autocomplete** — Shell tab-completion no longer pops up while chatting with NPCs. Added `complete` parameter to `get_line` protocol.
+- **Chat history isolation** — Chat messages no longer pollute shell command history (and vice versa). Added `history_id` parameter to `get_line`; chat uses a separate `InMemoryHistory`.
+- **Pydantic v1 warning** — Moved `warnings.filterwarnings` from `shell/__main__.py` and `main.py` to `recursive_neon/__init__.py` so it takes effect before transitive imports trigger the warning.
+
+## Phase 4 — TUI Apps / Raw Mode (2026-03-25)
+
+### Added
+- **Raw mode protocol** — Server sends `{"type": "mode", "mode": "raw"|"cooked"}` to switch terminal modes. Client sends `{"type": "key", "key": "..."}` in raw mode; server ignores wrong-mode messages.
+- **TUI framework** (`shell/tui/`):
+  - `ScreenBuffer` — 2D text grid with cursor position, visibility, and ANSI rendering
+  - `TuiApp` protocol — `on_start()`, `on_key()`, `on_resize()` interface for full-screen apps
+  - `RawInputSource` protocol — keystroke input abstraction
+  - `run_tui_app()` — lifecycle manager: mode switching, keystroke routing, screen delivery
+- **CodeBreaker minigame** — Mastermind-style TUI game with ANSI-colored UI, arrow key navigation, symbol cycling, win/loss detection. Registered as `codebreaker` shell command.
+- **Local terminal raw mode** — `PromptToolkitInput` wires up `LocalRawInput` + alternate screen buffer for TUI apps.
+- **WebSocket client raw mode** — Platform-specific raw key reading (Windows `msvcrt` / Unix `tty.setraw`). Client detects mode switches and routes keystrokes.
+- **Headless WebSocket client** — `--headless` flag reads/writes JSON on stdin/stdout for automation.
+- **57 new tests** — TUI framework (19), CodeBreaker (27), terminal raw mode + WebSocket integration (11). 402 total tests.
+
+### Changed
+- `ProgramContext` gains `run_tui` callback for launching TUI apps
+- `/ws/terminal` protocol extended with `mode`, `screen`, and `key` message types
+- WebSocket client refactored with session-based architecture for mode switching
+
 ## Phase 3 — WebSocket Terminal Protocol + CLI Client (2026-03-24)
 
 ### Added
