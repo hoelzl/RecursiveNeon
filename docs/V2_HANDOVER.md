@@ -183,6 +183,7 @@ backend/
       path_resolver.py                # Virtual path → FileNode resolution
       session.py                      # ShellSession (cwd, env, history)
       shell.py                        # REPL loop, pipeline dispatch, InputSource protocol, completion
+      keys.py                         # Platform-specific raw keystroke reading (shared by CLI + WS client)
       tui/                            # TUI framework (Phase 4)
         __init__.py                   # ScreenBuffer, TuiApp protocol, RawInputSource protocol
         runner.py                     # run_tui_app() lifecycle: mode switching, keystroke routing
@@ -236,7 +237,10 @@ backend/
 
 docs/
   ARCHITECTURE.md                     # Why Ollama, system architecture
+  BACKEND_CONVENTIONS.md              # Python style, DI, testing patterns
   QUICKSTART.md                       # Setup guide
+  SHELL_DESIGN.md                     # CLI shell architecture and design
+  TECH_DEBT.md                        # Tech debt tracker (workarounds, deferred fixes)
 
 frontend/
   .npmrc                              # npm config
@@ -347,7 +351,7 @@ Completed:
 1. **Context-sensitive completion** (5a): New `shell/completion.py` with `CompletionContext`, `CompletionFn`, shared helpers. `ProgramRegistry` gains optional `completer` param. Per-command completers for all commands: `cd` (dirs-only), `ls`/`rm`/`grep`/`find` (flags + paths), `note`/`task` (subcommands + dynamic refs), `chat` (NPC IDs), `help` (all command names). Builtin completers via `BUILTIN_COMPLETERS` dict. `ShellCompleter` simplified to delegate to `get_completions_ext`. Works over WebSocket unchanged.
 2. **Shell-level glob expansion** (5b): `Token` dataclass with `quoted` flag in `tokenize_ext()`. New `shell/glob.py` with `expand_globs()`. Pipeline: `tokenize_ext → expand_globs → dispatch`. Single-level patterns (`*`, `?`, `[...]`) matched via `fnmatch` against virtual filesystem children. Directories get trailing `/` in results.
 3. **Pipes and output redirection** (5c): `parse_pipeline()` splits at unquoted `|`, `>`, `>>`. Pipeline segments execute sequentially with `CapturedOutput` for piping. `ProgramContext.stdin` added; `cat` and `grep` read from it. Redirect writes to virtual files (create or overwrite/append). Pipe-aware completion via `_last_pipe_segment()`.
-4. **Tests**: 125 new tests — context-sensitive completion (58), glob expansion (33), pipes/redirection (34). 527 total tests, all passing. Lint and type checks clean.
+4. **Tests**: 125 new tests — context-sensitive completion (58), glob expansion (33), pipes/redirection (34). Post-Phase 5 deep review added hardening and tests across the codebase. 568 total tests, all passing. Lint and type checks clean.
 
 ### Phase 6: Text Editor + TUI Apps
 **Goal**: A capable TUI text editor ("neon-edit") and additional TUI apps that leverage it. The editor should work both in the terminal and (later) as a GUI app, making it a key investment before the browser phase.

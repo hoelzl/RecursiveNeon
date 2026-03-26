@@ -39,3 +39,13 @@ block from `__init__.py` and delete this entry.
 **Upstream refs**:
 - https://github.com/langchain-ai/langchain/issues/33926
 - https://github.com/pydantic/pydantic/issues/12618
+
+---
+
+## Resolved
+
+### ~~TD-002: Unused LLM/AI dependencies~~ (resolved 2026-03-26)
+
+- **Location**: `backend/pyproject.toml`
+- **Summary**: `langchain-community`, `langgraph`, and `chromadb` were listed as core dependencies but unused.
+- **Resolution**: Moved to `[project.optional-dependencies] ai-extras`. Install with `pip install -e ".[ai-extras]"` when needed.

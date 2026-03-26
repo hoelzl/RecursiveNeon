@@ -35,7 +35,7 @@ Ollama solves these problems:
 │  xterm.js, WebSocket transport                   │
 ├─────────────────────────────────────────────────┤
 │  Layer 2: CLI Shell (Python)          ← current │
-│  prompt_toolkit REPL, commands, path resolver    │
+│  REPL, commands, pipes, globs, TUI apps, WS     │
 ├─────────────────────────────────────────────────┤
 │  Layer 1: Application Core (Python)   ← exists  │
 │  AppService, NPCManager, GameState, models       │
@@ -64,9 +64,12 @@ Every feature works in the CLI (Layer 2) before touching the browser (Layers 3-4
 - **ShellSession** — session state (cwd, env vars, history) + path resolution between human-readable paths and UUID-based filesystem.
 - **ProgramRegistry** — maps program names to async `Program` implementations with restricted `ProgramContext`.
 - **Builtins** (`cd`, `exit`, `export`) — modify shell session state directly.
-- **Programs** — filesystem ops (`ls`, `cat`, `grep`, `find`, `write`, ...), notes/tasks management, NPC chat, utilities (`help`, `save`, `echo`, ...).
-- **Output** — abstracted output with ANSI colors, replaceable with WebSocket transport for Layer 3.
-- **Persistence** — game state (filesystem, notes, tasks, NPC conversations) saves to `game_data/` as JSON on exit and loads on startup. Shell history persists via `FileHistory`.
+- **Programs** — filesystem ops (`ls`, `cat`, `grep`, `find`, `write`, ...), notes/tasks management, NPC chat, TUI minigames (`codebreaker`), utilities (`help`, `save`, `echo`, ...).
+- **Shell features** — pipes (`|`), output redirection (`>`, `>>`), glob expansion (`*`, `?`, `[...]`), context-sensitive tab completion.
+- **TUI framework** — raw-mode app support via `ScreenBuffer`, `TuiApp` protocol, and `run_tui_app()` lifecycle manager.
+- **WebSocket transport** — `/ws/terminal` endpoint serves the same shell over WebSocket with JSON protocol. CLI client: `python -m recursive_neon.wsclient`.
+- **Output** — abstracted output with ANSI colors, `CapturedOutput` for pipes, `QueueOutput` for WebSocket delivery.
+- **Persistence** — game state (filesystem, notes, tasks, NPC conversations) saves to `game_data/` as JSON on exit and loads on startup. Auto-saves periodically during WebSocket sessions. Shell history persists via `FileHistory`.
 
 See `docs/SHELL_DESIGN.md` for detailed shell architecture.
 

@@ -38,6 +38,7 @@ backend/src/recursive_neon/shell/
 ├── output.py            # Output abstraction (ANSI helpers, write/error/table)
 ├── path_resolver.py     # Virtual path → FileNode resolution
 ├── builtins.py          # Shell builtins (cd, exit, export) + BUILTIN_COMPLETERS
+├── keys.py              # Platform-specific raw keystroke reading (shared by CLI + WS client)
 ├── tui/
 │   ├── __init__.py      # ScreenBuffer, TuiApp protocol, RawInputSource protocol
 │   └── runner.py        # run_tui_app() lifecycle: mode switching, keystroke routing
@@ -874,31 +875,32 @@ When user scripts land, we'll need to distinguish executable from non-executable
 
 This is a small addition to `FileNode`, not a redesign.
 
-## 11. Future Extensibility (Phases 2-3)
+## 11. Extensibility
 
-### 11.1 Pipes and Redirects
+### 11.1 Pipes and Redirects — **Implemented (Phase 5c)**
 
-The parser can be extended to recognize `|`, `>`, `<` tokens. Program output already goes through `Output`, which can be redirected. Pipes would create an `Output` → `Input` bridge between two programs.
+`parse_pipeline()` splits command lines at unquoted `|`, `>`, `>>`. Pipeline segments execute sequentially with `CapturedOutput` for piping stdout between programs. `ProgramContext.stdin` carries piped text. `cat` and `grep` read from stdin when piped. Redirect writes to virtual files (create, overwrite, or append).
 
-### 11.2 Raw Mode / TUI Apps
+### 11.2 Raw Mode / TUI Apps — **Implemented (Phase 4)**
 
-`prompt_toolkit` supports full-screen applications. A future TUI program (minigame, text editor) would signal the shell to enter raw mode, take over the terminal, and return to cooked mode on exit.
+The TUI framework (`shell/tui/`) supports full-screen apps. `TuiApp` protocol defines `on_start`/`on_key`/`on_resize`. `run_tui_app()` manages mode switching (cooked ↔ raw), keystroke routing, and cleanup. `ScreenBuffer` provides a 2D text grid with cursor. CodeBreaker minigame demonstrates the framework. Raw mode works in local CLI and over WebSocket.
 
-### 11.3 WebSocket Transport
+### 11.3 WebSocket Transport — **Implemented (Phase 3)**
 
-`Output` is abstract enough to be backed by a WebSocket. `ProgramContext` can be created per-connection on the server side. The `Shell` REPL loop would be replaced by a message handler that calls `execute_line()` per incoming message.
+`/ws/terminal` endpoint serves shell sessions over WebSocket with a JSON protocol (`input`, `output`, `prompt`, `complete`/`completions`, `mode`, `key`, `exit`, `error` message types). `WebSocketInput` and `QueueOutput` adapt the shell's `InputSource`/`Output` abstractions. `TerminalSessionManager` owns sessions independently of connection lifecycle. CLI client: `python -m recursive_neon.wsclient`.
 
 ### 11.4 Additional System Programs
 
-The following programs from Phase 2 are now implemented (see Sections 5.1, 5.4, 5.5):
+Implemented across Phases 2-5 (see Sections 5.1, 5.4, 5.5):
 - `note` — Notes CRUD
 - `task` — Task management
 - `grep` — Search file contents (regex)
 - `find` — Find files by name pattern (glob)
 - `write` — Write content to files
 - `save` — Save game state to disk
+- `codebreaker` — Mastermind-style TUI minigame (Phase 4)
 
 Still planned for future phases:
 | Program | Description |
 |---------|-------------|
-| `edit` | Simple text editor (TUI, raw mode — requires Phase 3 infrastructure) |
+| `neon-edit` | TUI text editor (Phase 6) |

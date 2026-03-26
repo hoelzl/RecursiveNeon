@@ -70,6 +70,7 @@ cd backend
 - Completion: `backend/src/recursive_neon/shell/completion.py` (`CompletionContext`, per-command completers)
 - Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, virtual filesystem matching)
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)
+- Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)
@@ -88,4 +89,5 @@ cd backend
 - `docs/BACKEND_CONVENTIONS.md` — Python code style, testing patterns, DI walkthrough
 - `docs/ARCHITECTURE.md` — Why Ollama, system architecture
 - `backend/FILESYSTEM_SECURITY.md` — Virtual filesystem security design
+- `docs/TECH_DEBT.md` — Tech debt tracker (workarounds, deferred fixes)
 - `frontend/src/styles/desktop.css` — Cyberpunk CSS theme (preserved from v1 for future use)

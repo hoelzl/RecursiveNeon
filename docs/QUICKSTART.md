@@ -89,8 +89,9 @@ cd backend
 backend/src/recursive_neon/
   models/          Data models (FileNode, NPC, GameState, etc.)
   services/        Business logic (AppService, NPCManager, etc.)
-  shell/           CLI shell (REPL, session, builtins)
-    programs/      Shell programs (filesystem, notes, tasks, chat, utility)
+  shell/           CLI shell (REPL, session, builtins, pipes, globs)
+    programs/      Shell programs (filesystem, notes, tasks, chat, codebreaker, utility)
+    tui/           TUI framework (raw mode apps, screen buffer)
   terminal.py      WebSocket terminal session manager
   wsclient/        WebSocket CLI client
   config.py        Settings (Pydantic)
@@ -109,4 +110,5 @@ backend/tests/
 - [SHELL_DESIGN.md](SHELL_DESIGN.md) — CLI shell design
 - [BACKEND_CONVENTIONS.md](BACKEND_CONVENTIONS.md) — code style, DI, testing
 - [V2_HANDOVER.md](V2_HANDOVER.md) — V2 decisions, what was kept/removed, phases
+- [TECH_DEBT.md](TECH_DEBT.md) — tech debt tracker (workarounds, deferred fixes)
 - [backend/FILESYSTEM_SECURITY.md](../backend/FILESYSTEM_SECURITY.md) — virtual filesystem security
