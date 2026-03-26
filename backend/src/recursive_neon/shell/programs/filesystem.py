@@ -121,6 +121,11 @@ def _print_entry_long(ctx: ProgramContext, node) -> None:
 async def prog_cat(ctx: ProgramContext) -> int:
     """Print file contents."""
     if len(ctx.args) < 2:
+        if ctx.stdin is not None:
+            ctx.stdout.write(ctx.stdin)
+            if ctx.stdin and not ctx.stdin.endswith("\n"):
+                ctx.stdout.writeln()
+            return 0
         ctx.stderr.error("cat: missing file operand")
         return 1
 
@@ -405,6 +410,18 @@ async def prog_grep(ctx: ProgramContext) -> int:
     except re.error as e:
         ctx.stderr.error(f"grep: invalid pattern: {e}")
         return 1
+
+    if not paths and ctx.stdin is not None:
+        # Search piped stdin instead of filesystem
+        stdin_results: list[tuple[str, int, str]] = []
+        for lineno, line in enumerate(ctx.stdin.splitlines(), 1):
+            if pattern.search(line):
+                stdin_results.append(("(stdin)", lineno, line))
+        for file_path, lineno, line in stdin_results:
+            prefix = ctx.stdout.styled(f"{file_path}:", MAGENTA)
+            num = ctx.stdout.styled(f"{lineno}:", GREEN)
+            ctx.stdout.writeln(f"{prefix}{num}{line}")
+        return 0 if stdin_results else 1
 
     if not paths:
         paths = ["."]

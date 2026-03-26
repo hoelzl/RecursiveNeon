@@ -38,6 +38,7 @@ class ProgramContext:
     program_help: dict[str, str] | None = None
     get_line: Callable[..., Awaitable[str]] | None = None
     run_tui: Callable[[Any], Awaitable[int]] | None = None
+    stdin: str | None = None
 
     def resolve_path(self, path: str) -> FileNode:
         """Resolve a path string to a FileNode."""

@@ -31,9 +31,10 @@ from recursive_neon.shell.output import (
     MAGENTA,
     RED,
     RESET,
+    CapturedOutput,
     Output,
 )
-from recursive_neon.shell.parser import tokenize, tokenize_ext
+from recursive_neon.shell.parser import Redirect, parse_pipeline, tokenize
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.codebreaker import register_codebreaker_program
@@ -104,6 +105,43 @@ WELCOME_BANNER = """\
 ║  Type 'help' for available commands              ║
 ╚══════════════════════════════════════════════════╝\033[0m
 """
+
+
+def _last_pipe_segment(text: str) -> str:
+    """Return text after the last unquoted ``|``.
+
+    Used by completion to scope to the current pipeline segment.
+    """
+    last_pipe = -1
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            i += 2
+        elif ch == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                if text[i] == "\\" and i + 1 < n:
+                    i += 2
+                else:
+                    i += 1
+            if i < n:
+                i += 1
+        elif ch == "'":
+            i += 1
+            while i < n and text[i] != "'":
+                i += 1
+            if i < n:
+                i += 1
+        elif ch == "|":
+            last_pipe = i
+            i += 1
+        else:
+            i += 1
+    if last_pipe >= 0:
+        return text[last_pipe + 1 :]
+    return text
 
 
 def _make_shell_completer(shell: Shell):
@@ -239,22 +277,79 @@ class Shell:
     async def execute_line(self, line: str) -> int:
         """Parse and execute a single command line.
 
+        Supports pipes (``|``) and output redirection (``>``, ``>>``).
+
         Returns:
             Exit code (0 = success, -1 = exit requested, other = error).
         """
         try:
-            raw_tokens = tokenize_ext(line)
+            pipeline = parse_pipeline(line)
         except ValueError as e:
             self.output.error(f"nsh: {e}")
             return 1
 
-        if not raw_tokens:
+        if not pipeline.segments or not pipeline.segments[0].tokens:
             return 0
 
-        # Expand globs in unquoted tokens
-        tokens = expand_globs(
-            raw_tokens, self.session.cwd_id, self.session.container.app_service
-        )
+        # Simple case: single command, no redirect
+        if len(pipeline.segments) == 1 and pipeline.redirect is None:
+            tokens = expand_globs(
+                pipeline.segments[0].tokens,
+                self.session.cwd_id,
+                self.session.container.app_service,
+            )
+            return await self._execute_tokens(tokens, self.output)
+
+        # Pipeline / redirect execution
+        stdin_text: str | None = None
+        last_exit = 0
+
+        for i, seg in enumerate(pipeline.segments):
+            tokens = expand_globs(
+                seg.tokens,
+                self.session.cwd_id,
+                self.session.container.app_service,
+            )
+            is_last = i == len(pipeline.segments) - 1
+
+            if not is_last or pipeline.redirect is not None:
+                # Capture stdout for piping or redirect
+                captured = CapturedOutput()
+                last_exit = await self._execute_tokens(
+                    tokens, captured, stdin=stdin_text
+                )
+                stdin_text = captured.text
+            else:
+                # Last segment, no redirect — write to real output
+                last_exit = await self._execute_tokens(
+                    tokens, self.output, stdin=stdin_text
+                )
+
+        # Handle redirect
+        if pipeline.redirect is not None:
+            self._write_redirect(pipeline.redirect, stdin_text or "")
+
+        return last_exit
+
+    async def _execute_tokens(
+        self,
+        tokens: list[str],
+        output: Output,
+        *,
+        stdin: str | None = None,
+    ) -> int:
+        """Execute a single command from expanded tokens.
+
+        Args:
+            tokens: Expanded argv-style tokens (first is command name).
+            output: Where stdout goes (may be CapturedOutput for pipes).
+            stdin: Piped input from a previous command, or None.
+
+        Returns:
+            Exit code.
+        """
+        if not tokens:
+            return 0
 
         name = tokens[0]
 
@@ -262,10 +357,10 @@ class Shell:
         if len(tokens) >= 2 and tokens[1] in ("-h", "--help"):
             return self._show_command_help(name)
 
-        # 1. Check builtins
+        # 1. Check builtins (builtins don't participate in pipes)
         if name in self.builtins:
             try:
-                return await self.builtins[name](self.session, tokens, self.output)
+                return await self.builtins[name](self.session, tokens, output)
             except Exception as e:
                 self.output.error(f"{name}: {e}")
                 return 1
@@ -273,17 +368,45 @@ class Shell:
         # 2. Check system programs
         program = self.programs.get(name)
         if program is not None:
-            ctx = self._make_program_context(tokens)
+            ctx = self._make_program_context(tokens, output=output, stdin=stdin)
             try:
                 return await program.run(ctx)
             except Exception as e:
+                # Errors go to the real output, not the pipe
                 self.output.error(f"{name}: {e}")
                 return 1
 
-        # 3. Future: check PATH for executable scripts
-
         self.output.error(f"nsh: command not found: {name}")
         return 127
+
+    def _write_redirect(self, redirect: Redirect, content: str) -> None:
+        """Write captured output to a virtual file."""
+        app_service = self.session.container.app_service
+        try:
+            node = self.session.resolve_path(redirect.target)
+            if node.type == "directory":
+                self.output.error(f"nsh: {redirect.target}: Is a directory")
+                return
+            if redirect.mode == ">>":
+                existing = node.content or ""
+                content = existing + content
+            app_service.update_file(node.id, {"content": content})
+        except FileNotFoundError:
+            try:
+                from recursive_neon.shell.path_resolver import resolve_parent_and_name
+
+                parent, fname = resolve_parent_and_name(
+                    redirect.target,
+                    self.session.cwd_id,
+                    app_service,
+                )
+                app_service.create_file(
+                    {"name": fname, "parent_id": parent.id, "content": content}
+                )
+            except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+                self.output.error(f"nsh: {e}")
+        except NotADirectoryError as e:
+            self.output.error(f"nsh: {e}")
 
     def _show_command_help(self, name: str) -> int:
         """Print help text for a builtin or program. Returns exit code."""
@@ -304,18 +427,25 @@ class Shell:
         self.output.error(f"nsh: command not found: {name}")
         return 127
 
-    def _make_program_context(self, args: list[str]) -> ProgramContext:
+    def _make_program_context(
+        self,
+        args: list[str],
+        *,
+        output: Output | None = None,
+        stdin: str | None = None,
+    ) -> ProgramContext:
         """Create a ProgramContext from current session state."""
         env = dict(self.session.env)
         if self.data_dir:
             env["_data_dir"] = self.data_dir
 
         run_tui = self._run_tui_factory() if self._run_tui_factory else None
+        stdout = output or self.output
 
         return ProgramContext(
             args=args,
-            stdout=self.output,
-            stderr=self.output,
+            stdout=stdout,
+            stderr=self.output,  # stderr always goes to real output
             env=env,
             services=self.session.container,
             cwd_id=self.session.cwd_id,
@@ -323,6 +453,7 @@ class Shell:
             program_help=self._program_help,
             get_line=self._input_source.get_line if self._input_source else None,
             run_tui=run_tui,
+            stdin=stdin,
         )
 
     def get_completions(self, text: str) -> list[str]:
@@ -339,12 +470,17 @@ class Shell:
         """Like ``get_completions`` but also returns the replacement length.
 
         Delegates to per-command completers when available; falls back to
-        filesystem path completion for unknown commands.
+        filesystem path completion for unknown commands.  Pipe-aware:
+        when the cursor is after a ``|``, completions apply to the
+        current segment only.
 
         Returns:
             (items, replace_len) where *replace_len* is the number of
             characters before the cursor that the completions replace.
         """
+        # Pipe-aware: find the last unquoted | and scope to that segment
+        text = _last_pipe_segment(text)
+
         arg_start, raw_content = get_current_argument(text)
         replace_len = len(text) - arg_start
         completed_text = text[:arg_start].strip()
