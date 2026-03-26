@@ -94,7 +94,9 @@ async def prog_ls(ctx: ProgramContext) -> int:
     return 0
 
 
-def _print_entry(ctx: ProgramContext, node, long_format: bool = False) -> None:
+def _print_entry(
+    ctx: ProgramContext, node: FileNode, long_format: bool = False
+) -> None:
     if long_format:
         _print_entry_long(ctx, node)
     else:
@@ -104,7 +106,7 @@ def _print_entry(ctx: ProgramContext, node, long_format: bool = False) -> None:
             ctx.stdout.writeln(node.name)
 
 
-def _print_entry_long(ctx: ProgramContext, node) -> None:
+def _print_entry_long(ctx: ProgramContext, node: FileNode) -> None:
     type_char = "d" if node.type == "directory" else "-"
     perms = "rwx" if node.type == "directory" else "rw-"
     timestamp = ""

@@ -39,7 +39,8 @@ def resolve_path(
     if path == "/":
         return app_service.get_file(root_id)
 
-    if path.startswith("/"):
+    is_absolute = path.startswith("/")
+    if is_absolute:
         current_id = root_id
         path = path[1:]  # Strip leading /
     else:
@@ -74,7 +75,7 @@ def resolve_path(
 
         if match is None:
             # Build the full path for the error message
-            if path.startswith("/") or cwd_id == root_id:
+            if is_absolute or cwd_id == root_id:
                 full_path = "/" + "/".join(segments[: i + 1])
             else:
                 full_path = "/".join(segments[: i + 1])

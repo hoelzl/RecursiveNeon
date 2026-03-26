@@ -62,9 +62,11 @@ class ServiceFactory:
         port: int | None = None,
     ) -> IProcessManager:
         return OllamaProcessManager(
-            binary_path=binary_path or settings.ollama_binary_path,
-            host=host or settings.ollama_host,
-            port=port or settings.ollama_port,
+            binary_path=binary_path
+            if binary_path is not None
+            else settings.ollama_binary_path,
+            host=host if host is not None else settings.ollama_host,
+            port=port if port is not None else settings.ollama_port,
         )
 
     @staticmethod
@@ -74,9 +76,9 @@ class ServiceFactory:
         timeout: int | None = None,
     ) -> IOllamaClient:
         return OllamaClient(
-            host=host or settings.ollama_host,
-            port=port or settings.ollama_port,
-            timeout=timeout or 60,
+            host=host if host is not None else settings.ollama_host,
+            port=port if port is not None else settings.ollama_port,
+            timeout=timeout if timeout is not None else 60,
         )
 
     @staticmethod
@@ -86,8 +88,8 @@ class ServiceFactory:
         ollama_port: int | None = None,
     ) -> INPCManager:
         if llm is None:
-            host = ollama_host or settings.ollama_host
-            port = ollama_port or settings.ollama_port
+            host = ollama_host if ollama_host is not None else settings.ollama_host
+            port = ollama_port if ollama_port is not None else settings.ollama_port
             llm = ChatOllama(
                 base_url=f"http://{host}:{port}",
                 model=settings.default_model,

@@ -8,6 +8,7 @@ Uses NPCManager from the service container.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from recursive_neon.models.npc import NPC
 from recursive_neon.shell.completion import CompletionContext
@@ -67,14 +68,15 @@ class ChatProgram:
 
         # Create a prompt_toolkit session as fallback for local terminal
         # (when ctx.get_line is not available, e.g. in tests or direct use).
+        _chat_session: Any | None = None
         if ctx.get_line is None:
             try:
                 from prompt_toolkit import PromptSession
                 from prompt_toolkit.formatted_text import ANSI
 
-                _chat_session: PromptSession[str] = PromptSession()
+                _chat_session = PromptSession()
             except ImportError:
-                _chat_session = None  # type: ignore[assignment]
+                pass
 
         # Sub-REPL for chat
         while True:

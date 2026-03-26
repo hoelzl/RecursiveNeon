@@ -5,7 +5,6 @@ Manages state for game applications: virtual filesystem, notes, and tasks.
 Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 """
 
-import asyncio
 import base64
 import contextlib
 import json
@@ -29,6 +28,9 @@ logger = logging.getLogger(__name__)
 # Maximum file size (in bytes) loaded from initial_fs into the virtual filesystem.
 MAX_INITIAL_FILE_SIZE = 1_048_576  # 1 MB
 
+# Maximum file content size (in characters) accepted via create/update operations.
+MAX_FILE_CONTENT_SIZE = 1_048_576  # 1 MB
+
 
 class AppService:
     """
@@ -42,15 +44,13 @@ class AppService:
     **Concurrency note:** In the current single-player design, all WebSocket
     sessions share a single ``AppService`` / ``GameState`` instance.  Individual
     methods are synchronous (no ``await`` points), so they cannot be preempted
-    by another coroutine mid-execution.  For compound operations that span
-    multiple method calls (e.g. move + rename), callers should use ``self.lock``
-    to serialize access.  If multi-player support is added later, each player
-    will need their own ``GameState``.
+    by another coroutine mid-execution.  If multi-player support is added later,
+    each player will need their own ``GameState`` (or an asyncio.Lock to
+    serialize compound operations).
     """
 
     def __init__(self, game_state: GameState):
         self.game_state = game_state
-        self.lock = asyncio.Lock()
         # O(1) lookup indexes — mirrors game_state.filesystem.nodes
         self._node_index: dict[str, FileNode] = {}
         self._children_index: dict[str | None, list[str]] = {}
@@ -290,6 +290,18 @@ class AppService:
             raise ValueError(f"File not found: {file_id}")
         return node
 
+    @staticmethod
+    def _validate_node_name(name: str) -> None:
+        """Reject names containing path separators or reserved segments.
+
+        Ensures every node name is addressable via the shell's path resolution,
+        which splits on ``/`` and treats ``.`` / ``..`` as navigation.
+        """
+        if not name or "\x00" in name or "/" in name:
+            raise ValueError(f"Invalid node name: {name!r}")
+        if name in (".", ".."):
+            raise ValueError(f"Reserved name: {name!r}")
+
     def _validate_parent_id(self, parent_id: str | None) -> None:
         """Validate that parent_id refers to an existing directory."""
         if parent_id is not None:
@@ -302,10 +314,12 @@ class AppService:
     def create_directory(self, data: dict[str, Any]) -> FileNode:
         parent_id = data.get("parent_id")
         self._validate_parent_id(parent_id)
+        name = data.get("name", "Untitled Folder")
+        self._validate_node_name(name)
         timestamp = datetime.now(tz=UTC)
         directory = FileNode(
             id=str(uuid.uuid4()),
-            name=data.get("name", "Untitled Folder"),
+            name=name,
             type="directory",
             parent_id=parent_id,
             created_at=timestamp,
@@ -318,13 +332,20 @@ class AppService:
     def create_file(self, data: dict[str, Any]) -> FileNode:
         parent_id = data.get("parent_id")
         self._validate_parent_id(parent_id)
+        name = data.get("name", "untitled.txt")
+        self._validate_node_name(name)
+        content = data.get("content", "")
+        if len(content) > MAX_FILE_CONTENT_SIZE:
+            raise ValueError(
+                f"File content exceeds maximum size ({MAX_FILE_CONTENT_SIZE} bytes)"
+            )
         timestamp = datetime.now(tz=UTC)
         file = FileNode(
             id=str(uuid.uuid4()),
-            name=data.get("name", "untitled.txt"),
+            name=name,
             type="file",
             parent_id=parent_id,
-            content=data.get("content", ""),
+            content=content,
             mime_type=data.get("mime_type", "text/plain"),
             created_at=timestamp,
             updated_at=timestamp,
@@ -335,13 +356,21 @@ class AppService:
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
         node = self.get_file(file_id)  # O(1) fail-fast via index
+        new_name = data.get("name", node.name)
+        if new_name != node.name:
+            self._validate_node_name(new_name)
+        content = data.get("content", node.content)
+        if content is not None and len(content) > MAX_FILE_CONTENT_SIZE:
+            raise ValueError(
+                f"File content exceeds maximum size ({MAX_FILE_CONTENT_SIZE} bytes)"
+            )
         timestamp = datetime.now(tz=UTC)
         updated = FileNode(
             id=node.id,
-            name=data.get("name", node.name),
+            name=new_name,
             type=node.type,
             parent_id=node.parent_id,
-            content=data.get("content", node.content),
+            content=content,
             mime_type=data.get("mime_type", node.mime_type),
             created_at=node.created_at,
             updated_at=timestamp,
@@ -385,6 +414,8 @@ class AppService:
         self, file_id: str, target_parent_id: str, new_name: str | None = None
     ) -> FileNode:
         source = self.get_file(file_id)
+        if new_name is not None:
+            self._validate_node_name(new_name)
         timestamp = datetime.now(tz=UTC)
         copy = FileNode(
             id=str(uuid.uuid4()),
@@ -401,6 +432,11 @@ class AppService:
         if source.type == "directory":
             for child in self.list_directory(file_id):
                 self.copy_file(child.id, copy.id)
+            # Recursive copies append nodes without updating position index;
+            # rebuild to keep it consistent.
+            self._position_index = {
+                n.id: i for i, n in enumerate(self.game_state.filesystem.nodes)
+            }
         return copy
 
     def move_file(
@@ -410,6 +446,8 @@ class AppService:
         new_name: str | None = None,
     ) -> FileNode:
         file = self.get_file(file_id)  # O(1) fail-fast via index
+        if new_name is not None:
+            self._validate_node_name(new_name)
         timestamp = datetime.now(tz=UTC)
         if file.type == "directory":
             current: str | None = target_parent_id
@@ -445,6 +483,11 @@ class AppService:
         child_ids = self._children_index.get(dir_id, [])
         return [self._node_index[cid] for cid in child_ids if cid in self._node_index]
 
+    @staticmethod
+    def _pick_keys(data: dict, allowed: set[str]) -> dict:
+        """Return a copy of *data* containing only *allowed* keys."""
+        return {k: v for k, v in data.items() if k in allowed}
+
     def _handle_filesystem_action(self, action: str, data: dict) -> dict:
         if action == "init":
             root = self.init_filesystem()
@@ -456,13 +499,16 @@ class AppService:
             node = self.get_file(data["file_id"])
             return {"node": node.model_dump(mode="json")}
         elif action == "create_file":
-            node = self.create_file(data)
+            safe = self._pick_keys(data, {"name", "parent_id", "content", "mime_type"})
+            node = self.create_file(safe)
             return {"node": node.model_dump(mode="json")}
         elif action == "create_directory":
-            node = self.create_directory(data)
+            safe = self._pick_keys(data, {"name", "parent_id"})
+            node = self.create_directory(safe)
             return {"node": node.model_dump(mode="json")}
         elif action == "update":
-            node = self.update_file(data["file_id"], data)
+            safe = self._pick_keys(data, {"name", "content", "mime_type"})
+            node = self.update_file(data["file_id"], safe)
             return {"node": node.model_dump(mode="json")}
         elif action == "delete":
             self.delete_file(data["file_id"])
@@ -473,7 +519,9 @@ class AppService:
             )
             return {"node": node.model_dump(mode="json")}
         elif action == "move":
-            node = self.move_file(data["file_id"], data["target_parent_id"])
+            node = self.move_file(
+                data["file_id"], data["target_parent_id"], data.get("new_name")
+            )
             return {"node": node.model_dump(mode="json")}
         raise ValueError(f"Unknown filesystem action: {action}")
 
@@ -606,16 +654,27 @@ class AppService:
         self.game_state.filesystem.nodes.clear()
         self.game_state.filesystem.root_id = None
         root = self.init_filesystem()
-        self._load_directory_recursive(initial_path, root.id)
+        self._load_directory_recursive(initial_path, root.id, depth=0)
         self._rebuild_indexes()
 
-    def _load_directory_recursive(self, source_path: Path, parent_id: str) -> None:
+    _MAX_LOAD_DEPTH = 20
+
+    def _load_directory_recursive(
+        self, source_path: Path, parent_id: str, depth: int = 0
+    ) -> None:
         """Load real directory contents into the virtual filesystem.
 
         WARNING: This method appends to the nodes list but does NOT update
         the lookup indexes.  Callers MUST call ``_rebuild_indexes()`` after
         all recursive loading is complete.
         """
+        if depth > self._MAX_LOAD_DEPTH:
+            logger.warning(
+                "Max directory depth (%d) exceeded at %s — skipping",
+                self._MAX_LOAD_DEPTH,
+                source_path,
+            )
+            return
         if not source_path.exists() or not source_path.is_dir():
             return
         for item in sorted(source_path.iterdir()):
@@ -632,7 +691,7 @@ class AppService:
                     updated_at=timestamp,
                 )
                 self.game_state.filesystem.nodes.append(dir_node)
-                self._load_directory_recursive(item, dir_node.id)
+                self._load_directory_recursive(item, dir_node.id, depth=depth + 1)
             elif item.is_file():
                 mime_type = self._get_mime_type(item.suffix)
                 content = self._read_file_content(item, mime_type)

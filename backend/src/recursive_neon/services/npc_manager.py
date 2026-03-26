@@ -75,8 +75,12 @@ class NPCManager(INPCManager):
             logger.info("NPCManager initialized with injected LLM")
         else:
             # Legacy approach: create LLM internally (for backward compatibility)
-            self.ollama_host = ollama_host or settings.ollama_host
-            self.ollama_port = ollama_port or settings.ollama_port
+            self.ollama_host = (
+                ollama_host if ollama_host is not None else settings.ollama_host
+            )
+            self.ollama_port = (
+                ollama_port if ollama_port is not None else settings.ollama_port
+            )
             self.llm = ChatOllama(
                 base_url=f"http://{self.ollama_host}:{self.ollama_port}",
                 model=settings.default_model,
@@ -100,8 +104,8 @@ class NPCManager(INPCManager):
         Returns:
             NPCManager instance configured with ChatOllama
         """
-        host = ollama_host or settings.ollama_host
-        port = ollama_port or settings.ollama_port
+        host = ollama_host if ollama_host is not None else settings.ollama_host
+        port = ollama_port if ollama_port is not None else settings.ollama_port
         llm = ChatOllama(
             base_url=f"http://{host}:{port}",
             model=settings.default_model,
@@ -186,7 +190,7 @@ class NPCManager(INPCManager):
             # just added) and invoke the LLM directly.
             messages = self._build_messages(npc)
             logger.debug(f"Generating response for {npc.name}")
-            response = await asyncio.to_thread(self.llm.invoke, messages)
+            response = await self.llm.ainvoke(messages)
 
             # Strip think-tags BEFORE storing in memory so they don't
             # pollute conversation history or get fed back to the LLM.

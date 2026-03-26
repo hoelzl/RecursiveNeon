@@ -67,8 +67,16 @@ def _expand_vars(text: str, env: dict[str, str]) -> str:
 async def prog_echo(ctx: ProgramContext) -> int:
     """Print arguments to stdout."""
     parts = ctx.args[1:]
+    no_newline = False
+    if parts and parts[0] == "-n":
+        no_newline = True
+        parts = parts[1:]
     expanded = [_expand_vars(part, ctx.env) for part in parts]
-    ctx.stdout.writeln(" ".join(expanded))
+    text = " ".join(expanded)
+    if no_newline:
+        ctx.stdout.write(text)
+    else:
+        ctx.stdout.writeln(text)
     return 0
 
 

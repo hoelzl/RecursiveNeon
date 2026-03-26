@@ -210,13 +210,23 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
 class ConnectionManager:
     """Manages WebSocket connections."""
 
+    MAX_CONNECTIONS = 50
+
     def __init__(self):
         self.active_connections: set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket) -> bool:
+        """Accept a WebSocket connection. Returns False if limit reached."""
+        if len(self.active_connections) >= self.MAX_CONNECTIONS:
+            await websocket.close(code=1013, reason="Server overloaded")
+            logger.warning(
+                "Connection rejected: limit reached (%d)", self.MAX_CONNECTIONS
+            )
+            return False
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Client connected. Total: {len(self.active_connections)}")
+        return True
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
@@ -249,7 +259,8 @@ async def websocket_endpoint(
         "data": { ... }
     }
     """
-    await ws_manager.connect(websocket)
+    if not await ws_manager.connect(websocket):
+        return
 
     try:
         while True:
@@ -302,8 +313,8 @@ async def handle_ws_message(
             }
 
     except Exception as e:
-        logger.error(f"Error handling {msg_type}: {e}")
-        return {"type": "error", "data": {"message": str(e)}}
+        logger.error(f"Error handling {msg_type}: {e}", exc_info=True)
+        return {"type": "error", "data": {"message": "Internal server error"}}
 
 
 async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dict:
@@ -314,9 +325,12 @@ async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dic
     try:
         result = container.app_service.handle_action(app_type, action, msg_data)
         return {"type": "app_response", "data": result}
-    except Exception as e:
-        logger.error(f"App message error: {e}")
+    except ValueError as e:
+        # Client errors (unknown action, missing fields) — safe to expose
         return {"type": "error", "data": {"message": str(e)}}
+    except Exception as e:
+        logger.error(f"App message error: {e}", exc_info=True)
+        return {"type": "error", "data": {"message": "Internal server error"}}
 
 
 # ============================================================================

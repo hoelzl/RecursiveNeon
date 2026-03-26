@@ -132,7 +132,7 @@ class TestNPCManagerWithDependencyInjection:
         from langchain_core.messages import AIMessage
 
         expected_response = "I can help you with that!"
-        mock_llm.invoke.return_value = AIMessage(content=expected_response)
+        mock_llm.ainvoke.return_value = AIMessage(content=expected_response)
 
         npc_manager.register_npc(sample_npc)
 
@@ -166,7 +166,7 @@ class TestNPCManagerWithDependencyInjection:
         from langchain_core.messages import AIMessage
 
         response_text = "You're welcome!"
-        mock_llm.invoke.return_value = AIMessage(content=response_text)
+        mock_llm.ainvoke.return_value = AIMessage(content=response_text)
 
         npc_manager.register_npc(sample_npc)
         initial_relationship = sample_npc.memory.relationship_level
@@ -184,7 +184,7 @@ class TestNPCManagerWithDependencyInjection:
     @pytest.mark.asyncio
     async def test_chat_error_handling(self, npc_manager, sample_npc, mock_llm):
         """Test that chat errors propagate and conversation history is rolled back."""
-        mock_llm.invoke.side_effect = Exception("LLM error")
+        mock_llm.ainvoke.side_effect = Exception("LLM error")
 
         npc_manager.register_npc(sample_npc)
         history_before = len(sample_npc.memory.conversation_history)
@@ -456,13 +456,13 @@ class TestNPCChatConcurrency:
 
         call_count = 0
 
-        def slow_invoke(messages):
+        async def slow_ainvoke(messages):
             nonlocal call_count
             call_count += 1
             return AIMessage(content=f"Response {call_count}")
 
         mock_llm = Mock()
-        mock_llm.invoke = slow_invoke
+        mock_llm.ainvoke = slow_ainvoke
 
         manager = NPCManager(llm=mock_llm)
         npc = NPC(

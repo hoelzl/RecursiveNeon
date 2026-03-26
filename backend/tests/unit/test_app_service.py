@@ -546,12 +546,64 @@ class TestMoveFileWithRename:
         assert moved.name == "keep.txt"
 
 
-class TestAppServiceLock:
-    """Verify the concurrency lock exists (fix #1)."""
+class TestNodeNameValidation:
+    """Verify node name validation rejects invalid names."""
 
-    def test_lock_attribute_exists(self):
-        import asyncio
-
+    def test_rejects_slash_in_name(self):
         svc = AppService(GameState())
-        assert hasattr(svc, "lock")
-        assert isinstance(svc.lock, asyncio.Lock)
+        root = svc.init_filesystem()
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.create_file({"name": "foo/bar", "parent_id": root.id})
+
+    def test_rejects_dotdot_name(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        with pytest.raises(ValueError, match="Reserved name"):
+            svc.create_directory({"name": "..", "parent_id": root.id})
+
+    def test_rejects_dot_name(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        with pytest.raises(ValueError, match="Reserved name"):
+            svc.create_directory({"name": ".", "parent_id": root.id})
+
+    def test_rejects_null_byte_in_name(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.create_file({"name": "bad\x00name", "parent_id": root.id})
+
+    def test_rejects_empty_name(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.create_file({"name": "", "parent_id": root.id})
+
+    def test_validates_on_rename(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        f = svc.create_file({"name": "good.txt", "parent_id": root.id})
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.update_file(f.id, {"name": "bad/name"})
+
+    def test_validates_on_copy(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        f = svc.create_file({"name": "good.txt", "parent_id": root.id})
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.copy_file(f.id, root.id, new_name="bad/name")
+
+    def test_validates_on_move(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        f = svc.create_file({"name": "good.txt", "parent_id": root.id})
+        with pytest.raises(ValueError, match="Invalid node name"):
+            svc.move_file(f.id, root.id, new_name="bad/name")
+
+    def test_allows_valid_names(self):
+        svc = AppService(GameState())
+        root = svc.init_filesystem()
+        f = svc.create_file({"name": "hello.txt", "parent_id": root.id})
+        assert f.name == "hello.txt"
+        d = svc.create_directory({"name": ".hidden", "parent_id": root.id})
+        assert d.name == ".hidden"

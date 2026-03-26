@@ -50,24 +50,19 @@ class TestFilesystemSecurity:
         assert retrieved.content == "test content"
 
     def test_no_path_traversal_in_node_names(self, app_service):
-        """Verify that node names cannot contain path separators"""
+        """Verify that node names with path separators are rejected"""
         root = app_service.init_filesystem()
 
-        # These names might look suspicious but they're just node names
-        # They don't represent file paths
-        dir1 = app_service.create_directory(
-            {
-                "name": "../../../etc",  # Just a name, not a path
-                "parent_id": root.id,
-            }
-        )
+        # Names containing path separators must be rejected to prevent
+        # ghost nodes that are unreachable via path resolution
+        with pytest.raises(ValueError, match="Invalid node name"):
+            app_service.create_directory({"name": "../../../etc", "parent_id": root.id})
 
-        # The name is stored as-is but doesn't affect the real file system
-        assert dir1.name == "../../../etc"
-        assert dir1.type == "directory"
+        with pytest.raises(ValueError, match="Reserved name"):
+            app_service.create_directory({"name": "..", "parent_id": root.id})
 
-        # All nodes are stored in the virtual filesystem
-        assert dir1 in app_service.game_state.filesystem.nodes
+        with pytest.raises(ValueError, match="Invalid node name"):
+            app_service.create_file({"name": "foo/bar.txt", "parent_id": root.id})
 
     def test_persistence_uses_only_controlled_directory(self, app_service, tmp_path):
         """Verify that persistence only writes to the designated game_data directory"""

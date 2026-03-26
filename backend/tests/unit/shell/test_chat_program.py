@@ -86,7 +86,7 @@ class TestChatConversation:
         from langchain_core.messages import AIMessage
 
         response_text = "Welcome to the lobby!"
-        mock_llm.invoke.return_value = AIMessage(content=response_text)
+        mock_llm.ainvoke.return_value = AIMessage(content=response_text)
 
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value

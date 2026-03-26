@@ -99,7 +99,7 @@ class TestNPCEndpoints:
         from langchain_core.messages import AIMessage
 
         response_text = "Hello there!"
-        mock_llm.invoke.return_value = AIMessage(content=response_text)
+        mock_llm.ainvoke.return_value = AIMessage(content=response_text)
 
         resp = client.post(
             "/chat",
@@ -161,7 +161,7 @@ class TestHandleWsMessage:
         from langchain_core.messages import AIMessage
 
         response_text = "I can help!"
-        mock_llm.invoke.return_value = AIMessage(content=response_text)
+        mock_llm.ainvoke.return_value = AIMessage(content=response_text)
 
         resp = await handle_ws_message(
             ws_container,
