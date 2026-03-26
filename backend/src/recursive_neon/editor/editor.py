@@ -117,9 +117,13 @@ class Editor:
         if self.minibuffer is not None:
             still_active = self.minibuffer.process_key(key)
             if not still_active:
+                replay = self.minibuffer.replay_key
                 if self.minibuffer.cancelled:
                     self.message = "Quit"
                 self.minibuffer = None
+                # Re-dispatch replayed key (isearch exit-and-replay)
+                if replay is not None:
+                    self.process_key(replay)
             return
 
         # Clear previous message (commands can set new ones)

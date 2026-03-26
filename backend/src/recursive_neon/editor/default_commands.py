@@ -290,6 +290,102 @@ def find_file(ed: Editor, prefix: int | None) -> None:
     ed.start_minibuffer("Find file: ", callback)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Incremental search
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand("isearch-forward", "Incremental search forward (C-s).")
+def isearch_forward(ed: Editor, prefix: int | None) -> None:
+    _start_isearch(ed, forward=True)
+
+
+@defcommand("isearch-backward", "Incremental search backward (C-r).")
+def isearch_backward(ed: Editor, prefix: int | None) -> None:
+    _start_isearch(ed, forward=False)
+
+
+def _start_isearch(ed: Editor, *, forward: bool) -> None:
+    """Set up an incremental search session via the minibuffer."""
+    buf = ed.buffer
+    start_line = buf.point.line
+    start_col = buf.point.col
+    # Stack of (line, col) positions for backspace-undo
+    positions: list[tuple[int, int]] = [(start_line, start_col)]
+    direction = [forward]  # mutable so closures can update
+
+    def on_change(text: str) -> None:
+        if not text:
+            buf.point.move_to(start_line, start_col)
+            ed.message = ""
+            return
+        _do_search(text, from_current=False)
+
+    def _do_search(text: str, *, from_current: bool) -> None:
+        if direction[0]:
+            # Search forward: skip past current match when repeating
+            from_col = buf.point.col + (1 if from_current else 0)
+            pos = buf.find_forward(text, buf.point.line, from_col)
+        else:
+            # Search backward: include current col for fresh search,
+            # exclude it when repeating (to find the previous match)
+            from_col = buf.point.col if from_current else buf.point.col + 1
+            pos = buf.find_backward(text, buf.point.line, from_col)
+        if pos is not None:
+            positions.append(pos)
+            buf.point.move_to(pos[0], pos[1])
+            prefix = "I-search" if direction[0] else "I-search backward"
+            ed.message = ""
+            if ed.minibuffer:
+                ed.minibuffer.prompt = f"{prefix}: "
+        else:
+            prefix = "Failing I-search" if direction[0] else "Failing I-search backward"
+            if ed.minibuffer:
+                ed.minibuffer.prompt = f"{prefix}: "
+
+    def on_confirm(text: str) -> None:
+        pass  # Leave point at the match
+
+    def on_cancel() -> None:
+        buf.point.move_to(start_line, start_col)
+
+    def repeat_forward() -> None:
+        direction[0] = True
+        if ed.minibuffer and ed.minibuffer.text:
+            _do_search(ed.minibuffer.text, from_current=True)
+
+    def repeat_backward() -> None:
+        direction[0] = False
+        if ed.minibuffer and ed.minibuffer.text:
+            _do_search(ed.minibuffer.text, from_current=True)
+
+    prompt_prefix = "I-search" if forward else "I-search backward"
+
+    # Use a wrapper for on_cancel since Minibuffer callback takes no args
+    def cancel_wrapper(text: str) -> None:
+        pass  # Not used — cancel is handled separately
+
+    ed.start_minibuffer(
+        f"{prompt_prefix}: ",
+        on_confirm,
+        on_change=on_change,
+    )
+    if ed.minibuffer:
+        ed.minibuffer.key_handlers["C-s"] = repeat_forward
+        ed.minibuffer.key_handlers["C-r"] = repeat_backward
+        # Override C-g to restore position
+        original_process = ed.minibuffer.process_key
+
+        def patched_process(key: str) -> bool:
+            if key == "C-g" or key == "Escape":
+                on_cancel()
+                ed.minibuffer._cancelled = True  # type: ignore[union-attr]
+                return False
+            return original_process(key)
+
+        ed.minibuffer.process_key = patched_process  # type: ignore[method-assign]
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     if ed.save_callback is None:
@@ -361,6 +457,10 @@ def build_default_keymap() -> Keymap:
 
     # Cancel
     km.bind("C-g", "keyboard-quit")
+
+    # Search
+    km.bind("C-s", "isearch-forward")
+    km.bind("C-r", "isearch-backward")
 
     # M-x
     km.bind("M-x", "execute-extended-command")

@@ -43,7 +43,10 @@ class Minibuffer:
         self._completions: list[str] = []
         self._completion_index: int = -1
         self._cancelled: bool = False
-        self._last_was_tab: bool = False
+        # When set, the Editor should re-dispatch this key after closing
+        self.replay_key: str | None = None
+        # Per-key handlers for isearch-style overrides (e.g., C-s = repeat)
+        self.key_handlers: dict[str, Callable[[], None]] = {}
 
     @property
     def cancelled(self) -> bool:
@@ -63,6 +66,11 @@ class Minibuffer:
         if key != "Tab":
             self._completions = []
             self._completion_index = -1
+
+        # Per-session key handlers (e.g., C-s for isearch-repeat)
+        if key in self.key_handlers:
+            self.key_handlers[key]()
+            return True
 
         if key == "Enter":
             self.callback(self.text)
@@ -119,7 +127,13 @@ class Minibuffer:
             self._notify_change()
             return True
 
-        # Unknown key — ignore
+        # Unknown key: in on_change mode (isearch), exit and replay
+        if self.on_change is not None:
+            self.callback(self.text)
+            self.replay_key = key
+            return False
+
+        # Otherwise ignore unknown keys
         return True
 
     def _complete(self) -> None:

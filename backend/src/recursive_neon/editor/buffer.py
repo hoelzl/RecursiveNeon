@@ -828,6 +828,64 @@ class Buffer:
         return self.point.to_tuple() != start
 
     # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    def find_forward(
+        self, text: str, from_line: int = -1, from_col: int = -1
+    ) -> tuple[int, int] | None:
+        """Find *text* forward from the given position (default: point).
+
+        Returns ``(line, col)`` of the first match, or ``None``.
+        """
+        if not text:
+            return None
+        if from_line < 0:
+            from_line = self.point.line
+        if from_col < 0:
+            from_col = self.point.col
+        # Search from from_col on from_line, then subsequent lines
+        for ln in range(from_line, len(self.lines)):
+            start = from_col if ln == from_line else 0
+            idx = self.lines[ln].find(text, start)
+            if idx >= 0:
+                return (ln, idx)
+        return None
+
+    def find_backward(
+        self, text: str, from_line: int = -1, from_col: int = -1
+    ) -> tuple[int, int] | None:
+        """Find *text* backward from the given position (default: point).
+
+        Finds the rightmost match that *starts* before ``from_col``.
+        Returns ``(line, col)`` of the match, or ``None``.
+        """
+        if not text:
+            return None
+        if from_line < 0:
+            from_line = self.point.line
+        if from_col < 0:
+            from_col = self.point.col
+        for ln in range(from_line, -1, -1):
+            line = self.lines[ln]
+            limit = from_col if ln == from_line else len(line)
+            # Find rightmost match starting before limit.
+            # Can't use rfind(text, 0, limit) because that requires the
+            # match to be entirely within [0, limit), but we only need
+            # the match to START before limit.
+            best = -1
+            pos = 0
+            while True:
+                idx = line.find(text, pos)
+                if idx < 0 or idx >= limit:
+                    break
+                best = idx
+                pos = idx + 1
+            if best >= 0:
+                return (ln, best)
+        return None
+
+    # ------------------------------------------------------------------
     # Convenience
     # ------------------------------------------------------------------
 
