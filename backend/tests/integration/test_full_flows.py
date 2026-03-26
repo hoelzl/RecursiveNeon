@@ -148,7 +148,7 @@ class TestFilesystemWorkflow:
         s = shell
         o = s.output
 
-        assert await s.execute_line("find / -name *.txt") == 0
+        assert await s.execute_line("find / -name '*.txt'") == 0
         text = o.text
         assert "welcome.txt" in text
         # Should find multiple txt files

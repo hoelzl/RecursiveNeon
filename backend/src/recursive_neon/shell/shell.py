@@ -22,6 +22,7 @@ from recursive_neon.shell.completion import (
     get_current_argument,
     quote_path,
 )
+from recursive_neon.shell.glob import expand_globs
 from recursive_neon.shell.output import (
     BOLD,
     CYAN,
@@ -32,7 +33,7 @@ from recursive_neon.shell.output import (
     RESET,
     Output,
 )
-from recursive_neon.shell.parser import tokenize
+from recursive_neon.shell.parser import tokenize, tokenize_ext
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.codebreaker import register_codebreaker_program
@@ -242,13 +243,18 @@ class Shell:
             Exit code (0 = success, -1 = exit requested, other = error).
         """
         try:
-            tokens = tokenize(line)
+            raw_tokens = tokenize_ext(line)
         except ValueError as e:
             self.output.error(f"nsh: {e}")
             return 1
 
-        if not tokens:
+        if not raw_tokens:
             return 0
+
+        # Expand globs in unquoted tokens
+        tokens = expand_globs(
+            raw_tokens, self.session.cwd_id, self.session.container.app_service
+        )
 
         name = tokens[0]
 

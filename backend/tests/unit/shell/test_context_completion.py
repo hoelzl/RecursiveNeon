@@ -5,13 +5,9 @@ from __future__ import annotations
 import pytest
 
 from recursive_neon.shell.completion import (
-    CompletionContext,
     complete_choices,
-    complete_flags_or_paths,
-    complete_paths,
 )
 from recursive_neon.shell.shell import Shell
-
 
 # ---------------------------------------------------------------------------
 # Helpers
