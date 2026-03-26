@@ -44,6 +44,7 @@ from recursive_neon.shell.parser import (
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.codebreaker import register_codebreaker_program
+from recursive_neon.shell.programs.edit import register_edit_program
 from recursive_neon.shell.programs.filesystem import register_filesystem_programs
 from recursive_neon.shell.programs.notes import register_note_program
 from recursive_neon.shell.programs.tasks import register_task_program
@@ -192,6 +193,7 @@ class Shell:
         register_note_program(self.programs)
         register_task_program(self.programs)
         register_codebreaker_program(self.programs)
+        register_edit_program(self.programs)
 
         # Cache help dicts — program registry is immutable after init
         self._program_help: dict[str, str] = {

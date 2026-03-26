@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-5 complete. Phase 6a-1 through 6a-3 complete (buffer, undo, kill ring, commands, keymaps, Editor). Phase 6a-4 (TUI view + shell integration) next. Browser GUI deferred to Phase 7.
+> **Status**: Phases 0-5 complete. Phase 6a (editor) complete: buffer primitives, undo, kill ring, command system, keymaps, TUI view, shell `edit` command. Phase 6b (notes integration) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -400,7 +400,7 @@ Dispatch layer connecting keystrokes to buffer operations.
 - Register all 6a-1/6a-2 operations as named commands with Emacs keybindings
 - Tests for keymap lookup, prefix keys, command dispatch
 
-##### 6a-4. TUI View + Shell Integration
+##### 6a-4. TUI View + Shell Integration — COMPLETE
 The thin shell that renders the editor in the terminal.
 
 - `EditorView` (TuiApp implementation): renders buffer text, status line, cursor position into ScreenBuffer. Scrolling/viewport tracking.

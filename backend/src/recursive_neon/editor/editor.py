@@ -11,6 +11,8 @@ Undo boundaries are inserted automatically between commands.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS
 from recursive_neon.editor.keymap import Keymap
@@ -44,6 +46,11 @@ class Editor:
 
         # Whether the editor should keep running
         self.running: bool = True
+
+        # Save callback — set by the hosting environment (e.g., shell
+        # program) to write buffer content to the virtual filesystem.
+        # Signature: (buffer) -> bool (True if saved successfully).
+        self.save_callback: Callable[[Buffer], bool] | None = None
 
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)

@@ -164,6 +164,18 @@ def keyboard_quit(ed: Editor, prefix: int | None) -> None:
     ed.message = "Quit"
 
 
+@defcommand("save-buffer", "Save the current buffer to its file.")
+def save_buffer(ed: Editor, prefix: int | None) -> None:
+    if ed.save_callback is None:
+        ed.message = "No save handler configured"
+        return
+    if ed.save_callback(ed.buffer):
+        ed.buffer.modified = False
+        ed.message = "Wrote " + (ed.buffer.filepath or ed.buffer.name)
+    else:
+        ed.message = "Save failed"
+
+
 @defcommand("quit-editor", "Exit the editor.")
 def quit_editor(ed: Editor, prefix: int | None) -> None:
     ed.quit()
@@ -218,6 +230,7 @@ def build_default_keymap() -> Keymap:
 
     # C-x prefix map
     cx = Keymap("C-x prefix")
+    cx.bind("C-s", "save-buffer")
     cx.bind("C-c", "quit-editor")
     km.bind("C-x", cx)
 

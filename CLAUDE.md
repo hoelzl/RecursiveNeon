@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-5 complete. Phase 6a-1 through 6a-3 (buffer, undo, kill ring, commands, keymaps, Editor) complete. Phase 6a-4 (TUI view + shell integration) next.
+**Status**: V2 reboot. Phases 0-5 + 6a (editor) complete. Phase 6b (notes integration) next.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -54,7 +54,7 @@ cd backend
 
 **NPC**: `chat` (list NPCs or enter conversation; supports `/exit`, `/help`, `/relationship`, `/status`)
 
-**TUI Apps**: `codebreaker` (Mastermind-style minigame; requires raw mode — works in local CLI and WebSocket client)
+**TUI Apps**: `edit` (Emacs-inspired text editor — neon-edit), `codebreaker` (Mastermind-style minigame); both require raw mode — work in local CLI and WebSocket client
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
