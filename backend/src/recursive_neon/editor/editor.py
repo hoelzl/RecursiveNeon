@@ -17,6 +17,7 @@ from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
+from recursive_neon.editor.minibuffer import CompleterFn, Minibuffer
 
 
 class Editor:
@@ -51,6 +52,13 @@ class Editor:
         # program) to write buffer content to the virtual filesystem.
         # Signature: (buffer) -> bool (True if saved successfully).
         self.save_callback: Callable[[Buffer], bool] | None = None
+
+        # Open callback — loads file content from the virtual filesystem.
+        # Signature: (path) -> str (file content, or "" for new file).
+        self.open_callback: Callable[[str], str] | None = None
+
+        # Minibuffer — active when not None
+        self.minibuffer: Minibuffer | None = None
 
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
@@ -102,8 +110,18 @@ class Editor:
 
         Handles prefix keys (multi-key sequences), prefix argument
         (C-u), self-insert for printable characters, and command
-        execution.
+        execution.  When the minibuffer is active, keystrokes are
+        routed there instead.
         """
+        # Route to minibuffer if active
+        if self.minibuffer is not None:
+            still_active = self.minibuffer.process_key(key)
+            if not still_active:
+                if self.minibuffer.cancelled:
+                    self.message = "Quit"
+                self.minibuffer = None
+            return
+
         # Clear previous message (commands can set new ones)
         self.message = ""
 
@@ -217,6 +235,24 @@ class Editor:
         cmd.function(self, prefix)
         self._last_command_name = name
         return True
+
+    def start_minibuffer(
+        self,
+        prompt: str,
+        callback: Callable[[str], None],
+        *,
+        completer: CompleterFn | None = None,
+        initial: str = "",
+        on_change: Callable[[str], None] | None = None,
+    ) -> None:
+        """Activate the minibuffer with the given prompt and callback."""
+        self.minibuffer = Minibuffer(
+            prompt,
+            callback,
+            completer=completer,
+            initial=initial,
+            on_change=on_change,
+        )
 
     def quit(self) -> None:
         """Signal the editor to stop."""

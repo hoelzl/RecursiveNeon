@@ -181,6 +181,115 @@ def keyboard_quit(ed: Editor, prefix: int | None) -> None:
     ed.message = "Quit"
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Minibuffer commands (M-x, file ops, buffer switching)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand("execute-extended-command", "Execute a command by name (M-x).")
+def execute_extended_command(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.commands import COMMANDS
+
+    def completer(text: str) -> list[str]:
+        return sorted(n for n in COMMANDS if n.startswith(text))
+
+    def callback(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        if not ed.execute_command(name, prefix):
+            ed.message = f"Unknown command: {name}"
+
+    ed.start_minibuffer("M-x ", callback, completer=completer)
+
+
+@defcommand("switch-to-buffer", "Switch to a different buffer (C-x b).")
+def switch_to_buffer(ed: Editor, prefix: int | None) -> None:
+    def completer(text: str) -> list[str]:
+        return [b.name for b in ed.buffers if b.name.startswith(text)]
+
+    def callback(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        if not ed.switch_to_buffer(name):
+            # Create a new empty buffer with that name
+            ed.create_buffer(name=name)
+            ed.message = f"(New buffer {name})"
+
+    ed.start_minibuffer("Switch to buffer: ", callback, completer=completer)
+
+
+@defcommand("list-buffers", "Show a list of all buffers (C-x C-b).")
+def list_buffers(ed: Editor, prefix: int | None) -> None:
+    lines = ["  Buffer               Size  File"]
+    lines.append("  ------               ----  ----")
+    for buf in ed.buffers:
+        mod = "*" if buf.modified else " "
+        ro = "%" if buf.read_only else " "
+        size = sum(len(ln) for ln in buf.lines) + buf.line_count - 1
+        path = buf.filepath or ""
+        lines.append(f"{mod}{ro} {buf.name:<20s} {size:>5d}  {path}")
+    text = "\n".join(lines)
+
+    # Show in a read-only buffer
+    if not ed.switch_to_buffer("*Buffer List*"):
+        ed.create_buffer(name="*Buffer List*")
+    bl = ed.buffer
+    # Replace content (temporarily disable read-only)
+    bl.read_only = False
+    bl.lines = text.split("\n")
+    bl.point.move_to(0, 0)
+    bl.modified = False
+    bl.read_only = True
+
+
+@defcommand("write-file", "Write buffer to a file path (C-x C-w).")
+def write_file(ed: Editor, prefix: int | None) -> None:
+    def callback(path: str) -> None:
+        path = path.strip()
+        if not path:
+            return
+        ed.buffer.filepath = path
+        ed.buffer.name = path.rsplit("/", 1)[-1] if "/" in path else path
+        # Attempt save via the save callback
+        if ed.save_callback is not None:
+            if ed.save_callback(ed.buffer):
+                ed.buffer.modified = False
+                ed.message = f"Wrote {path}"
+            else:
+                ed.message = "Save failed"
+        else:
+            ed.message = f"File path set to {path} (no save handler)"
+
+    initial = ed.buffer.filepath or ""
+    ed.start_minibuffer("Write file: ", callback, initial=initial)
+
+
+@defcommand("find-file", "Open or create a file (C-x C-f).")
+def find_file(ed: Editor, prefix: int | None) -> None:
+    def callback(path: str) -> None:
+        path = path.strip()
+        if not path:
+            return
+        # Check if already open
+        for buf in ed.buffers:
+            if buf.filepath == path:
+                ed.switch_to_buffer(buf.name)
+                ed.message = f"Switched to {buf.name}"
+                return
+        # Try to load via the open_callback
+        content = ""
+        if ed.open_callback is not None:
+            content = ed.open_callback(path)
+
+        name = path.rsplit("/", 1)[-1] if "/" in path else path
+        ed.create_buffer(name=name, text=content, filepath=path)
+        ed.message = f"Opened {path}" if content else f"(New file) {path}"
+
+    ed.start_minibuffer("Find file: ", callback)
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     if ed.save_callback is None:
@@ -253,9 +362,16 @@ def build_default_keymap() -> Keymap:
     # Cancel
     km.bind("C-g", "keyboard-quit")
 
+    # M-x
+    km.bind("M-x", "execute-extended-command")
+
     # C-x prefix map
     cx = Keymap("C-x prefix")
     cx.bind("C-s", "save-buffer")
+    cx.bind("C-w", "write-file")
+    cx.bind("C-f", "find-file")
+    cx.bind("b", "switch-to-buffer")
+    cx.bind("C-b", "list-buffers")
     cx.bind("C-c", "quit-editor")
     km.bind("C-x", cx)
 

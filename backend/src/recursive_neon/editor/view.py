@@ -86,15 +86,24 @@ class EditorView:
         modeline_row = self._text_height
         screen.set_line(modeline_row, self._render_modeline())
 
-        # Message line
+        # Message line / minibuffer
         message_row = self._text_height + 1
         if message_row < self._height:
-            screen.set_line(message_row, self.editor.message[: self._width])
-
-        # Cursor position (relative to viewport)
-        screen.cursor_row = buf.point.line - self._scroll_top
-        screen.cursor_col = min(buf.point.col, self._width - 1)
-        screen.cursor_visible = True
+            if self.editor.minibuffer is not None:
+                mb = self.editor.minibuffer
+                screen.set_line(message_row, mb.display[: self._width])
+                # Cursor goes in the minibuffer
+                screen.cursor_row = message_row
+                screen.cursor_col = min(
+                    len(mb.prompt) + mb.cursor, self._width - 1
+                )
+                screen.cursor_visible = True
+            else:
+                screen.set_line(message_row, self.editor.message[: self._width])
+                # Cursor position (relative to viewport)
+                screen.cursor_row = buf.point.line - self._scroll_top
+                screen.cursor_col = min(buf.point.col, self._width - 1)
+                screen.cursor_visible = True
 
         return screen
 
