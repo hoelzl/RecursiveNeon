@@ -17,39 +17,16 @@ def mock_llm():
     """
     Fixture providing a mock LLM instance compatible with LangChain.
 
-    Returns a mock object that satisfies LangChain's Runnable interface requirements.
-    The mock is configured with spec to avoid strict type checking while maintaining
-    the necessary methods for ConversationChain.
+    Returns a mock object that satisfies LangChain's Runnable interface
+    (invoke / ainvoke) used by NPCManager for direct message invocation.
     """
-    from langchain_core.language_models import BaseChatModel
     from langchain_core.messages import AIMessage
-    from langchain_core.outputs import Generation, LLMResult
 
-    # Create a more sophisticated mock that inherits from a base class
-    # This avoids Pydantic validation issues with ConversationChain
-    mock = Mock(spec=BaseChatModel)
-
-    # Create a proper LLMResult object
     default_response = "Mock response from LLM"
-    llm_result = LLMResult(
-        generations=[[Generation(text=default_response)]], llm_output={}
-    )
 
-    # Return AIMessage objects for message-based methods
+    mock = Mock()
     mock.invoke = Mock(return_value=AIMessage(content=default_response))
     mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
-
-    # Add additional methods that ConversationChain might use
-    mock.generate_prompt = Mock(return_value=llm_result)
-    mock.predict = Mock(return_value=default_response)
-    mock.predict_messages = Mock(return_value=AIMessage(content=default_response))
-    mock.__call__ = Mock(return_value=default_response)
-
-    # Make the mock iterable (return empty list) to avoid "not iterable" errors
-    mock.__iter__ = Mock(return_value=iter([]))
-
-    # Add necessary attributes for LangChain compatibility
-    mock._is_runnable = True
 
     return mock
 

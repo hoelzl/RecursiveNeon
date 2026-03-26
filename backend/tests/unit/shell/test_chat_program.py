@@ -84,14 +84,9 @@ class TestChatConversation:
     async def test_chat_sends_message(self, chat, make_ctx, output, mock_llm):
         """A normal message gets sent to the NPC and response is displayed."""
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
         response_text = "Welcome to the lobby!"
         mock_llm.invoke.return_value = AIMessage(content=response_text)
-        mock_llm.predict.return_value = response_text
-        mock_llm.generate_prompt.return_value = LLMResult(
-            generations=[[Generation(text=response_text)]], llm_output={}
-        )
 
         with patch("prompt_toolkit.PromptSession") as MockSession:
             session = MockSession.return_value

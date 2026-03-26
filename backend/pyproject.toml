@@ -199,7 +199,6 @@ no_implicit_optional = true
 [[tool.mypy.overrides]]
 module = [
     "langchain.*",
-    "langchain_classic.*",
     "langchain_core.*",
     "langchain_ollama.*",
     "langchain_community.*",

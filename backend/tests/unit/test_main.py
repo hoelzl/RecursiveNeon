@@ -90,14 +90,9 @@ class TestNPCEndpoints:
 
     def test_chat_success(self, client, mock_llm):
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
         response_text = "Hello there!"
         mock_llm.invoke.return_value = AIMessage(content=response_text)
-        mock_llm.predict.return_value = response_text
-        mock_llm.generate_prompt.return_value = LLMResult(
-            generations=[[Generation(text=response_text)]], llm_output={}
-        )
 
         resp = client.post(
             "/chat",
@@ -157,14 +152,9 @@ class TestHandleWsMessage:
 
     async def test_chat_message(self, ws_container, mock_llm):
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
         response_text = "I can help!"
         mock_llm.invoke.return_value = AIMessage(content=response_text)
-        mock_llm.predict.return_value = response_text
-        mock_llm.generate_prompt.return_value = LLMResult(
-            generations=[[Generation(text=response_text)]], llm_output={}
-        )
 
         resp = await handle_ws_message(
             ws_container,

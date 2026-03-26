@@ -12,9 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langchain_classic.chains import ConversationChain
-from langchain_classic.memory import ConversationBufferWindowMemory
-from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from recursive_neon.config import settings
@@ -40,9 +38,8 @@ class NPCManager(INPCManager):
     The LLM instance is now injected via the constructor, allowing for easy mocking in tests.
 
     Uses LangChain for:
-    - Conversation management
-    - Memory/context handling
-    - Prompt templating
+    - LLM invocation via chat messages
+    - Prompt templating via system/human/AI messages
 
     Example:
         # Production usage with real LLM
@@ -69,7 +66,6 @@ class NPCManager(INPCManager):
             ollama_port: Ollama server port (deprecated, use llm parameter instead)
         """
         self.npcs: dict[str, NPC] = {}
-        self.chains: dict[str, ConversationChain] = {}
 
         # Support both new dependency injection and legacy initialization
         if llm is not None:
@@ -115,40 +111,12 @@ class NPCManager(INPCManager):
     def register_npc(self, npc: NPC):
         """Register a new NPC"""
         self.npcs[npc.id] = npc
-
-        # Create conversation chain for this NPC
-        prompt = PromptTemplate(
-            input_variables=["history", "input"],
-            template=f"""{npc.get_system_prompt()}
-
-Previous conversation:
-{{history}}
-
-Player: {{input}}
-{npc.name}:""",
-        )
-
-        memory = ConversationBufferWindowMemory(k=settings.npc_memory_context_length)
-
-        # Load existing conversation history into memory
-        for msg in npc.get_recent_conversation():
-            if msg["role"] == "user":
-                memory.chat_memory.add_user_message(msg["content"])
-            elif msg["role"] == "assistant":
-                memory.chat_memory.add_ai_message(msg["content"])
-
-        self.chains[npc.id] = ConversationChain(
-            llm=self.llm, prompt=prompt, memory=memory, verbose=False
-        )
-
         logger.info(f"Registered NPC: {npc.name} ({npc.id})")
 
     def unregister_npc(self, npc_id: str):
         """Remove an NPC"""
         if npc_id in self.npcs:
             del self.npcs[npc_id]
-        if npc_id in self.chains:
-            del self.chains[npc_id]
         logger.info(f"Unregistered NPC: {npc_id}")
 
     def get_npc(self, npc_id: str) -> NPC | None:
@@ -158,6 +126,28 @@ Player: {{input}}
     def list_npcs(self) -> list[NPC]:
         """Get list of all NPCs"""
         return list(self.npcs.values())
+
+    def _build_messages(
+        self, npc: NPC
+    ) -> list[SystemMessage | HumanMessage | AIMessage]:
+        """Build LLM chat messages from NPC context and conversation history.
+
+        The NPC's recent conversation history (controlled by
+        ``settings.npc_memory_context_length``) is converted to
+        ``SystemMessage``/``HumanMessage``/``AIMessage`` objects so the LLM
+        receives proper chat-style context.
+        """
+        messages: list[SystemMessage | HumanMessage | AIMessage] = [
+            SystemMessage(content=npc.get_system_prompt())
+        ]
+        for msg in npc.get_recent_conversation(
+            n=settings.npc_memory_context_length
+        ):
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+        return messages
 
     async def chat(
         self, npc_id: str, message: str, player_id: str = "player_1"
@@ -177,22 +167,20 @@ Player: {{input}}
         if not npc:
             raise ValueError(f"NPC not found: {npc_id}")
 
-        chain = self.chains.get(npc_id)
-        if not chain:
-            raise ValueError(f"Conversation chain not found for NPC: {npc_id}")
-
         try:
             # Add player message to NPC's memory
             max_hist = settings.npc_max_conversation_history
             npc.add_to_memory("user", message, max_history=max_hist)
 
-            # Generate response using LangChain
+            # Build chat messages from history (includes the user message
+            # just added) and invoke the LLM directly.
+            messages = self._build_messages(npc)
             logger.debug(f"Generating response for {npc.name}")
-            response = await asyncio.to_thread(chain.predict, input=message)
+            response = await asyncio.to_thread(self.llm.invoke, messages)
 
             # Strip think-tags BEFORE storing in memory so they don't
             # pollute conversation history or get fed back to the LLM.
-            cleaned = _strip_think_tags(response).strip()
+            cleaned = _strip_think_tags(response.content).strip()
 
             # Add cleaned response to NPC's memory
             npc.add_to_memory("assistant", cleaned, max_history=max_hist)

@@ -20,37 +20,19 @@ class TestNPCManagerWithDependencyInjection:
     @pytest.fixture
     def mock_llm(self):
         """
-        Create a mock LLM compatible with LangChain.
+        Create a mock LLM compatible with LangChain's Runnable interface.
 
-        This mock replaces the real ChatOllama instance, using BaseChatModel
-        to satisfy LangChain's Runnable validation.
+        This mock replaces the real ChatOllama instance and provides
+        invoke/ainvoke returning AIMessage objects.
         """
-        from langchain_core.language_models import BaseChatModel
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
-        mock = Mock(spec=BaseChatModel)
-
-        # Create a proper LLMResult object
         default_response = "Hello! I'm happy to help you."
-        llm_result = LLMResult(
-            generations=[[Generation(text=default_response)]], llm_output={}
-        )
 
-        # Return AIMessage objects for message-based methods
+        mock = Mock()
         mock.invoke = Mock(return_value=AIMessage(content=default_response))
         mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
 
-        # Add additional methods that ConversationChain might use
-        mock.generate_prompt = Mock(return_value=llm_result)
-        mock.predict = Mock(return_value=default_response)
-        mock.predict_messages = Mock(return_value=AIMessage(content=default_response))
-        mock.__call__ = Mock(return_value=default_response)
-
-        # Make the mock iterable (return empty list) to avoid "not iterable" errors
-        mock.__iter__ = Mock(return_value=iter([]))
-
-        mock._is_runnable = True
         return mock
 
     @pytest.fixture
@@ -78,7 +60,6 @@ class TestNPCManagerWithDependencyInjection:
         """Test that NPCManager correctly uses injected LLM."""
         assert npc_manager.llm is mock_llm
         assert len(npc_manager.npcs) == 0
-        assert len(npc_manager.chains) == 0
 
     def test_initialization_with_default_llm(self):
         """Test that NPCManager can still create default LLM for backward compatibility."""
@@ -88,24 +69,18 @@ class TestNPCManagerWithDependencyInjection:
         assert manager.llm is not None
 
     def test_register_npc(self, npc_manager, sample_npc):
-        """Test registering an NPC creates both storage and conversation chain."""
+        """Test registering an NPC stores it correctly."""
         npc_manager.register_npc(sample_npc)
 
-        # Verify NPC was stored
         assert sample_npc.id in npc_manager.npcs
         assert npc_manager.npcs[sample_npc.id] == sample_npc
 
-        # Verify conversation chain was created
-        assert sample_npc.id in npc_manager.chains
-        assert npc_manager.chains[sample_npc.id] is not None
-
     def test_unregister_npc(self, npc_manager, sample_npc):
-        """Test unregistering an NPC removes it from storage and chains."""
+        """Test unregistering an NPC removes it from storage."""
         npc_manager.register_npc(sample_npc)
         npc_manager.unregister_npc(sample_npc.id)
 
         assert sample_npc.id not in npc_manager.npcs
-        assert sample_npc.id not in npc_manager.chains
 
     def test_get_npc_exists(self, npc_manager, sample_npc):
         """Test retrieving an existing NPC."""
@@ -155,17 +130,9 @@ class TestNPCManagerWithDependencyInjection:
         test the chat logic without needing a real LLM.
         """
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
-        # Configure the mock LLM to return a specific response
         expected_response = "I can help you with that!"
-        llm_result = LLMResult(
-            generations=[[Generation(text=expected_response)]], llm_output={}
-        )
         mock_llm.invoke.return_value = AIMessage(content=expected_response)
-        mock_llm.predict.return_value = expected_response
-        mock_llm.generate_prompt.return_value = llm_result
-        mock_llm.__call__.return_value = expected_response
 
         npc_manager.register_npc(sample_npc)
 
@@ -197,17 +164,9 @@ class TestNPCManagerWithDependencyInjection:
     async def test_chat_updates_relationship(self, npc_manager, sample_npc, mock_llm):
         """Test that chat updates relationship level based on sentiment."""
         from langchain_core.messages import AIMessage
-        from langchain_core.outputs import Generation, LLMResult
 
-        # Configure mock LLM response
         response_text = "You're welcome!"
-        llm_result = LLMResult(
-            generations=[[Generation(text=response_text)]], llm_output={}
-        )
         mock_llm.invoke.return_value = AIMessage(content=response_text)
-        mock_llm.predict.return_value = response_text
-        mock_llm.generate_prompt.return_value = llm_result
-        mock_llm.__call__.return_value = response_text
 
         npc_manager.register_npc(sample_npc)
         initial_relationship = sample_npc.memory.relationship_level
@@ -225,11 +184,7 @@ class TestNPCManagerWithDependencyInjection:
     @pytest.mark.asyncio
     async def test_chat_error_handling(self, npc_manager, sample_npc, mock_llm):
         """Test that chat errors are handled gracefully with fallback response."""
-        # Configure mock LLM to raise an exception on all methods
         mock_llm.invoke.side_effect = Exception("LLM error")
-        mock_llm.predict.side_effect = Exception("LLM error")
-        mock_llm.generate_prompt.side_effect = Exception("LLM error")
-        mock_llm.__call__.side_effect = Exception("LLM error")
 
         npc_manager.register_npc(sample_npc)
 
@@ -250,7 +205,6 @@ class TestNPCManagerWithDependencyInjection:
 
         # Verify they were registered
         assert len(npc_manager.npcs) == 5
-        assert len(npc_manager.chains) == 5
 
         # Verify NPC IDs are unique
         npc_ids = [npc.id for npc in npcs]
