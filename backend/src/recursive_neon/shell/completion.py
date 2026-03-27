@@ -184,8 +184,15 @@ def _path_completions(
     app_service: AppService,
     *,
     dirs_only: bool = False,
+    quote: bool = True,
 ) -> list[str]:
-    """Return matching path strings for a partial path."""
+    """Return matching path strings for a partial path.
+
+    When *quote* is True (the default), path segments containing spaces
+    or other shell-special characters are wrapped in double quotes.  Set
+    *quote* to False for contexts where quoting is unwanted (e.g. the
+    editor minibuffer, where the entire input is a single path).
+    """
     if "/" in raw_path:
         last_slash = raw_path.rfind("/")
         dir_part = raw_path[: last_slash + 1] or "/"
@@ -213,5 +220,5 @@ def _path_completions(
                 continue
             suffix = "/" if child.type == "directory" else ""
             full_path = dir_part + child.name + suffix
-            results.append(quote_path(full_path))
+            results.append(quote_path(full_path) if quote else full_path)
     return results

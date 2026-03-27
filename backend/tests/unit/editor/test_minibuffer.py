@@ -392,3 +392,51 @@ class TestFileOperations:
             ed.process_key(ch)
         ed.process_key("Tab")
         assert ed.minibuffer.text == "readme.txt"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Minibuffer chaining (M-x → command that opens another minibuffer)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestMinibufferChaining:
+    def test_m_x_find_file_opens_second_minibuffer(self):
+        """M-x find-file should chain into the find-file minibuffer."""
+        ed = make_editor("hello")
+        ed.process_key("M-x")
+        for ch in "find-file":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        # The find-file minibuffer should now be active
+        assert ed.minibuffer is not None
+        assert "file" in ed.minibuffer.prompt.lower()
+
+    def test_m_x_find_file_loads_file(self):
+        """Full chain: M-x find-file <path> Enter opens the file."""
+        ed = make_editor("original")
+        ed.open_callback = lambda path: "loaded via M-x"
+        ed.process_key("M-x")
+        for ch in "find-file":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.minibuffer is not None
+        for ch in "test.txt":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.minibuffer is None
+        assert ed.buffer.text == "loaded via M-x"
+
+    def test_m_x_switch_to_buffer_chains(self):
+        """M-x switch-to-buffer should also chain correctly."""
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")
+        ed.process_key("M-x")
+        for ch in "switch-to-buffer":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.minibuffer is not None
+        for ch in "buf-a":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.buffer.name == "buf-a"

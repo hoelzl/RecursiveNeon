@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from recursive_neon.shell.completion import (
+    _path_completions,
     complete_choices,
 )
 from recursive_neon.shell.shell import Shell
@@ -496,3 +497,31 @@ class TestWebSocketParity:
         items_simple = shell.get_completions("note ")
         items_ext, _ = shell.get_completions_ext("note ")
         assert items_simple == items_ext
+
+
+# ---------------------------------------------------------------------------
+# Unquoted path completion (for editor minibuffer)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUnquotedPathCompletion:
+    def test_spaces_quoted_by_default(self, shell):
+        """Default behaviour: paths with spaces get shell-quoted."""
+        app = shell.session.container.app_service
+        cwd_id = shell.session.cwd_id
+        items = _path_completions("My", cwd_id, app)
+        matching = [i for i in items if "My" in i]
+        assert matching
+        # At least one result should contain a double-quote
+        assert any('"' in i for i in matching)
+
+    def test_spaces_unquoted_when_requested(self, shell):
+        """quote=False returns raw paths without shell quoting."""
+        app = shell.session.container.app_service
+        cwd_id = shell.session.cwd_id
+        items = _path_completions("My", cwd_id, app, quote=False)
+        matching = [i for i in items if "My" in i]
+        assert matching
+        # No result should contain a double-quote
+        assert all('"' not in i for i in matching)

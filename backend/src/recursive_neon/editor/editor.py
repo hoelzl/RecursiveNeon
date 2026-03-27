@@ -122,12 +122,15 @@ class Editor:
         """
         # Route to minibuffer if active
         if self.minibuffer is not None:
-            still_active = self.minibuffer.process_key(key)
+            old_mb = self.minibuffer
+            still_active = old_mb.process_key(key)
             if not still_active:
-                replay = self.minibuffer.replay_key
-                if self.minibuffer.cancelled:
+                replay = old_mb.replay_key
+                if old_mb.cancelled:
                     self.message = "Quit"
-                self.minibuffer = None
+                # Only clear if the callback didn't start a new minibuffer
+                if self.minibuffer is old_mb:
+                    self.minibuffer = None
                 # Re-dispatch replayed key (isearch exit-and-replay)
                 if replay is not None:
                     self.process_key(replay)

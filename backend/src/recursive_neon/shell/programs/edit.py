@@ -119,7 +119,7 @@ async def _run_edit(ctx: ProgramContext) -> int:
     from recursive_neon.shell.completion import _path_completions
 
     def path_completer(partial: str) -> list[str]:
-        return _path_completions(partial, ctx.cwd_id, app_service)
+        return _path_completions(partial, ctx.cwd_id, app_service, quote=False)
 
     view.editor.path_completer = path_completer
 
