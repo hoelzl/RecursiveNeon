@@ -89,8 +89,9 @@ cd backend
 backend/src/recursive_neon/
   models/          Data models (FileNode, NPC, GameState, etc.)
   services/        Business logic (AppService, NPCManager, etc.)
+  editor/          TUI text editor — neon-edit (buffer, commands, keymaps, view)
   shell/           CLI shell (REPL, session, builtins, pipes, globs)
-    programs/      Shell programs (filesystem, notes, tasks, chat, codebreaker, utility)
+    programs/      Shell programs (filesystem, notes, tasks, chat, edit, codebreaker, utility)
     tui/           TUI framework (raw mode apps, screen buffer)
   terminal.py      WebSocket terminal session manager
   wsclient/        WebSocket CLI client

@@ -1,7 +1,7 @@
 # Shell Design Document
 
-> **Status**: Phases 1-5 implemented. Design document kept for architecture reference.
-> **Date**: 2026-03-23 (updated 2026-03-26)
+> **Status**: Phases 1-5 + 6a (editor) + E1-E5 (editor enhancements) implemented. Design document kept for architecture reference.
+> **Date**: 2026-03-23 (updated 2026-03-27)
 
 ## 1. Overview
 
@@ -48,6 +48,7 @@ backend/src/recursive_neon/shell/
     ├── utility.py       # help, clear, echo, env, whoami, hostname, date, save
     ├── chat.py          # chat <npc> — NPC conversation mode with /commands
     ├── codebreaker.py   # Mastermind-style TUI minigame (raw mode)
+    ├── edit.py          # TUI text editor host (file I/O, path completion)
     ├── notes.py         # note list/show/create/edit/delete
     └── tasks.py         # task lists/list/add/done/undone/delete
 ```
@@ -900,7 +901,7 @@ Implemented across Phases 2-5 (see Sections 5.1, 5.4, 5.5):
 - `save` — Save game state to disk
 - `codebreaker` — Mastermind-style TUI minigame (Phase 4)
 
-Still planned for future phases:
+Also implemented in Phase 6a + E1-E5:
 | Program | Description |
 |---------|-------------|
-| `neon-edit` | TUI text editor (Phase 6) |
+| `edit` | TUI text editor — neon-edit (Emacs-inspired, minibuffer, incremental search, help system) |

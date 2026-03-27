@@ -64,7 +64,7 @@ Every feature works in the CLI (Layer 2) before touching the browser (Layers 3-4
 - **ShellSession** — session state (cwd, env vars, history) + path resolution between human-readable paths and UUID-based filesystem.
 - **ProgramRegistry** — maps program names to async `Program` implementations with restricted `ProgramContext`.
 - **Builtins** (`cd`, `exit`, `export`) — modify shell session state directly.
-- **Programs** — filesystem ops (`ls`, `cat`, `grep`, `find`, `write`, ...), notes/tasks management, NPC chat, TUI minigames (`codebreaker`), utilities (`help`, `save`, `echo`, ...).
+- **Programs** — filesystem ops (`ls`, `cat`, `grep`, `find`, `write`, ...), notes/tasks management, NPC chat, TUI apps (`edit` — Emacs-inspired text editor, `codebreaker` — Mastermind minigame), utilities (`help`, `save`, `echo`, ...).
 - **Shell features** — pipes (`|`), output redirection (`>`, `>>`), glob expansion (`*`, `?`, `[...]`), context-sensitive tab completion.
 - **TUI framework** — raw-mode app support via `ScreenBuffer`, `TuiApp` protocol, and `run_tui_app()` lifecycle manager.
 - **WebSocket transport** — `/ws/terminal` endpoint serves the same shell over WebSocket with JSON protocol. CLI client: `python -m recursive_neon.wsclient`.

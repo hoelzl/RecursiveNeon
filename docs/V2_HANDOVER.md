@@ -1,7 +1,7 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-03-26)
-> **Status**: Phases 0-5 complete. Phase 6a (editor) complete: buffer primitives, undo, kill ring, command system, keymaps, TUI view, shell `edit` command. Phase 6b (notes integration) next. Browser GUI deferred to Phase 7.
+> **Date**: 2025-03-23 (updated 2026-03-27)
+> **Status**: Phases 0-5 + 6a (editor) + E1-E5 (editor enhancements) complete. Phase 6b (notes integration) next. Browser GUI deferred to Phase 7.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -172,6 +172,18 @@ backend/
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
     terminal.py                       # WebSocket terminal session manager (Phase 3)
+    editor/                           # TUI text editor — neon-edit (Phase 6a + E1-E5)
+      __init__.py                     # Package exports (Buffer, Mark, Editor, EditorView, etc.)
+      buffer.py                       # Buffer class: text storage, primitives, movement, undo, kill, search
+      mark.py                         # Mark class: position tracking with left/right-inserting kinds
+      undo.py                         # Undo entry types (UndoInsert, UndoDelete, UndoBoundary)
+      killring.py                     # Kill ring: push, append_to_top, yank, rotate
+      commands.py                     # Command dataclass, @defcommand decorator, COMMANDS registry
+      keymap.py                       # Keymap class: key bindings with parent inheritance
+      editor.py                       # Editor coordinator: buffer list, key dispatch, prefix arg, help
+      default_commands.py             # 40+ Emacs-style commands + global/C-x/C-h keymaps
+      minibuffer.py                   # Single-line input widget with completion (M-x, C-x C-f, etc.)
+      view.py                         # EditorView (TuiApp): rendering, scrolling, modeline
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -191,6 +203,7 @@ backend/
         __init__.py                   # ProgramRegistry + ProgramContext + Program protocol
         chat.py                       # NPC conversation sub-REPL with /commands
         codebreaker.py                # Mastermind-style TUI minigame (Phase 4)
+        edit.py                       # Shell `edit` command: TUI editor host, file I/O callbacks
         filesystem.py                 # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
         notes.py                      # note list/show/create/edit/delete
         tasks.py                      # task lists/list/add/done/undone/delete
@@ -231,6 +244,18 @@ backend/
     unit/shell/test_task_program.py   # Task CLI program tests
     unit/shell/test_tui.py            # TUI framework: ScreenBuffer, runner lifecycle (Phase 4)
     unit/shell/test_codebreaker.py    # CodeBreaker: game logic, TUI app, key handling (Phase 4)
+    unit/editor/__init__.py
+    unit/editor/test_buffer.py        # Buffer primitives, insertion, deletion, movement (101 tests)
+    unit/editor/test_mark.py          # Mark comparison, copying, move_to (22 tests)
+    unit/editor/test_undo.py          # Undo/redo round-trips, boundaries, chains (22 tests)
+    unit/editor/test_killring.py      # Kill ring: push, rotate, append, kill merging (37 tests)
+    unit/editor/test_keymap.py        # Keymap bind, lookup, parent inheritance (13 tests)
+    unit/editor/test_commands.py      # Command registry, dispatch, prefix arg (40 tests)
+    unit/editor/test_minibuffer.py    # Minibuffer input, completion, callbacks (38 tests)
+    unit/editor/test_view.py          # EditorView rendering, scrolling, modeline (26 tests)
+    unit/editor/test_word_movement.py # Word movement, additional keys, read-only buffers (30 tests)
+    unit/editor/test_isearch.py       # Incremental search: find, isearch dispatch (21 tests)
+    unit/editor/test_help.py          # Help system: describe-key, apropos (9 tests)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -410,6 +435,41 @@ The thin shell that renders the editor in the terminal.
 - File I/O: load from / save to virtual filesystem FileNodes
 - Minibuffer (stretch): single-line input for save-as, M-x command-by-name
 - Tests for rendering, scrolling, file round-trips, shell integration
+
+##### E1-E5. Editor Enhancements — COMPLETE
+Post-6a-4 incremental improvements to make the editor genuinely usable.
+
+**E1. Word Movement, Additional Keys, Read-Only Buffers**
+- `forward_word` (M-f), `backward_word` (M-b) with alphanumeric + underscore word boundaries
+- `kill_word_backward` (M-Backspace) with kill ring integration
+- Arrow key bindings (Left/Right/Up/Down, Home, End, Delete)
+- `read_only` flag on Buffer — insert/delete operations return early, movement still works
+- 30 tests
+
+**E2+E3. Minibuffer, M-x, File Ops, Buffer Switching**
+- `Minibuffer` class: single-line input widget with prompt, cursor, text editing (C-a/C-e/C-k/C-d/Backspace/arrows), tab completion cycling, on_change callback
+- `execute-extended-command` (M-x): minibuffer with command name completer
+- `find-file` (C-x C-f): open file from virtual filesystem or create new buffer, with path completion
+- `write-file` (C-x C-w): save-as with path prompt
+- `switch-to-buffer` (C-x b): buffer switching with name completer
+- `list-buffers` (C-x C-b): read-only buffer list display
+- 38 minibuffer tests
+
+**E4. Incremental Search (C-s / C-r)**
+- `Buffer.find_forward()` / `Buffer.find_backward()`: text search from a given position
+- `isearch-forward` (C-s) / `isearch-backward` (C-r): live minibuffer search with on_change handler
+- Repeatable search (C-s again in minibuffer advances to next match)
+- Direction toggling, position stack for backspace-undo
+- 21 tests
+
+**E5. Help System + open_callback**
+- `describe-key` (C-h k): prompts for a key, shows binding and command doc in *Help* buffer
+- `command-apropos` (C-h a): pattern search across command names and docstrings
+- `_show_help_buffer()`: creates/switches to read-only *Help* buffer
+- `open_callback` / `path_completer` on Editor: wired by shell `edit` program for C-x C-f integration
+- 9 tests
+
+927 total tests (359 new for editor), all passing. Lint and type checks clean.
 
 ##### 6a-5. Modes (optional, after 6a-4 if warranted)
 - `Mode` dataclass: `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`
