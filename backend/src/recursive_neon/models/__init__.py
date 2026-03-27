@@ -17,6 +17,7 @@ from recursive_neon.models.npc import (
     NPCPersonality,
     NPCRole,
 )
+from recursive_neon.models.process import ProcessInfo, ProcessTable
 
 __all__ = [
     "NPC",
@@ -34,4 +35,6 @@ __all__ = [
     "TasksState",
     "FileNode",
     "FileSystemState",
+    "ProcessInfo",
+    "ProcessTable",
 ]

@@ -6,7 +6,7 @@ Implements the Service Locator pattern for clean dependency injection.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +14,7 @@ from langchain_ollama import ChatOllama
 
 from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
+from recursive_neon.models.process import ProcessTable
 from recursive_neon.services.app_service import AppService
 from recursive_neon.services.interfaces import (
     INPCManager,
@@ -42,6 +43,7 @@ class ServiceContainer:
     game_state: GameState
     app_service: AppService
     start_time: datetime
+    process_table: ProcessTable = field(default_factory=ProcessTable)
 
     def __repr__(self) -> str:
         return (
@@ -143,6 +145,7 @@ class ServiceFactory:
             game_state=game_state,
             app_service=app_service,
             start_time=start_time,
+            process_table=ProcessTable.with_defaults(),
         )
 
         logger.info(f"Production container created: {container}")

@@ -42,6 +42,28 @@ block from `__init__.py` and delete this entry.
 
 ---
 
+## TD-003: TUI framework has no timer/auto-refresh mechanism
+
+**Added**: 2026-03-27
+**Affected files**:
+- `backend/src/recursive_neon/shell/tui/__init__.py` — `TuiApp` protocol
+- `backend/src/recursive_neon/shell/tui/runner.py` — `run_tui_app()` loop
+
+**Problem**: The TUI framework is purely keystroke-driven — `on_key()` is
+only called when the user presses a key. There is no periodic callback, so
+apps like `sysmon` can only refresh their display in response to input.
+
+**Enhancement needed**: Add an optional `on_tick()` method to the `TuiApp`
+protocol (or a `tick_interval` attribute) so `run_tui_app()` can use a
+timeout on the keystroke read and call `on_tick()` periodically. This would
+let sysmon show live-updating stats, and future apps (e.g., a network
+monitor or countdown timer) could animate without requiring keypresses.
+
+**Implement when**: A TUI app needs live updates without user interaction
+(sysmon auto-refresh, animated displays, timed game events).
+
+---
+
 ## Resolved
 
 ### ~~TD-002: Unused LLM/AI dependencies~~ (resolved 2026-03-26)
