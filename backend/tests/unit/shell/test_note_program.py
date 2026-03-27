@@ -408,3 +408,204 @@ class TestNoteCreateInEditor:
         assert len(notes) == 1
         assert notes[0].title == "Fallback Note"
         assert notes[0].content == ""
+
+
+# ---------------------------------------------------------------------------
+# Editor integration — note browse
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestNoteBrowse:
+    async def test_opens_notes_buffer(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "First", "content": "aaa"})
+        app.create_note({"title": "Second", "content": "bbb"})
+
+        captured = {}
+
+        async def mock_run_tui(view):
+            captured["buffer_name"] = view.editor.buffer.name
+            captured["text"] = view.editor.buffer.text
+            captured["read_only"] = view.editor.buffer.read_only
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+        assert captured["buffer_name"] == "*Notes*"
+        assert "First" in captured["text"]
+        assert "Second" in captured["text"]
+        assert captured["read_only"] is True
+
+    async def test_empty_notes_shows_message(self, make_ctx, output, test_container):
+        captured = {}
+
+        async def mock_run_tui(view):
+            captured["text"] = view.editor.buffer.text
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+        assert "no notes" in captured["text"]
+
+    async def test_enter_opens_note(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "My Note", "content": "Hello world"})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            # Move cursor to the line with the note (first data line)
+            # then press Enter
+            ed.process_key("Enter")
+            # Should now be in the note buffer
+            assert ed.buffer.name == "note:My Note"
+            assert "# My Note" in ed.buffer.text
+            assert "Hello world" in ed.buffer.text
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+    async def test_open_note_save_updates(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "My Note", "content": "original"})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            ed.process_key("Enter")  # open note
+            # Modify and save
+            buf = ed.buffer
+            buf.read_only = False
+            buf.lines = ["# Updated Title", "", "updated content"]
+            buf.point.move_to(0, 0)
+            assert ed.save_callback(buf) is True
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+        note = app.get_notes()[0]
+        assert note.title == "Updated Title"
+        assert note.content == "updated content"
+
+    async def test_create_via_minibuffer(self, make_ctx, output, test_container):
+        app = test_container.app_service
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            # Press 'c' to create
+            ed.process_key("c")
+            assert ed.minibuffer is not None
+            # Type a title and confirm
+            for ch in "New Note":
+                ed.process_key(ch)
+            ed.process_key("Enter")
+            # Should be in the new note buffer
+            assert ed.buffer.name == "note:New Note"
+            assert "# New Note" in ed.buffer.text
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+        notes = app.get_notes()
+        assert len(notes) == 1
+        assert notes[0].title == "New Note"
+
+    async def test_delete_via_confirm(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "Delete Me", "content": "xxx"})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            # Press 'd' to delete
+            ed.process_key("d")
+            assert ed.minibuffer is not None
+            # Confirm
+            ed.process_key("y")
+            ed.process_key("Enter")
+            assert len(app.get_notes()) == 0
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+    async def test_delete_cancel(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "Keep Me", "content": "xxx"})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            ed.process_key("d")
+            ed.process_key("n")
+            ed.process_key("Enter")
+            assert len(app.get_notes()) == 1
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+    async def test_refresh(self, make_ctx, output, test_container):
+        app = test_container.app_service
+        app.create_note({"title": "Original", "content": ""})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            assert "Original" in ed.buffer.text
+            # Add a note externally
+            app.create_note({"title": "Added Later", "content": ""})
+            # Refresh
+            ed.process_key("g")
+            assert "Added Later" in ed.buffer.text
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+    async def test_no_tui_shows_error(self, make_ctx, output):
+        ctx = make_ctx(["note", "browse"])
+        assert await prog_note(ctx) == 1
+        assert "TUI" in output.error_text
+
+    async def test_buffer_has_local_keymap(self, make_ctx, output, test_container):
+        async def mock_run_tui(view):
+            assert view.editor.buffer.keymap is not None
+            assert view.editor.buffer.keymap.name == "notes"
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0
+
+    async def test_auto_refresh_on_switch_back(
+        self, make_ctx, output, test_container
+    ):
+        """Switching back to *Notes* auto-refreshes the list."""
+        app = test_container.app_service
+        app.create_note({"title": "Existing", "content": ""})
+
+        async def mock_run_tui(view):
+            ed = view.editor
+            assert "Existing" in ed.buffer.text
+            # Open the note (creates a second buffer)
+            ed.process_key("Enter")
+            assert ed.buffer.name == "note:Existing"
+            # Add a note while we're in the note buffer
+            app.create_note({"title": "New One", "content": ""})
+            # Switch back to *Notes* — should auto-refresh
+            ed.switch_to_buffer("*Notes*")
+            assert "New One" in ed.buffer.text
+            return 0
+
+        ctx = make_ctx(["note", "browse"])
+        ctx.run_tui = mock_run_tui
+        assert await prog_note(ctx) == 0

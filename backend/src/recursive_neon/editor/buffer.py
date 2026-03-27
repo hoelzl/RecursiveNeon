@@ -15,8 +15,13 @@ maintain mark consistency.  Higher-level operations are built on top.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Callable
+
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
+
+if TYPE_CHECKING:
+    from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -40,6 +45,8 @@ class Buffer:
         self.filepath = filepath
         self.modified: bool = False
         self.read_only: bool = False
+        self.keymap: Keymap | None = None  # buffer-local keymap (checked first)
+        self.on_focus: Callable[[], None] | None = None  # called when buffer becomes current
 
         # Text storage — always at least one line
         if text:

@@ -70,6 +70,7 @@ async def prog_note(ctx: ProgramContext) -> int:
         "edit": _note_edit,
         "delete": _note_delete,
         "rm": _note_delete,
+        "browse": _note_browse,
     }
     handler = dispatch.get(sub)
     if handler is None:
@@ -310,7 +311,180 @@ async def _note_delete(ctx: ProgramContext) -> int:
     return 0
 
 
-_NOTE_SUBCOMMANDS = ["list", "ls", "show", "create", "new", "edit", "delete", "rm"]
+# ---------------------------------------------------------------------------
+# note browse — interactive notes editor
+# ---------------------------------------------------------------------------
+
+_NOTES_BUFFER_NAME = "*Notes*"
+
+
+async def _note_browse(ctx: ProgramContext) -> int:
+    """Open an interactive notes browser in neon-edit."""
+    if ctx.run_tui is None:
+        ctx.stderr.error("note browse: requires a terminal that supports TUI mode")
+        return 1
+
+    from recursive_neon.editor.keymap import Keymap
+    from recursive_neon.editor.view import create_editor_for_file
+
+    app_service = ctx.services.app_service
+    view = create_editor_for_file(content="", name=_NOTES_BUFFER_NAME)
+    ed = view.editor
+
+    # -- helpers -----------------------------------------------------------
+
+    def _render_notes_list() -> str:
+        """Build the text content for the *Notes* buffer."""
+        notes = app_service.get_notes()
+        if not notes:
+            return "  (no notes)\n\n  Press [c] to create a note."
+        lines = []
+        for i, note in enumerate(notes, 1):
+            preview = note.content[:50].replace("\n", " ")
+            if len(note.content) > 50:
+                preview += "..."
+            date = note.updated_at.strftime("%Y-%m-%d")
+            lines.append(f"  [{i:>3}]  {note.title:<30}  {date}  {preview}")
+        lines.append("")
+        lines.append("  [Enter] Open  [c] Create  [d] Delete  [g] Refresh  [q] Quit")
+        return "\n".join(lines)
+
+    def _refresh_notes_buffer() -> None:
+        """Repopulate the *Notes* buffer with the current note list."""
+        buf = ed.buffer
+        if buf.name != _NOTES_BUFFER_NAME:
+            # Switch to *Notes* if it exists
+            if not ed.switch_to_buffer(_NOTES_BUFFER_NAME):
+                return
+            buf = ed.buffer
+        buf.read_only = False
+        buf.lines = _render_notes_list().split("\n")
+        buf.point.move_to(0, 0)
+        buf.modified = False
+        buf.read_only = True
+
+    def _current_note_index() -> int | None:
+        """Parse the 1-based note index from the line at point."""
+        buf = ed.buffer
+        if buf.name != _NOTES_BUFFER_NAME:
+            return None
+        line = buf.lines[buf.point.line] if buf.point.line < buf.line_count else ""
+        # Lines look like: "  [  1]  Title ..."
+        import re
+
+        m = re.match(r"\s*\[\s*(\d+)\]", line)
+        return int(m.group(1)) if m else None
+
+    # -- buffer-local actions ----------------------------------------------
+
+    def _open_note_at_point(editor, _prefix) -> None:  # noqa: ANN001
+        idx = _current_note_index()
+        if idx is None:
+            editor.message = "No note on this line"
+            return
+        notes = app_service.get_notes()
+        if not (1 <= idx <= len(notes)):
+            editor.message = f"Note {idx} not found"
+            return
+        note = notes[idx - 1]
+
+        # Check if already open
+        buf_name = f"note:{note.title}"
+        if editor.switch_to_buffer(buf_name):
+            editor.message = f"Switched to {buf_name}"
+            return
+
+        # Create a new buffer for this note
+        text = _format_note_text(note.title, note.content)
+        editor.create_buffer(name=buf_name, text=text)
+        note_id = note.id
+
+        def save_cb(b: Buffer) -> bool:
+            parsed_title, parsed_content = _parse_note_text(b.text)
+            if not parsed_title:
+                return False
+            app_service.update_note(
+                note_id, {"title": parsed_title, "content": parsed_content}
+            )
+            # Update buffer name to reflect new title
+            b.name = f"note:{parsed_title}"
+            return True
+
+        editor.save_callback = save_cb
+        editor.message = f"Opened note: {note.title}"
+
+    def _create_note(editor, _prefix) -> None:  # noqa: ANN001
+        def callback(title: str) -> None:
+            title = title.strip()
+            if not title:
+                return
+            new_note = app_service.create_note({"title": title, "content": ""})
+            text = _format_note_text(new_note.title, "")
+            editor.create_buffer(name=f"note:{new_note.title}", text=text)
+            note_id = new_note.id
+
+            def save_cb(b: Buffer) -> bool:
+                parsed_title, parsed_content = _parse_note_text(b.text)
+                if not parsed_title:
+                    return False
+                app_service.update_note(
+                    note_id, {"title": parsed_title, "content": parsed_content}
+                )
+                b.name = f"note:{parsed_title}"
+                return True
+
+            editor.save_callback = save_cb
+            editor.message = f"Created note: {new_note.title}"
+
+        editor.start_minibuffer("Note title: ", callback)
+
+    def _delete_note_at_point(editor, _prefix) -> None:  # noqa: ANN001
+        idx = _current_note_index()
+        if idx is None:
+            editor.message = "No note on this line"
+            return
+        notes = app_service.get_notes()
+        if not (1 <= idx <= len(notes)):
+            editor.message = f"Note {idx} not found"
+            return
+        note = notes[idx - 1]
+
+        def confirm(answer: str) -> None:
+            if answer.strip().lower() in ("y", "yes"):
+                app_service.delete_note(note.id)
+                editor.message = f"Deleted: {note.title}"
+                _refresh_notes_buffer()
+            else:
+                editor.message = "Cancelled"
+
+        editor.start_minibuffer(f"Delete '{note.title}'? (y/n) ", confirm)
+
+    def _refresh(editor, _prefix) -> None:  # noqa: ANN001
+        _refresh_notes_buffer()
+        editor.message = "Notes list refreshed"
+
+    # -- set up *Notes* buffer with local keymap ---------------------------
+
+    notes_km = Keymap("notes", parent=ed.global_keymap)
+    notes_km.bind("Enter", _open_note_at_point)
+    notes_km.bind("o", _open_note_at_point)
+    notes_km.bind("c", _create_note)
+    notes_km.bind("d", _delete_note_at_point)
+    notes_km.bind("g", _refresh)
+    notes_km.bind("q", "quit-editor")
+
+    buf = ed.buffer
+    buf.name = _NOTES_BUFFER_NAME
+    buf.keymap = notes_km
+    buf.on_focus = _refresh_notes_buffer
+    _refresh_notes_buffer()
+
+    return await ctx.run_tui(view)
+
+
+_NOTE_SUBCOMMANDS = [
+    "list", "ls", "show", "create", "new", "edit", "delete", "rm", "browse",
+]
 _NOTE_REF_SUBCOMMANDS = {"show", "edit", "delete", "rm"}
 
 
@@ -352,6 +526,7 @@ def register_note_program(registry: ProgramRegistry) -> None:
         "  show <ref>         Show a note (by index or ID)\n"
         "  create <title>     Create a note (opens editor, or -c <content>)\n"
         "  edit <ref>         Edit a note in neon-edit (or -t/-c flags)\n"
-        "  delete <ref>       Delete a note",
+        "  delete <ref>       Delete a note\n"
+        "  browse             Interactive notes browser in neon-edit",
         completer=_complete_note,
     )

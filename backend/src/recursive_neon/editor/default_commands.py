@@ -244,6 +244,24 @@ def list_buffers(ed: Editor, prefix: int | None) -> None:
     bl.read_only = True
 
 
+@defcommand("kill-buffer", "Kill (close) a buffer (C-x k).")
+def kill_buffer(ed: Editor, prefix: int | None) -> None:
+    current_name = ed.buffer.name
+
+    def completer(text: str) -> list[str]:
+        return [b.name for b in ed.buffers if b.name.startswith(text)]
+
+    def callback(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        ed.remove_buffer(name)
+
+    ed.start_minibuffer(
+        "Kill buffer: ", callback, completer=completer, initial=current_name
+    )
+
+
 @defcommand("write-file", "Write buffer to a file path (C-x C-w).")
 def write_file(ed: Editor, prefix: int | None) -> None:
     def callback(path: str) -> None:
@@ -532,6 +550,7 @@ def build_default_keymap() -> Keymap:
     cx.bind("C-w", "write-file")
     cx.bind("C-f", "find-file")
     cx.bind("b", "switch-to-buffer")
+    cx.bind("k", "kill-buffer")
     cx.bind("C-b", "list-buffers")
     cx.bind("C-c", "quit-editor")
     km.bind("C-x", cx)

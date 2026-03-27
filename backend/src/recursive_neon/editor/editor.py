@@ -37,6 +37,7 @@ class Editor:
         # Prefix key state: when a prefix keymap is active, the next
         # key is looked up in it instead of the global keymap.
         self._pending_keymap: Keymap | None = None
+        self._prefix_keys: str = ""  # display string for pending prefix (e.g., "C-x")
 
         # Prefix argument (C-u): None = no prefix, int = numeric arg
         self._prefix_arg: int | None = None
@@ -100,11 +101,38 @@ class Editor:
         self._current_index = len(self._buffers) - 1
         return buf
 
+    def remove_buffer(self, name: str) -> bool:
+        """Remove a buffer by name.  Returns False if not found.
+
+        If the removed buffer was current, switches to an adjacent buffer.
+        The last buffer cannot be removed — a *scratch* buffer is created
+        to replace it.
+        """
+        for i, buf in enumerate(self._buffers):
+            if buf.name == name:
+                self._buffers.pop(i)
+                if not self._buffers:
+                    self.create_buffer()  # always keep at least one
+                elif self._current_index >= len(self._buffers):
+                    self._current_index = len(self._buffers) - 1
+                elif self._current_index > i:
+                    self._current_index -= 1
+                # Trigger on_focus for the new current buffer
+                cur = self._buffers[self._current_index]
+                if cur.on_focus is not None:
+                    cur.on_focus()
+                self.message = f"Killed buffer {name}"
+                return True
+        self.message = f"No buffer named {name}"
+        return False
+
     def switch_to_buffer(self, name: str) -> bool:
         """Switch to an existing buffer by name.  Returns False if not found."""
         for i, buf in enumerate(self._buffers):
             if buf.name == name:
                 self._current_index = i
+                if buf.on_focus is not None:
+                    buf.on_focus()
                 return True
         return False
 
@@ -163,16 +191,28 @@ class Editor:
         if isinstance(target, Keymap):
             # Prefix key — wait for the next keystroke
             self._pending_keymap = target
-            self.message = f"{key}-"
+            self._prefix_keys = (
+                f"{self._prefix_keys} {key}" if self._prefix_keys else key
+            )
+            self.message = f"{self._prefix_keys}-"
             return
 
         # Was this looked up in a prefix keymap?
         was_prefix = self._pending_keymap is not None
+        prefix_display = self._prefix_keys
         self._pending_keymap = None
+        self._prefix_keys = ""
 
         if isinstance(target, str):
             # Command name — execute it
             self._execute_command_by_name(target)
+        elif callable(target):
+            # Direct callable (e.g., buffer-local action)
+            prefix = self._prefix_arg
+            self._prefix_arg = None
+            self.buffer.add_undo_boundary()
+            target(self, prefix)
+            self._last_command_name = ""
         elif not was_prefix and len(key) == 1 and key.isprintable():
             # Self-insert for printable characters (only when not
             # in a prefix key sequence — "z" after C-x is undefined,
@@ -180,15 +220,19 @@ class Editor:
             self._execute_command_by_name("self-insert-command", key=key)
         else:
             # Unknown key
-            self.message = f"{key} is undefined"
+            full_key = f"{prefix_display} {key}" if prefix_display else key
+            self.message = f"{full_key} is undefined"
             self._prefix_arg = None
 
     def _resolve_keymap(self) -> Keymap:
         """Resolve the effective keymap for the current buffer.
 
-        For now this is just the global keymap.  Phase 6a-5 will add
-        buffer-local and mode keymaps in front.
+        If the current buffer has a local keymap it takes priority.
+        Its parent should be the global keymap (set up by the creator)
+        so unbound keys fall through.
         """
+        if self.buffer.keymap is not None:
+            return self.buffer.keymap
         return self.global_keymap
 
     def _start_or_extend_prefix_arg(self) -> None:

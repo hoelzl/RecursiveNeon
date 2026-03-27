@@ -440,3 +440,122 @@ class TestMinibufferChaining:
             ed.process_key(ch)
         ed.process_key("Enter")
         assert ed.buffer.name == "buf-a"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Kill buffer (C-x k)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestKillBuffer:
+    def test_kill_buffer_opens_minibuffer(self):
+        ed = make_editor("hello")
+        ed.buffer.name = "test.txt"
+        ed.process_key("C-x")
+        ed.process_key("k")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.text == "test.txt"  # defaults to current
+
+    def test_kill_current_buffer(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")
+        # Kill buf-b (current)
+        ed.process_key("C-x")
+        ed.process_key("k")
+        ed.process_key("Enter")  # accept default (buf-b)
+        assert ed.buffer.name == "buf-a"
+        assert len(ed.buffers) == 1
+
+    def test_kill_other_buffer(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")
+        ed.switch_to_buffer("buf-a")
+        # Kill buf-b (not current)
+        ed.process_key("C-x")
+        ed.process_key("k")
+        # Clear default, type buf-b
+        for _ in range(5):
+            ed.process_key("Backspace")
+        for ch in "buf-b":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.buffer.name == "buf-a"
+        assert len(ed.buffers) == 1
+
+    def test_kill_last_buffer_creates_scratch(self):
+        ed = make_editor("hello")
+        ed.buffer.name = "only"
+        ed.process_key("C-x")
+        ed.process_key("k")
+        ed.process_key("Enter")
+        # Should have a new scratch buffer
+        assert len(ed.buffers) == 1
+        assert ed.buffer.name == "*scratch*"
+
+    def test_kill_triggers_on_focus(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        focused = {}
+        ed.buffer.on_focus = lambda: focused.update(hit=True)
+        ed.create_buffer(name="buf-b", text="bbb")
+        # Kill buf-b — should switch to buf-a and trigger on_focus
+        ed.remove_buffer("buf-b")
+        assert focused.get("hit") is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Prefix key display in undefined key message
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPrefixKeyMessage:
+    def test_undefined_key_shows_full_prefix(self):
+        """C-x z (undefined) should show 'C-x z is undefined'."""
+        ed = make_editor()
+        ed.process_key("C-x")
+        ed.process_key("z")
+        assert "C-x z" in ed.message
+        assert "undefined" in ed.message
+
+    def test_single_undefined_key_no_prefix(self):
+        """An undefined key without prefix shows just the key."""
+        ed = make_editor()
+        ed.process_key("C-q")
+        # C-q is not bound in default keymap
+        assert "C-q" in ed.message
+
+    def test_prefix_message_during_chord(self):
+        """After C-x, message should show 'C-x-'."""
+        ed = make_editor()
+        ed.process_key("C-x")
+        assert ed.message == "C-x-"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# on_focus callback
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestOnFocus:
+    def test_switch_to_buffer_calls_on_focus(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        focused = {}
+        ed.buffer.on_focus = lambda: focused.update(called=True)
+        ed.create_buffer(name="buf-b", text="bbb")
+        # Switch back to buf-a
+        ed.switch_to_buffer("buf-a")
+        assert focused.get("called") is True
+
+    def test_on_focus_not_called_for_other_buffer(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        focused = {}
+        ed.buffer.on_focus = lambda: focused.update(called=True)
+        ed.create_buffer(name="buf-b", text="bbb")
+        # Switch to buf-b (which has no on_focus)
+        ed.switch_to_buffer("buf-b")
+        # buf-a's on_focus should NOT have been called
+        assert "called" not in focused

@@ -20,10 +20,11 @@ lookup with parent fallback.
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Any, Callable, Union
 
-# A binding target is either a command name or a sub-keymap
-BindingTarget = Union[str, "Keymap"]
+# A binding target is a command name, a sub-keymap, or a callable
+# that takes (editor, prefix_arg) and returns None.
+BindingTarget = Union[str, "Keymap", Callable[..., Any]]
 
 
 class Keymap:

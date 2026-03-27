@@ -45,7 +45,8 @@ CTRL_KEYS: dict[str, str] = {
     "\r": "Enter",
     "\n": "Enter",
     "\t": "Tab",
-    "\x08": "Backspace",
+    # \x08 (Ctrl-H / Backspace) is NOT here — handled per-platform
+    # because Windows sends \x08 for both and we need to distinguish.
     "\x03": "C-c",
     "\x04": "C-d",
     "\x11": "C-q",
@@ -71,6 +72,18 @@ def _win_alt_pressed() -> bool:
     return bool(ctypes.windll.user32.GetAsyncKeyState(VK_MENU) & 0x8000)
 
 
+def _win_ctrl_pressed() -> bool:
+    """Check whether Ctrl is physically held using the Win32 API.
+
+    Used to distinguish Backspace (\\x08 without Ctrl) from C-h
+    (\\x08 with Ctrl) on Windows, where both produce the same byte.
+    """
+    import ctypes
+
+    VK_CONTROL = 0x11
+    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+
+
 def read_key_windows() -> str:
     """Read a single key on Windows using msvcrt + Win32 Alt detection."""
     import msvcrt
@@ -82,6 +95,12 @@ def read_key_windows() -> str:
     if ch in ("\x00", "\xe0"):
         ch2 = msvcrt.getwch()
         key = WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
+        return f"M-{key}" if alt else key
+
+    # \x08: Backspace and Ctrl-H both produce this on Windows.
+    # Distinguish by checking whether Ctrl is physically held.
+    if ch == "\x08":
+        key = "C-h" if _win_ctrl_pressed() else "Backspace"
         return f"M-{key}" if alt else key
 
     # Ctrl combinations (except ESC which is also < 32)
