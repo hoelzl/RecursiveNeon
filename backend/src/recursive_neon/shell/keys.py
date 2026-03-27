@@ -58,36 +58,55 @@ CTRL_KEYS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
+def _win_alt_pressed() -> bool:
+    """Check whether Alt is physically held using the Win32 API.
+
+    ``msvcrt.getwch()`` on Windows Terminal silently drops the Alt
+    modifier for regular letter keys, so we probe the hardware state
+    via ``GetAsyncKeyState(VK_MENU)`` immediately after each read.
+    """
+    import ctypes
+
+    VK_MENU = 0x12  # Alt key (either left or right)
+    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+
+
 def read_key_windows() -> str:
-    """Read a single key on Windows using msvcrt."""
+    """Read a single key on Windows using msvcrt + Win32 Alt detection."""
     import msvcrt
 
     ch = msvcrt.getwch()
+    alt = _win_alt_pressed()
 
     # Special keys start with \x00 or \xe0
     if ch in ("\x00", "\xe0"):
         ch2 = msvcrt.getwch()
-        return WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
+        key = WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
+        return f"M-{key}" if alt else key
 
-    # Ctrl combinations
-    if ord(ch) < 32:
-        return CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+    # Ctrl combinations (except ESC which is also < 32)
+    if ord(ch) < 32 and ch != "\x1b":
+        key = CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+        return f"M-{key}" if alt else key
 
-    # Escape — might be Alt+key (terminals send ESC followed by the key)
+    # Escape — could be a real Escape key, or ESC+key from a Unix-style
+    # terminal (e.g. SSH session).  Also handle Alt+Escape.
     if ch == "\x1b":
         if msvcrt.kbhit():
             ch2 = msvcrt.getwch()
             if ch2 in ("\x00", "\xe0"):
-                # Alt + special key (e.g., Alt+Backspace via scan code)
                 ch3 = msvcrt.getwch()
                 special = WINDOWS_SPECIAL_KEYS.get(ch3, f"Unknown-{ord(ch3)}")
                 return f"M-{special}"
             if ord(ch2) < 32:
-                # Alt + Ctrl combo
                 ctrl = CTRL_KEYS.get(ch2, f"C-{chr(ord(ch2) + 64).lower()}")
                 return f"M-{ctrl}"
             return f"M-{ch2}"
         return "Escape"
+
+    # Regular printable character — Alt detected via Win32 API
+    if alt:
+        return f"M-{ch}"
 
     return ch
 
