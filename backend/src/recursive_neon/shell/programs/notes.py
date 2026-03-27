@@ -6,9 +6,52 @@ Subcommands: list, show, create, edit, delete.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from recursive_neon.shell.completion import CompletionContext, complete_choices
 from recursive_neon.shell.output import BOLD, DIM, YELLOW
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
+
+if TYPE_CHECKING:
+    from recursive_neon.editor.buffer import Buffer
+
+
+# ---------------------------------------------------------------------------
+# Note ↔ editor text format: ``# Title\n\n...content...``
+# ---------------------------------------------------------------------------
+
+
+def _format_note_text(title: str, content: str) -> str:
+    """Format a note as editor text with ``# Title`` first-line convention."""
+    return f"# {title}\n\n{content}"
+
+
+def _parse_note_text(text: str) -> tuple[str, str]:
+    """Parse editor text into *(title, content)*.
+
+    The first line is the title (``# `` prefix stripped if present).
+    Content is everything after the first line, with one leading blank
+    line stripped (matching the format produced by :func:`_format_note_text`).
+    """
+    if not text:
+        return ("", "")
+
+    lines = text.split("\n")
+    first_line = lines[0]
+
+    # Extract title
+    if first_line.startswith("# "):
+        title = first_line[2:].strip()
+    else:
+        title = first_line.strip()
+
+    # Extract content — skip the title line and one blank separator line
+    rest = lines[1:]
+    if rest and rest[0] == "":
+        rest = rest[1:]
+    content = "\n".join(rest)
+
+    return (title, content)
 
 
 async def prog_note(ctx: ProgramContext) -> int:
@@ -93,7 +136,11 @@ async def _note_show(ctx: ProgramContext) -> int:
 
 
 async def _note_create(ctx: ProgramContext) -> int:
-    """Create a new note."""
+    """Create a new note.
+
+    With ``-c``, creates immediately.  Without it, opens the editor so
+    the user can compose the note body interactively.
+    """
     # Parse: note create <title> [-c <content>]
     args = ctx.args[2:]
     if not args:
@@ -101,7 +148,7 @@ async def _note_create(ctx: ProgramContext) -> int:
         return 1
 
     title_parts: list[str] = []
-    content = ""
+    content: str | None = None
     i = 0
     while i < len(args):
         if args[i] in ("-c", "--content") and i + 1 < len(args):
@@ -116,13 +163,66 @@ async def _note_create(ctx: ProgramContext) -> int:
         ctx.stderr.error("note create: missing title")
         return 1
 
-    note = ctx.services.app_service.create_note({"title": title, "content": content})
-    ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note.title, BOLD)}")
-    return 0
+    # Inline content supplied — create immediately
+    if content is not None:
+        note = ctx.services.app_service.create_note(
+            {"title": title, "content": content}
+        )
+        ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note.title, BOLD)}")
+        return 0
+
+    # No -c flag — open editor if TUI is available
+    if ctx.run_tui is None:
+        # No TUI — create with empty content (graceful fallback)
+        note = ctx.services.app_service.create_note(
+            {"title": title, "content": ""}
+        )
+        ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note.title, BOLD)}")
+        return 0
+
+    return await _note_create_in_editor(ctx, title)
+
+
+async def _note_create_in_editor(ctx: ProgramContext, title: str) -> int:
+    """Open the editor for composing a new note."""
+    assert ctx.run_tui is not None
+    from recursive_neon.editor.view import create_editor_for_file
+
+    text = _format_note_text(title, "")
+    view = create_editor_for_file(content=text, name=f"note:{title}")
+
+    app_service = ctx.services.app_service
+    created_note_id: str | None = None
+
+    def save_callback(buf: Buffer) -> bool:
+        nonlocal created_note_id
+        parsed_title, parsed_content = _parse_note_text(buf.text)
+        if not parsed_title:
+            return False
+        if created_note_id is not None:
+            app_service.update_note(
+                created_note_id, {"title": parsed_title, "content": parsed_content}
+            )
+        else:
+            new_note = app_service.create_note(
+                {"title": parsed_title, "content": parsed_content}
+            )
+            created_note_id = new_note.id
+        return True
+
+    view.editor.save_callback = save_callback
+
+    result = await ctx.run_tui(view)
+
+    if created_note_id is not None:
+        note_obj = app_service.get_note(created_note_id)
+        ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note_obj.title, BOLD)}")
+
+    return result
 
 
 async def _note_edit(ctx: ProgramContext) -> int:
-    """Edit a note's title or content."""
+    """Edit a note — opens in neon-edit, or accepts inline flags."""
     if len(ctx.args) < 3:
         ctx.stderr.error("note edit: missing note reference")
         return 1
@@ -133,26 +233,67 @@ async def _note_edit(ctx: ProgramContext) -> int:
 
     # Parse optional flags: --title <t> --content <c> / -t <t> -c <c>
     args = ctx.args[3:]
-    updates: dict[str, str] = {}
-    i = 0
-    while i < len(args):
-        if args[i] in ("-t", "--title") and i + 1 < len(args):
-            updates["title"] = args[i + 1]
-            i += 2
-        elif args[i] in ("-c", "--content") and i + 1 < len(args):
-            updates["content"] = args[i + 1]
-            i += 2
-        else:
-            ctx.stderr.error(f"note edit: unknown option: {args[i]}")
-            return 1
 
-    if not updates:
-        ctx.stderr.error("note edit: provide --title and/or --content")
+    # If flags are present, use inline editing (backward compat)
+    if args:
+        updates: dict[str, str] = {}
+        i = 0
+        while i < len(args):
+            if args[i] in ("-t", "--title") and i + 1 < len(args):
+                updates["title"] = args[i + 1]
+                i += 2
+            elif args[i] in ("-c", "--content") and i + 1 < len(args):
+                updates["content"] = args[i + 1]
+                i += 2
+            else:
+                ctx.stderr.error(f"note edit: unknown option: {args[i]}")
+                return 1
+        if not updates:
+            ctx.stderr.error("note edit: provide --title and/or --content")
+            return 1
+        updated = ctx.services.app_service.update_note(note.id, updates)
+        ctx.stdout.writeln(f"Updated note: {ctx.stdout.styled(updated.title, BOLD)}")
+        return 0
+
+    # No flags — open in editor
+    if ctx.run_tui is None:
+        ctx.stderr.error(
+            "note edit: requires a terminal that supports TUI mode"
+            " (or use --title/-t --content/-c flags)"
+        )
         return 1
 
-    updated = ctx.services.app_service.update_note(note.id, updates)
-    ctx.stdout.writeln(f"Updated note: {ctx.stdout.styled(updated.title, BOLD)}")
-    return 0
+    return await _note_edit_in_editor(ctx, note)
+
+
+async def _note_edit_in_editor(ctx: ProgramContext, note) -> int:
+    """Open an existing note in the editor."""
+    assert ctx.run_tui is not None
+    from recursive_neon.editor.view import create_editor_for_file
+
+    text = _format_note_text(note.title, note.content)
+    view = create_editor_for_file(content=text, name=f"note:{note.title}")
+
+    app_service = ctx.services.app_service
+    note_id = note.id
+
+    def save_callback(buf: Buffer) -> bool:
+        parsed_title, parsed_content = _parse_note_text(buf.text)
+        if not parsed_title:
+            return False
+        app_service.update_note(
+            note_id, {"title": parsed_title, "content": parsed_content}
+        )
+        return True
+
+    view.editor.save_callback = save_callback
+
+    result = await ctx.run_tui(view)
+
+    updated_note = app_service.get_note(note_id)
+    ctx.stdout.writeln(f"Updated note: {ctx.stdout.styled(updated_note.title, BOLD)}")
+
+    return result
 
 
 async def _note_delete(ctx: ProgramContext) -> int:
@@ -209,8 +350,8 @@ def register_note_program(registry: ProgramRegistry) -> None:
         "Subcommands:\n"
         "  list               List all notes\n"
         "  show <ref>         Show a note (by index or ID)\n"
-        "  create <title>     Create a note (-c <content>)\n"
-        "  edit <ref>         Edit a note (-t <title> -c <content>)\n"
+        "  create <title>     Create a note (opens editor, or -c <content>)\n"
+        "  edit <ref>         Edit a note in neon-edit (or -t/-c flags)\n"
         "  delete <ref>       Delete a note",
         completer=_complete_note,
     )
