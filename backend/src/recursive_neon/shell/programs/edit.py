@@ -87,9 +87,10 @@ async def _run_edit(ctx: ProgramContext) -> int:
                 # Update existing file
                 app_service.update_file(file_id, {"content": buf.text})
             else:
-                # Create new file
-                if filepath:
-                    parent, fname = ctx.resolve_parent_and_name(filepath)
+                # Create new file — use buf.filepath (set by write-file command)
+                path = buf.filepath
+                if path:
+                    parent, fname = ctx.resolve_parent_and_name(path)
                     new_node = app_service.create_file(
                         {"name": fname, "parent_id": parent.id, "content": buf.text}
                     )
@@ -113,5 +114,13 @@ async def _run_edit(ctx: ProgramContext) -> int:
             return ""  # new file
 
     view.editor.open_callback = open_callback
+
+    # Wire up path completer for C-x C-f (find-file) and C-x C-w (write-file)
+    from recursive_neon.shell.completion import _path_completions
+
+    def path_completer(partial: str) -> list[str]:
+        return _path_completions(partial, ctx.cwd_id, app_service)
+
+    view.editor.path_completer = path_completer
 
     return await ctx.run_tui(view)

@@ -57,6 +57,10 @@ class Editor:
         # Signature: (path) -> str (file content, or "" for new file).
         self.open_callback: Callable[[str], str] | None = None
 
+        # Path completer — returns completion candidates for a partial path.
+        # Signature: (partial_path) -> list[str].
+        self.path_completer: Callable[[str], list[str]] | None = None
+
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 

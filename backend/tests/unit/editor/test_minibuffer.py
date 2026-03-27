@@ -346,3 +346,49 @@ class TestFileOperations:
         ed.process_key("Enter")
         assert ed.buffer.name == "aaa.txt"
         assert len(ed.buffers) == 2  # didn't create a third
+
+    def test_write_file_save_uses_buffer_filepath(self):
+        """Save callback should use buf.filepath, not the initial captured path."""
+        saved_paths: list[str] = []
+        ed = make_editor("content")
+        # Simulate a save callback that tracks what filepath the buffer has
+        def save_cb(buf):
+            saved_paths.append(buf.filepath or "")
+            return True
+
+        ed.save_callback = save_cb
+        # No initial filepath set — buffer starts as *scratch*
+        assert ed.buffer.filepath is None
+        # Write-file sets buf.filepath then calls save_callback
+        ed.process_key("C-x")
+        ed.process_key("C-w")
+        for ch in "new_path.txt":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+        assert ed.buffer.filepath == "new_path.txt"
+        assert saved_paths == ["new_path.txt"]
+        assert not ed.buffer.modified
+
+    def test_find_file_tab_completion(self):
+        """find-file should support tab completion via path_completer."""
+        ed = make_editor("original")
+        ed.path_completer = lambda partial: ["Documents/", "Downloads/"]
+        ed.process_key("C-x")
+        ed.process_key("C-f")
+        assert ed.minibuffer is not None
+        ed.process_key("Tab")
+        assert ed.minibuffer.text == "Documents/"
+        ed.process_key("Tab")
+        assert ed.minibuffer.text == "Downloads/"
+
+    def test_write_file_tab_completion(self):
+        """write-file should support tab completion via path_completer."""
+        ed = make_editor("text")
+        ed.path_completer = lambda partial: ["readme.txt", "readme.md"]
+        ed.process_key("C-x")
+        ed.process_key("C-w")
+        assert ed.minibuffer is not None
+        for ch in "read":
+            ed.process_key(ch)
+        ed.process_key("Tab")
+        assert ed.minibuffer.text == "readme.txt"

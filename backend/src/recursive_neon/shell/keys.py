@@ -73,8 +73,20 @@ def read_key_windows() -> str:
     if ord(ch) < 32:
         return CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
 
-    # Escape
+    # Escape — might be Alt+key (terminals send ESC followed by the key)
     if ch == "\x1b":
+        if msvcrt.kbhit():
+            ch2 = msvcrt.getwch()
+            if ch2 in ("\x00", "\xe0"):
+                # Alt + special key (e.g., Alt+Backspace via scan code)
+                ch3 = msvcrt.getwch()
+                special = WINDOWS_SPECIAL_KEYS.get(ch3, f"Unknown-{ord(ch3)}")
+                return f"M-{special}"
+            if ord(ch2) < 32:
+                # Alt + Ctrl combo
+                ctrl = CTRL_KEYS.get(ch2, f"C-{chr(ord(ch2) + 64).lower()}")
+                return f"M-{ctrl}"
+            return f"M-{ch2}"
         return "Escape"
 
     return ch
@@ -99,7 +111,7 @@ def read_key_unix() -> str:  # pragma: no cover (Unix only)
                 if ch2 == "[":
                     ch3 = sys.stdin.read(1)
                     return ANSI_SEQUENCES.get(ch3, f"Unknown-[{ch3}")
-                return f"Alt-{ch2}"
+                return f"M-{ch2}"
             return "Escape"
 
         # Ctrl combinations

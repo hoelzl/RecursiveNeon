@@ -263,7 +263,9 @@ def write_file(ed: Editor, prefix: int | None) -> None:
             ed.message = f"File path set to {path} (no save handler)"
 
     initial = ed.buffer.filepath or ""
-    ed.start_minibuffer("Write file: ", callback, initial=initial)
+    ed.start_minibuffer(
+        "Write file: ", callback, initial=initial, completer=ed.path_completer
+    )
 
 
 @defcommand("find-file", "Open or create a file (C-x C-f).")
@@ -287,7 +289,7 @@ def find_file(ed: Editor, prefix: int | None) -> None:
         ed.create_buffer(name=name, text=content, filepath=path)
         ed.message = f"Opened {path}" if content else f"(New file) {path}"
 
-    ed.start_minibuffer("Find file: ", callback)
+    ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
 
 
 # ═══════════════════════════════════════════════════════════════════════
