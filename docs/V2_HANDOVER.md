@@ -361,16 +361,37 @@ Items carried from earlier phases, to be addressed **in this phase** where they 
 - **Multi-line search** — `find_forward` / `find_backward` are currently line-based (`buffer.py:996-1048`), preventing search patterns that contain `\n`. `query-replace` and `isearch` both benefit from fixing this. Implement buffer-wide scanning (e.g., search across a joined view with newline offsets).
 - **Undo granularity bug** (6k deferred) — a second `C-/` after `Backspace` appears to redo rather than continue undoing. Root-cause and fix while we're in the editor.
 
-Items **explicitly deferred again** (document but do not implement here):
+Items **explicitly deferred again** (document but do not implement here). This list is the consolidated backlog of known deferrals from every prior phase. It is intentionally exhaustive so nothing gets forgotten between handovers.
+
+**Editor / shell-mode (from Phase 6 sub-phases)**:
 
 - **Python configuration file / extension API** (from 6a "Future 6a extensions" and 6k deferred) — `~/.neon-edit.py` loader, sandboxed extension registration. Infrastructure (`defvar`, `defmode`, `@defcommand`) exists; loader and sandbox do not. Still out of scope for a polish pass.
 - **Syntax highlighting** (from 6a "Future 6a extensions", 6k deferred) — the highlight mechanism added for isearch in 6l-3 could in principle carry syntax highlighting, but a proper regex-based system is a separate initiative.
-- **Game-world integration hooks** (6k deferred) — NPC-triggered buffer events, editor↔game-state bridge.
-- **Raw-mode TUI apps inside shell buffer** (6j deferred) — requires raw-mode passthrough architecture.
+- **Game-world integration hooks** (6k deferred) — NPC-triggered buffer events, in-game script callbacks, editor↔game-state bridge. A tutorial chapter covering this would require those hooks to be designed and implemented first.
+- **Raw-mode passthrough for TUI apps inside the shell buffer** (6j deferred) — running `codebreaker`/`sysmon`/`edit` from the `*shell*` buffer currently can't work because shell-mode drives output into a `Buffer` and expects cooked-mode line input. A proper fix needs the shell buffer to temporarily hand control of the underlying TUI frame to a raw-mode app and restore it on exit. Requires raw-mode passthrough architecture.
 - **Interactive programs (chat) in shell buffer** (6j deferred) — `ShellBufferInput` stub (`shell_mode.py:82-100`) still raises `EOFError`. Needs a minibuffer↔`get_line` bridge. Revisit in a shell-mode follow-up phase.
-- **Output region protection in shell buffer** (6j deferred) — per-region read-only.
-- **ANSI rendering in shell buffer** (6j deferred) — attributed-text model.
-- **TD-003: TUI framework timer/auto-refresh** — `on_tick()` so `sysmon` updates without keypresses. Unrelated to editor; belongs to a small TUI-framework phase.
+- **Output region protection in shell buffer** (6j deferred) — per-region read-only so the user can't clobber historical output. Currently the whole buffer is writable and the shell reads input only from `input_start` to EOB.
+- **ANSI rendering in shell buffer** (6j deferred) — shell output is currently ANSI-stripped before insertion. Rendering attributes requires an attributed-text model in `Buffer`.
+- **`on_after_key` general async bridge** (6j deferred) — the pattern introduced for shell-mode execution could support other async features (background NPC responses, long-running commands, timed events). No current consumers beyond shell-mode.
+
+**Future TUI apps (Future 6c candidates, not scheduled)**:
+
+- **File browser TUI** — navigate the virtual filesystem, preview files, open in editor.
+- **Port scanner minigame** — network-puzzle minigame.
+- **Memory dump minigame** — hex-viewer puzzle minigame.
+
+**Shell / WebSocket leftovers from Phases 3 & 5**:
+
+- **WS client `--command` batch mode** (Phase 3) — architecture supports it; persistent/named sessions need to land first for it to be useful.
+- **`**` recursive globs** (Phase 5) — single-level patterns (`*`, `?`, `[...]`) cover 95% of use cases; the recursive form is a nice-to-have.
+- **Stderr redirection (`2>`, `2>&1`)** (Phase 5) — only stdout redirection is implemented. Out of scope for the polish pass.
+- **Builtins participating in pipes** (Phase 5) — currently builtins don't read from `ProgramContext.stdin` or feed `CapturedOutput`. Low practical impact but inconsistent.
+
+**Tech debt (from TECH_DEBT.md)**:
+
+- **TD-003: TUI framework timer / auto-refresh** — `on_tick()` so `sysmon` updates without keypresses. Belongs to a small TUI-framework phase rather than editor polish.
+- **TD-004: Mark tracking identity vs `Mark.__eq__` value-equality footgun** — `Buffer.track_mark()` uses identity, but `Mark.__eq__` compares by position. Latent risk if any future code uses `in` / `==` against `_tracked_marks`. Current decision is "document the invariant"; revisit only if the footgun actually bites.
+- **TD-001: `pydantic.v1` warning on Python 3.14+** — intentional workaround until `langchain-core` drops the `pydantic.v1` import or `pydantic ≥ 2.13` ships stable. Not an action item; just tracked.
 
 #### 6l-6. Files likely to be modified
 
