@@ -88,6 +88,12 @@ class EditorView:
         else:
             new_active.sync_from_buffer()
 
+        # Replace killed buffers in inactive windows (e.g. after kill-buffer)
+        live_buffers = {id(b) for b in self.editor.buffers}
+        for w in self._tree.windows():
+            if w is not new_active and id(w.buffer) not in live_buffers:
+                self._update_window_buffer(w, self.editor.buffer)
+
         # Update viewport reference in case active window changed
         self.editor.viewport = self._tree.active
 

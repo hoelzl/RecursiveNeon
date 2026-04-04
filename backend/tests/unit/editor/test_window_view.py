@@ -177,6 +177,36 @@ class TestActiveWindowModeline:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Kill buffer across windows
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestKillBufferUpdatesAllWindows:
+    def test_kill_buffer_reverts_inactive_window(self):
+        """Killing a buffer shown in both windows should revert both."""
+        h = make_harness("", width=40, height=12)
+        # Create a second buffer and make it current
+        h.editor.create_buffer(name="foo.txt", text="file content")
+        # Sync the active window to show foo.txt
+        h.view._update_window_buffer(h.view._tree.active, h.editor.buffer)
+        h.send_keys("C-x", "2")  # split — both windows show foo.txt
+        lines = h.screen_lines()
+        assert any("foo.txt" in ln for ln in lines)
+
+        # Kill foo.txt via editor API (bypasses minibuffer prompting)
+        h.editor.remove_buffer("foo.txt")
+        # Trigger a re-render through a no-op key so on_key cleans up windows
+        h.send_keys("C-g")
+
+        # Both windows should now show *scratch*, not the dead buffer
+        lines = h.screen_lines()
+        modelines = [ln for ln in lines if "scratch" in ln or "foo.txt" in ln]
+        assert all("foo.txt" not in ml for ml in modelines), (
+            f"Inactive window still shows killed buffer: {modelines}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Resize
 # ═══════════════════════════════════════════════════════════════════════
 
