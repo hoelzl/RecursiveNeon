@@ -156,13 +156,21 @@ class EditorView:
         avail_height = max(2, self._height - 1)
         self._compute_layout(self._tree.root, 0, 0, self._width, avail_height)
 
-        # Render each window
+        # Render each window (modelines as plain text)
+        modeline_regions: list[tuple[int, int, int, str]] = []
         for win in self._tree.windows():
             is_active = win is self._tree.active
             self._render_window(win, screen, is_active)
+            modeline_row = win._top + win.text_height
+            if modeline_row < self._height:
+                style = _MODELINE_ACTIVE if is_active else _MODELINE_INACTIVE
+                modeline_regions.append((modeline_row, win._left, win._width, style))
 
         # Draw vertical split dividers
         self._render_dividers(self._tree.root, screen)
+
+        # Apply ANSI styling to modeline rows after all plain-text compositing
+        self._style_modeline_rows(screen, modeline_regions)
 
         # Message line / minibuffer (last row)
         self._render_message_line(screen)
@@ -220,19 +228,22 @@ class EditorView:
             else:
                 screen.set_region(screen_row, win._left, win._width, text)
 
-        # Modeline
+        # Modeline (plain text — ANSI styling applied by _style_modeline_rows)
         modeline_row = win._top + text_h
         if modeline_row < self._height:
-            ml = self._render_modeline(win, is_active)
+            ml = self._render_modeline(win)
             if full_width:
                 screen.set_line(modeline_row, ml)
             else:
                 screen.set_region(modeline_row, win._left, win._width, ml)
 
-    def _render_modeline(self, win: Window, is_active: bool) -> str:
-        """Render the Emacs-style modeline for a window."""
+    def _render_modeline(self, win: Window) -> str:
+        """Render the Emacs-style modeline for a window (plain text, no ANSI).
+
+        ANSI styling is applied later by ``_style_modeline_rows`` so that
+        ``set_region`` width calculations are not thrown off by escape codes.
+        """
         buf = win.buffer
-        style = _MODELINE_ACTIVE if is_active else _MODELINE_INACTIVE
         modified = "**" if buf.modified else "--"
         name = buf.filepath if buf.filepath else buf.name
         pt = win._point
@@ -258,7 +269,7 @@ class EditorView:
         else:
             avail = max(4, w - len(right))
             ml_text = left[:avail] + right
-        return f"{style}{ml_text[:w]}{_RESET}"
+        return ml_text[:w]
 
     def _render_dividers(self, node: WindowNode, screen: ScreenBuffer) -> None:
         """Draw vertical divider columns for vertical splits."""
@@ -273,6 +284,38 @@ class EditorView:
                         screen.set_region(row, div_col, 1, _DIVIDER_CHAR)
             self._render_dividers(node.first, screen)
             self._render_dividers(node.second, screen)
+
+    def _style_modeline_rows(
+        self,
+        screen: ScreenBuffer,
+        regions: list[tuple[int, int, int, str]],
+    ) -> None:
+        """Apply ANSI styling to modeline rows after plain-text compositing.
+
+        Each entry in *regions* is ``(row, col, width, style)``.  Regions
+        sharing a row are styled in a single left-to-right pass so that
+        ANSI escape codes never interfere with character-position math.
+        """
+        by_row: dict[int, list[tuple[int, int, str]]] = {}
+        for row, col, width, style in regions:
+            by_row.setdefault(row, []).append((col, width, style))
+
+        for row, row_regions in by_row.items():
+            if row >= screen.height:
+                continue
+            line = screen.lines[row]
+            row_regions.sort()  # by col
+            parts: list[str] = []
+            pos = 0
+            for col, width, style in row_regions:
+                if pos < col:
+                    parts.append(line[pos:col])  # unstyled gap (divider)
+                end = col + width
+                parts.append(f"{style}{line[col:end]}{_RESET}")
+                pos = end
+            if pos < len(line):
+                parts.append(line[pos:])
+            screen.lines[row] = "".join(parts)
 
     def _rightmost_col(self, node: WindowNode) -> int:
         """Return the column just past the right edge of *node*."""

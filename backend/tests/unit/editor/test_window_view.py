@@ -117,6 +117,32 @@ class TestVerticalSplitRendering:
         # Cursor should be in the left (active) window
         assert col < 20  # roughly left half
 
+    def test_modeline_fills_window_width(self):
+        """Modeline visual width must match the window width (not shorter)."""
+        h = make_harness("hello", width=80, height=10)
+        h.send_keys("C-x", "3")
+        # Width 80: left=39 cols, divider=1, right=40 cols
+        modeline_row = h._screen.height - 2  # row above message line
+        raw = h._screen.lines[modeline_row]
+        plain = _strip_ansi(raw)
+        # Total visible width: left modeline + divider + right modeline = 80
+        assert len(plain) == 80, (
+            f"Expected 80 visible chars, got {len(plain)}: {plain!r}"
+        )
+
+    def test_typing_preserves_modeline_styles(self):
+        """After typing, active modeline stays bright & inactive stays dim."""
+        h = make_harness("", width=80, height=10)
+        h.send_keys("C-x", "3")
+        h.type_string("abc")
+        modeline_row = h._screen.height - 2
+        raw = h._screen.lines[modeline_row]
+        # Active modeline should have bright reverse, inactive should have dim
+        assert "\033[7m" in raw, "Active modeline missing bright style"
+        assert "\033[2;7m" in raw, "Inactive modeline missing dim style"
+        # Ensure RESET appears (no style leak)
+        assert raw.count("\033[0m") >= 2, "Missing RESET codes — style leak"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Active window visual distinction
