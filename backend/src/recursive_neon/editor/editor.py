@@ -11,13 +11,15 @@ Undo boundaries are inserted automatically between commands.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.minibuffer import CompleterFn, Minibuffer
+from recursive_neon.editor.modes import MODES
+from recursive_neon.editor.variables import VARIABLES
 
 if TYPE_CHECKING:
     from recursive_neon.editor.viewport import Viewport
@@ -108,6 +110,10 @@ class Editor:
         """Create a new buffer and make it current."""
         buf = Buffer(name=name, text=text, filepath=filepath)
         buf.kill_ring = self.kill_ring  # share the kill ring
+        # Assign the default major mode
+        fundamental = MODES.get("fundamental-mode")
+        if fundamental is not None:
+            buf.major_mode = fundamental
         self._buffers.append(buf)
         self._current_index = len(self._buffers) - 1
         return buf
@@ -244,12 +250,20 @@ class Editor:
     def _resolve_keymap(self) -> Keymap:
         """Resolve the effective keymap for the current buffer.
 
-        If the current buffer has a local keymap it takes priority.
-        Its parent should be the global keymap (set up by the creator)
-        so unbound keys fall through.
+        Resolution order: buffer-local > minor modes (last added first)
+        > major mode > global.  Each layer with a keymap is checked via
+        its parent chain, so unbound keys fall through automatically.
         """
         if self.buffer.keymap is not None:
             return self.buffer.keymap
+        buf = self.buffer
+        # Check minor-mode keymaps (last added = highest priority)
+        for mode in reversed(buf.minor_modes):
+            if mode.keymap is not None:
+                return mode.keymap
+        # Check major-mode keymap
+        if buf.major_mode is not None and buf.major_mode.keymap is not None:
+            return buf.major_mode.keymap
         return self.global_keymap
 
     def _start_or_extend_prefix_arg(self) -> None:
@@ -405,6 +419,93 @@ class Editor:
             self.message = f"{key_str} runs self-insert-command"
         else:
             self.message = f"{key_str} is not bound"
+
+    # ------------------------------------------------------------------
+    # Variables
+    # ------------------------------------------------------------------
+
+    def get_variable(self, name: str) -> Any:
+        """Look up a variable value using the cascade:
+
+        buffer-local > minor-mode defaults > major-mode defaults > global default.
+        Returns ``None`` if the variable is not registered.
+        """
+        buf = self.buffer
+        # 1. Buffer-local override
+        if name in buf.local_variables:
+            return buf.local_variables[name]
+        # 2. Minor modes (last added = highest priority)
+        for mode in reversed(buf.minor_modes):
+            if name in mode.variables:
+                return mode.variables[name]
+        # 3. Major mode
+        if buf.major_mode is not None and name in buf.major_mode.variables:
+            return buf.major_mode.variables[name]
+        # 4. Global default
+        var = VARIABLES.get(name)
+        if var is not None:
+            return var.default
+        return None
+
+    def set_variable(self, name: str, value: Any) -> None:
+        """Set a variable's global default.  Validates the value."""
+        var = VARIABLES.get(name)
+        if var is None:
+            self.message = f"Unknown variable: {name}"
+            return
+        var.default = var.validate(value)
+
+    # ------------------------------------------------------------------
+    # Mode switching
+    # ------------------------------------------------------------------
+
+    def set_major_mode(self, mode_name: str) -> bool:
+        """Set the major mode on the current buffer.
+
+        Calls ``on_exit`` on the old mode and ``on_enter`` on the new one.
+        Returns False if the mode is not found.
+        """
+        mode = MODES.get(mode_name)
+        if mode is None or not mode.is_major:
+            self.message = f"Unknown major mode: {mode_name}"
+            return False
+        buf = self.buffer
+        # Exit old mode
+        if buf.major_mode is not None and buf.major_mode.on_exit is not None:
+            buf.major_mode.on_exit(self)
+        buf.major_mode = mode
+        # Enter new mode
+        if mode.on_enter is not None:
+            mode.on_enter(self)
+        self.message = f"({mode.name})"
+        return True
+
+    def toggle_minor_mode(self, mode_name: str) -> bool:
+        """Toggle a minor mode on the current buffer.
+
+        If the mode is active, deactivate it (call ``on_exit``).
+        If inactive, activate it (call ``on_enter``).
+        Returns False if the mode is not found.
+        """
+        mode = MODES.get(mode_name)
+        if mode is None or mode.is_major:
+            self.message = f"Unknown minor mode: {mode_name}"
+            return False
+        buf = self.buffer
+        # Check if already active
+        for i, m in enumerate(buf.minor_modes):
+            if m.name == mode_name:
+                if m.on_exit is not None:
+                    m.on_exit(self)
+                buf.minor_modes.pop(i)
+                self.message = f"{mode_name} disabled"
+                return True
+        # Activate
+        buf.minor_modes.append(mode)
+        if mode.on_enter is not None:
+            mode.on_enter(self)
+        self.message = f"{mode_name} enabled"
+        return True
 
     def quit(self) -> None:
         """Signal the editor to stop."""

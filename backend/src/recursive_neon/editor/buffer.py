@@ -15,13 +15,14 @@ maintain mark consistency.  Higher-level operations are built on top.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
 
 if TYPE_CHECKING:
     from recursive_neon.editor.keymap import Keymap
+    from recursive_neon.editor.modes import Mode
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -49,6 +50,13 @@ class Buffer:
         self.on_focus: Callable[[], None] | None = (
             None  # called when buffer becomes current
         )
+
+        # Mode system
+        self.major_mode: Mode | None = None
+        self.minor_modes: list[Mode] = []
+
+        # Buffer-local variable overrides (name -> value)
+        self.local_variables: dict[str, Any] = {}
 
         # Text storage — always at least one line
         if text:
@@ -120,6 +128,15 @@ class Buffer:
         if self.mark is None:
             return None
         return self.get_text(self.point, self.mark)
+
+    def set_variable_local(self, name: str, value: Any) -> None:
+        """Set a buffer-local variable override."""
+        from recursive_neon.editor.variables import VARIABLES
+
+        var = VARIABLES.get(name)
+        if var is not None:
+            value = var.validate(value)
+        self.local_variables[name] = value
 
     # ------------------------------------------------------------------
     # Mark tracking

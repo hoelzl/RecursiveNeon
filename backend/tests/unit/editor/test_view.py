@@ -78,7 +78,7 @@ class TestViewRendering:
         assert "--" in modeline
 
     def test_modeline_shows_filepath(self):
-        view = make_view("hello")
+        view = make_view("hello", width=80)
         view.editor.buffer.filepath = "Documents/notes.txt"
         screen = view._render()
         modeline = screen.lines[view.text_height]

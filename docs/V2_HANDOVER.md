@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6f complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers). 1120 tests. Phase 6g (variable system + mode infrastructure) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6g complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure). 1172 tests. Phase 6h (replace string + text filling) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -118,6 +118,8 @@ backend/
       minibuffer.py                   # Single-line input widget with completion (M-x, C-x C-f, etc.)
       view.py                         # EditorView (TuiApp): rendering, scrolling, modeline, Viewport protocol
       viewport.py                     # Viewport protocol: scroll_top, text_height, scroll_to (Phase 6e)
+      variables.py                    # EditorVariable, VARIABLES registry, defvar, built-in variables (Phase 6g)
+      modes.py                        # Mode, MODES registry, defmode, fundamental-mode, text-mode (Phase 6g)
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -198,6 +200,8 @@ backend/
     unit/editor/test_scroll.py        # Viewport scroll commands + recenter (22 tests, Phase 6e)
     unit/editor/test_sentence.py      # Sentence motion + kill (22 tests, Phase 6f)
     unit/editor/test_phase6f.py       # Phase 6f commands: keybindings, help, save-some-buffers (25 tests)
+    unit/editor/test_variables.py     # Variable system: defvar, validation, cascade, commands (29 tests, Phase 6g)
+    unit/editor/test_modes.py         # Mode system: registry, switching, keymaps, modeline (23 tests, Phase 6g)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -319,19 +323,23 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 - `save-some-buffers` (C-x s): iterate modified buffers with y/n minibuffer prompt, save confirmed ones via chained callbacks
 - 1120 total tests (47 new: 22 sentence motion/kill, 25 commands/keybindings/help/save-some-buffers/reverse-lookup)
 
-#### 6g. Variable system + mode infrastructure
+#### 6g. Variable system + mode infrastructure — **COMPLETE**
 **Goal**: Implement an editor variable system with Python-based configuration and a mode infrastructure. Foundation for fill-column, auto-fill-mode, and per-mode keymaps. Also enables future in-game extensibility.
 
-- `EditorVariable` dataclass (`editor/variables.py`): `name`, `default`, `doc`, `type`. Global `VARIABLES` registry. `defvar()` registration function.
+- `EditorVariable` dataclass (`editor/variables.py`): `name`, `default`, `doc`, `type`. Global `VARIABLES` registry. `defvar()` registration function. Type validation with coercion (int, bool, float, str).
 - `Editor.get_variable(name)`: checks buffer-local → minor mode → major mode → global default
 - `Editor.set_variable(name, value)`, `Buffer.set_variable_local(name, value)`, `Buffer.local_variables` dict
 - Built-in variables: `fill-column` (70), `tab-width` (8), `indent-tabs-mode` (False), `truncate-lines` (True), `auto-fill` (False)
-- `describe-variable` (C-h v): prompt with completion, show value + docs in *Help* buffer
-- `set-variable` (M-x set-variable): prompt for name + value, validate type
-- `Mode` dataclass (`editor/modes.py`): `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`, `doc`. Global `MODES` registry.
+- `describe-variable` (C-h v): prompt with completion, show value + docs + buffer-local status in *Help* buffer
+- `set-variable` (M-x set-variable): two-step minibuffer prompts (name + value), validate type, set global default
+- `Mode` dataclass (`editor/modes.py`): `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`, `doc`. Global `MODES` registry. `defmode()` registration function.
+- `Editor.set_major_mode(name)`: switches major mode with lifecycle hooks. `Editor.toggle_minor_mode(name)`: enable/disable minor modes.
 - `Buffer.major_mode`, `Buffer.minor_modes`. Keymap resolution updated: buffer-local > minor mode > major mode > global.
-- Built-in modes: `fundamental-mode` (default), `text-mode` (sets auto-fill True)
-- Python-based configuration file support for setting variables
+- Built-in modes: `fundamental-mode` (default, auto-assigned to new buffers), `text-mode` (sets auto-fill True)
+- `describe-mode` (C-h m) updated: shows major mode name + doc, minor modes list, then key bindings
+- Modeline updated: shows mode name (e.g., `(Fundamental)`, `(Text)`) and minor mode indicators, with smart truncation for narrow windows
+- Python-based configuration file support deferred — the variable/mode API is fully functional via commands and programmatic access
+- 1172 total tests (52 new: 29 variable system, 23 mode system)
 
 #### 6h. Replace string + text filling
 **Goal**: Implement the text manipulation commands the tutorial covers: interactive find/replace and paragraph filling.

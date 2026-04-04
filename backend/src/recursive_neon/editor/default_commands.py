@@ -510,8 +510,26 @@ def describe_key_briefly(ed: Editor, prefix: int | None) -> None:
     "Show the current mode and key bindings (C-h m).",
 )
 def describe_mode(ed: Editor, prefix: int | None) -> None:
+    buf = ed.buffer
+    lines: list[str] = []
+    # Major mode
+    if buf.major_mode is not None:
+        lines.append(f"Major mode: {buf.major_mode.name}")
+        if buf.major_mode.doc:
+            lines.append(f"  {buf.major_mode.doc}")
+    else:
+        lines.append("Major mode: (none)")
+    # Minor modes
+    if buf.minor_modes:
+        lines.append("")
+        lines.append("Minor modes:")
+        for m in buf.minor_modes:
+            doc = f" — {m.doc}" if m.doc else ""
+            lines.append(f"  {m.name}{doc}")
+    lines.append("")
     keymap = ed._resolve_keymap()
-    lines = [f"Key bindings in {keymap.name}:", ""]
+    lines.append(f"Key bindings in {keymap.name}:")
+    lines.append("")
     _format_bindings(keymap, "", lines)
     _show_help_buffer(ed, "\n".join(lines))
 
@@ -549,6 +567,84 @@ def where_is(ed: Editor, prefix: int | None) -> None:
             ed.message = f"{name} is not on any key"
 
     ed.start_minibuffer("Where is command: ", callback, completer=completer)
+
+
+@defcommand(
+    "describe-variable",
+    "Show the value and documentation of a variable (C-h v).",
+)
+def describe_variable(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.variables import VARIABLES
+
+    def completer(text: str) -> list[str]:
+        return sorted(n for n in VARIABLES if n.startswith(text))
+
+    def callback(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        var = VARIABLES.get(name)
+        if var is None:
+            ed.message = f"Unknown variable: {name}"
+            return
+        current = ed.get_variable(name)
+        lines = [
+            f"{name} is a variable.",
+            "",
+            f"  Value: {current!r}",
+            f"  Default: {var.default!r}",
+            f"  Type: {var.type.__name__}",
+        ]
+        if var.doc:
+            lines.append("")
+            lines.append(f"  {var.doc}")
+        # Show if buffer-local
+        if name in ed.buffer.local_variables:
+            lines.append("")
+            lines.append(f"  Buffer-local value: {ed.buffer.local_variables[name]!r}")
+        _show_help_buffer(ed, "\n".join(lines))
+
+    ed.start_minibuffer("Describe variable: ", callback, completer=completer)
+
+
+@defcommand(
+    "set-variable",
+    "Set the value of an editor variable.",
+)
+def set_variable(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.variables import VARIABLES
+
+    def completer(text: str) -> list[str]:
+        return sorted(n for n in VARIABLES if n.startswith(text))
+
+    def callback_name(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        var = VARIABLES.get(name)
+        if var is None:
+            ed.message = f"Unknown variable: {name}"
+            return
+
+        def callback_value(value_str: str) -> None:
+            value_str = value_str.strip()
+            if not value_str:
+                return
+            try:
+                value = var.validate(value_str)
+            except ValueError as e:
+                ed.message = str(e)
+                return
+            var.default = value
+            ed.message = f"Set {name} to {value!r}"
+
+        current = ed.get_variable(name)
+        ed.start_minibuffer(
+            f"Set {name} (currently {current!r}) to: ",
+            callback_value,
+        )
+
+    ed.start_minibuffer("Set variable: ", callback_name, completer=completer)
 
 
 @defcommand("command-apropos", "Search commands by name or doc (C-h a).")
@@ -745,6 +841,7 @@ def build_default_keymap() -> Keymap:
     ch.bind("a", "command-apropos")
     ch.bind("t", "help-tutorial")
     ch.bind("m", "describe-mode")
+    ch.bind("v", "describe-variable")
     ch.bind("x", "where-is")
     km.bind("C-h", ch)
 

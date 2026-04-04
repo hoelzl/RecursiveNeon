@@ -135,11 +135,27 @@ class EditorView:
         if buf.filepath:
             name = buf.filepath
         line_col = f"L{buf.point.line + 1}:C{buf.point.col}"
-        # Pad to width
+        # Mode indicator (strip "-mode" suffix for brevity, capitalize)
+        if buf.major_mode:
+            raw = buf.major_mode.name
+            display = raw.removesuffix("-mode").capitalize()
+        else:
+            display = "Fundamental"
+        minor_indicators = "".join(
+            f" {m.name.removesuffix('-mode').capitalize()}" for m in buf.minor_modes
+        )
+        mode_str = f"({display}{minor_indicators})"
+        # Pad to width, ensuring the right side (mode + position) is visible
         left = f" {modified} {name}  "
-        right = f"  ({line_col}) "
-        padding = max(0, self._width - len(left) - len(right))
-        modeline_text = left + "-" * padding + right
+        right = f"  {mode_str} ({line_col}) "
+        total = len(left) + len(right)
+        if total <= self._width:
+            padding = self._width - total
+            modeline_text = left + "-" * padding + right
+        else:
+            # Truncate the left (buffer name) side to make room
+            avail = max(4, self._width - len(right))
+            modeline_text = left[:avail] + right
         return f"{_MODELINE_STYLE}{modeline_text[: self._width]}{_RESET}"
 
 

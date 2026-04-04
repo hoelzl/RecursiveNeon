@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6f complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers). Phase 6g (variable system + mode infrastructure) next. Phases 6g-6k add variables, modes, replace/fill, windows, shell-in-editor. Browser GUI deferred to Phase 8.
+**Status**: V2 reboot. Phases 0-6g complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure). Phase 6h (replace string + text filling) next. Phases 6h-6k add replace/fill, windows, shell-in-editor. Browser GUI deferred to Phase 8.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -72,7 +72,7 @@ cd backend
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
-- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps)
+- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes)
 - Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)

@@ -21,6 +21,7 @@ from recursive_neon.editor.editor import Editor
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
+from recursive_neon.editor.modes import MODES, Mode, defmode
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -28,6 +29,7 @@ from recursive_neon.editor.undo import (
     UndoEntry,
     UndoInsert,
 )
+from recursive_neon.editor.variables import VARIABLES, EditorVariable, defvar
 from recursive_neon.editor.viewport import Viewport
 
 __all__ = [
@@ -35,16 +37,22 @@ __all__ = [
     "COMMANDS",
     "Command",
     "Editor",
+    "EditorVariable",
     "Keymap",
     "KillRing",
+    "MODES",
     "Mark",
+    "Mode",
     "UndoBoundary",
     "UndoCursorMove",
     "UndoDelete",
     "UndoEntry",
     "UndoInsert",
+    "VARIABLES",
     "Viewport",
     "build_default_keymap",
     "defcommand",
+    "defmode",
+    "defvar",
     "get_command",
 ]
