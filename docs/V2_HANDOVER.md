@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6k complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish). 1433 tests. Phase 8 (browser terminal + desktop GUI) next.
+> **Status**: Phases 0-6k complete. 1433 tests. **Phase 6l (Emacs polish: keyboard-quit audit, keyboard-escape-quit + ESC-as-Meta, true incremental search, query-replace, and deferred items) is next**, then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -268,164 +268,129 @@ Per-command tab completers, shell-level glob expansion (`*`/`?`/`[...]`), pipes 
 **Goal**: A capable TUI text editor ("neon-edit") and additional TUI apps that leverage it. The editor should work both in the terminal and (later) as a GUI app, making it a key investment before the browser phase.
 
 #### 6a. Text editor ("neon-edit") — **COMPLETE**
-Emacs-inspired TUI editor (Zwei/Hemlock lineage): `Buffer`/`Mark` text model, undo/kill ring, `@defcommand` + layered keymaps, `EditorView` TUI, shell `edit` command with virtual filesystem I/O. Enhancements E1-E5 added word movement, read-only buffers, minibuffer (M-x, C-x C-f, C-x b), incremental search (C-s/C-r), and help system (C-h k, C-h a). 927 total tests.
+Emacs-inspired TUI editor (Zwei/Hemlock lineage): `Buffer`/`Mark` text model, undo/kill ring, `@defcommand` + layered keymaps, `EditorView` TUI, shell `edit` command with virtual filesystem I/O. Enhancements E1-E5 added word movement, read-only buffers, minibuffer (M-x, C-x C-f, C-x b), search (C-s/C-r), and help system (C-h k, C-h a). 927 total tests. See archive for full 6a-1..6a-4 / E1..E5 breakdown.
 
-##### 6a-5. Modes (optional, not yet implemented)
-- `Mode` dataclass: `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`
-- Fundamental mode (default), Text mode as examples
-- Buffer-local variable overrides
+#### 6b–6k. Editor expansion — **COMPLETE**
+Phases 6b through 6k extended neon-edit from a basic buffer/keymap into a near-complete Emacs-style environment. Detailed notes for every sub-phase live in [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md). Summary of what shipped and the test count at the end of each:
 
-##### Future 6a extensions (not yet scheduled)
-- Python extension API (player scripts register commands/keybindings/modes in sandboxed env)
-- Syntax highlighting (regex-based, at minimum for Python)
+- **6b. Notes integration** (946 tests) — `note edit` / `note create` open neon-edit with `# Title` convention.
+- **6c. System monitor TUI** (980 tests) — `sysmon` fake htop with process model.
+- **6d. Notes browser** (1031 tests) — buffer-local keymaps, callable targets, `on_focus`, `kill-buffer` (C-x k).
+- **6e. Test harness + scrolling + tutorial** (1073 tests) — `EditorHarness`, `Viewport` protocol, `scroll-up`/`scroll-down`/`recenter`, `TUTORIAL.txt`, `help-tutorial` (C-h t).
+- **6f. Sentence motion + help commands + save-some-buffers** (1120 tests) — M-a/M-e/M-k, C-x u, `describe-key-briefly` (C-h c), `describe-mode` (C-h m), `where-is` (C-h x), `save-some-buffers` (C-x s).
+- **6g. Variable system + mode infrastructure** (1172 tests) — `EditorVariable`/`VARIABLES`/`defvar`, `Mode`/`MODES`/`defmode`, `fundamental-mode`/`text-mode`, `describe-variable` (C-h v), `set-variable`, buffer-local variables, keymap resolution through mode stack.
+- **6h. Replace string + text filling** (1215 tests) — `replace-string`, `fill-paragraph` (M-q), `set-fill-column` (C-x f), `auto-fill-mode`, `Mode.indicator` field.
+- **6i. Window system** (1281 tests) — `Window`/`WindowSplit`/`WindowTree`, dual-point sync via tracked marks, `C-x 2`/`C-x 3`/`C-x o`/`C-x 0`/`C-x 1`/`C-x 4` prefix, active/inactive modelines.
+- **6j. Shell-in-editor** (1348 tests) — `M-x shell`, `BufferOutput`, `ShellState`, shell-mode keymap, `on_after_key` async bridge, direct-execution model.
+- **6k. Tutorial verification + polish** (1433 tests) — tutorial walk-through integration tests, `describe-bindings` (C-h b), TUTORIAL.txt cleanup.
 
-#### 6b. Improved notes integration — **COMPLETE**
-With the editor available, notes commands open neon-edit for interactive editing using a `# Title` first-line convention.
+### Phase 6l: Emacs polish — **NEXT**
+**Goal**: Make the editor genuinely *feel* like Emacs. Implement the cancellation, search, and replace workflows that are cornerstones of the Emacs experience, plus resolve a backlog of small deferred items carried forward from earlier phases. This is the final pre-browser polish pass on the editor.
 
-- `note edit <ref>` opens the note in neon-edit (first line `# Title`, rest is content). On save, title and content are parsed back. Inline flags (`-t`/`-c`) still work for backward compatibility.
-- `note create <title>` without `-c` opens the editor pre-filled with `# Title`. On save, the note is created. The `-c` flag still creates immediately without the editor.
-- When TUI mode is unavailable, `note edit` shows an error suggesting flags; `note create` falls back to creating an empty note.
-- 946 total tests (19 new: format/parse helpers, editor integration for both create and edit, fallback paths).
+#### 6l-1. `keyboard-quit` audit and hardening (C-g)
+`keyboard-quit` already exists (`default_commands.py:282`), is bound to `C-g` in the global keymap (`default_commands.py:1210`), and the minibuffer handles `C-g` directly (`minibuffer.py:79`). Isearch installs its own `C-g` override (`default_commands.py:502-512`). The work here is to **audit, test, and harden**:
+- C-g cancels a pending prefix keymap (mid-`C-x` sequence) and clears `_prefix_arg` / `_building_prefix`
+- C-g cancels the minibuffer and restores pre-entry state (point, mark, buffer)
+- C-g cancels `execute-extended-command` mid-typing
+- C-g cancels `describe-key` / `describe-key-briefly` capture modes
+- C-g cancels the new `query-replace` (see 6l-4) cleanly
+- C-g clears the transient region/mark in all cases
+- C-g consistently shows `"Quit"` in the message area
 
-#### 6c. System monitor TUI — **COMPLETE**
-A fake "htop"-style system monitor showing in-game processes. `Process` and `ProcessState` models in `models/process.py`. `sysmon` shell command launches the TUI with animated CPU/memory bars, process list, and sort/kill key bindings. 980 total tests.
+Add explicit unit tests for each cancellation path, grouped in `test_keyboard_quit.py`.
 
-Future 6c candidates (not yet scheduled):
-- File browser TUI (navigate virtual filesystem, preview files, open in editor)
-- Port scanner minigame (network puzzle)
-- Memory dump minigame (hex viewer puzzle)
+#### 6l-2. `keyboard-escape-quit` + ESC-as-Meta
+New command `keyboard-escape-quit` — the "do everything C-g does, plus dismiss temporary windows". In our editor it should:
+- Dismiss the `*Help*` buffer if currently displayed (switch back to previous buffer)
+- Exit `query-replace` / `describe-key` capture modes
+- Dismiss the minibuffer
+- Clear mark/region, prefix-arg, pending keymap
 
-#### 6d. Notes browser in neon-edit — **COMPLETE**
-Interactive notes browser inside the editor. Loose coupling approach: a `*Notes*` read-only buffer with buffer-local keymap lists notes; Enter opens a note in a new buffer with `# Title` convention and save callback.
+Bind it to **`ESC ESC ESC`** (triple Escape). Also available as `M-ESC ESC` once ESC becomes a Meta prefix.
 
-- `note browse` command opens neon-edit with the `*Notes*` buffer
-- Buffer-local keymaps: `Buffer.keymap` field, checked first by `_resolve_keymap()`, falls through to global via parent
-- Callable keymap targets: `BindingTarget` now accepts `Callable[..., Any]` alongside command name strings
-- `Buffer.on_focus` callback: triggered on `switch_to_buffer` / `remove_buffer`, used to auto-refresh the note list
-- `kill-buffer` command (C-x k): remove a buffer with minibuffer prompt
-- Improved prefix key display: "C-x z is undefined" instead of "z is undefined"
-- Windows C-h / Backspace disambiguation via `_win_ctrl_pressed()`
-- 1031 total tests (51 new: 12 notes browser, 8 buffer-local keymaps, 7 callable targets, 5 kill-buffer, 3 prefix display, 3 on_focus, plus supporting tests).
+**ESC-as-Meta**: Today ESC is only handled inside the minibuffer/isearch as a cancel key. In real Emacs, ESC is a valid Meta prefix — `ESC f` is equivalent to `M-f`, `ESC x` to `M-x`, etc. Implement this in `Editor.process_key`:
+- On bare ESC, set an internal `_meta_pending` flag.
+- The next keystroke is rewritten as `M-<key>` before keymap lookup. Printable keys become `M-<char>` (e.g., `M-f`); `Ctrl-` keys become `C-M-<char>`; a second ESC transitions into an "escape-quit pending" state.
+- A third ESC while escape-quit is pending triggers `keyboard-escape-quit`.
+- Inside the minibuffer, a bare ESC with no follow-up still cancels (preserving current behaviour) — i.e., minibuffer's own ESC handling remains as the terminal case if no follow-up key arrives. Verify this works given the TUI's synchronous keystroke model.
 
-#### 6e. Test harness + viewport scrolling + tutorial document — **COMPLETE**
-Programmatic test harness for TUI-level editor testing, viewport scrolling commands, game-themed tutorial document, and a bugfix for C-u prefix digit parsing.
+Tests (`test_escape_meta.py`): ESC-f invokes forward-word; ESC-x opens M-x; ESC ESC ESC quits from normal mode / minibuffer / *Help* buffer; ESC inside minibuffer still cancels cleanly.
 
-- `EditorHarness` class (`tests/unit/editor/harness.py`): `send_keys(*keys)`, `type_string(s)`, `screen_text(row)`, `screen_lines()`, `cursor_position()`, `message_line()`, `modeline()`, `buffer_text()`, `point()`. Factory: `make_harness(text, width, height)`. ANSI auto-stripping on all screen accessors.
-- `Viewport` protocol (`editor/viewport.py`): `scroll_top`, `text_height`, `scroll_to`. EditorView implements it and sets `editor.viewport = self`. Commands fall back gracefully when viewport is None (headless).
-- `scroll-up` (C-v / PageDown): forward one screenful, move point to top of new viewport
-- `scroll-down` (M-v / PageUp): backward one screenful, move point to bottom of new viewport
-- `recenter` (C-l): center viewport around point; consecutive presses cycle center/top/bottom
-- Tutorial document (`initial_fs/Documents/TUTORIAL.txt`): ~280-line game-themed tutorial (Apache 2.0), Emacs tutorial pedagogical structure, 14 chapters. Chapters 10-14 marked `[NOT YET IMPLEMENTED]`.
-- `help-tutorial` (C-h t): opens the tutorial in a read-only buffer; re-opening switches to existing buffer
-- Bugfix: C-u prefix digit parsing — `_prefix_has_digits` now properly initialized and reset, fixing a bug where digits after C-u failed to replace the default 4 after any prior command had executed
-- 1073 total tests (42 new: 14 harness, 22 scroll/viewport, 5 tutorial, 1 prefix-arg fix)
+#### 6l-3. True incremental search (`isearch-forward` / `isearch-backward`)
+The current C-s / C-r implementation (`default_commands.py:424-512`) advances point as the user types and moves to the next occurrence on repeat, but **does not highlight all occurrences** and **does not wrap around**. It behaves closer to Emacs's non-interactive `search-forward` than `isearch-forward`.
 
-#### 6f. Sentence motion, undo alias, help commands, save-some-buffers — **COMPLETE**
-**Goal**: Implement the "easy" missing tutorial commands — straightforward features that don't require new infrastructure.
+Plan:
+1. **Rename** the current behaviour to `search-forward` / `search-backward` and keep it available via M-x (but unbind it from C-s / C-r). It serves as a simpler non-interactive alternative.
+2. **Reimplement** `isearch-forward` / `isearch-backward` with:
+   - **Match highlighting while active**: every occurrence of the current search string in visible buffer text is rendered with a highlight face (ANSI reverse video). The current match (the one point is on) gets a distinct "emphasised" highlight.
+     - Mechanism: add `editor.highlight_term: str | None` and `editor.highlight_case_fold: bool` fields, checked in `EditorView._render_window()`. When rendering a line, find all matches and overlay them via `ScreenBuffer.set_region()` with a highlight ANSI sequence. The current match is rendered with a brighter sequence.
+     - This is a lightweight alternative to a full face/overlay system — sufficient for isearch and reusable by `query-replace`.
+   - **Wrap-around**: when `find_forward` fails at EOB, show `Failing I-search: <term>` in the prompt. On the next `C-s`, wrap to BOB and show `Wrapped I-search: <term>`. Symmetric for backward with BOB → EOB. The "Wrapped" message is a small UX nicety we should replicate.
+   - **Keep existing UX**: C-g cancels and restores position; C-s / C-r repeats; Enter confirms; Backspace pops the position stack; printable chars extend the search; unknown keys exit-and-replay.
+3. **Tests** (extend `test_isearch.py` or add `test_isearch_v2.py`): highlighting visible via harness screen accessors; wrap EOB → BOB with message progression "Failing" → "Wrapped"; multi-match highlighting on one line; rename behaviour (`search-forward` still reachable via M-x, not via C-s).
 
-- Sentence motion on Buffer: `forward_sentence`, `backward_sentence`, `kill_sentence` (sentence ends at `.`/`?`/`!` followed by whitespace or end-of-line)
-- `backward-sentence` (M-a), `forward-sentence` (M-e), `kill-sentence` (M-k)
-- `C-x u` → undo (keybinding alias in C-x prefix keymap)
-- `describe-key-briefly` (C-h c): show binding in message area (not *Help* buffer)
-- `describe-mode` (C-h m): show current mode and key bindings in *Help* buffer, recurses into prefix keymaps
-- `where-is` (C-h x): prompt for command name, show which key(s) it's bound to (reverse keymap lookup via `Keymap.reverse_lookup()`)
-- `save-some-buffers` (C-x s): iterate modified buffers with y/n minibuffer prompt, save confirmed ones via chained callbacks
-- 1120 total tests (47 new: 22 sentence motion/kill, 25 commands/keybindings/help/save-some-buffers/reverse-lookup)
+#### 6l-4. `query-replace` (M-%)
+New command `query-replace` bound to `M-%`. Two sequential minibuffer prompts: "Query replace: " for the search string, then "Query replace <from> with: " for the replacement. After both prompts, enter query-replace mode:
+- Highlight remaining matches using the isearch highlight mechanism (`editor.highlight_term`).
+- Move point to the first match.
+- Display `Query replacing <from> with <to>: (? for help) ` in the message area and capture single keystrokes via a new editor capture mode (similar to `_describing_key`).
 
-#### 6g. Variable system + mode infrastructure — **COMPLETE**
-**Goal**: Implement an editor variable system with Python-based configuration and a mode infrastructure. Foundation for fill-column, auto-fill-mode, and per-mode keymaps. Also enables future in-game extensibility.
+**Supported keys** (deliberately a subset of Emacs):
 
-- `EditorVariable` dataclass (`editor/variables.py`): `name`, `default`, `doc`, `type`. Global `VARIABLES` registry. `defvar()` registration function. Type validation with coercion (int, bool, float, str).
-- `Editor.get_variable(name)`: checks buffer-local → minor mode → major mode → global default
-- `Editor.set_variable(name, value)`, `Buffer.set_variable_local(name, value)`, `Buffer.local_variables` dict
-- Built-in variables: `fill-column` (70), `tab-width` (8), `indent-tabs-mode` (False), `truncate-lines` (True), `auto-fill` (False)
-- `describe-variable` (C-h v): prompt with completion, show value + docs + buffer-local status in *Help* buffer
-- `set-variable` (M-x set-variable): two-step minibuffer prompts (name + value), validate type, set global default
-- `Mode` dataclass (`editor/modes.py`): `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`, `doc`. Global `MODES` registry. `defmode()` registration function.
-- `Editor.set_major_mode(name)`: switches major mode with lifecycle hooks. `Editor.toggle_minor_mode(name)`: enable/disable minor modes.
-- `Buffer.major_mode`, `Buffer.minor_modes`. Keymap resolution updated: buffer-local > minor mode > major mode > global.
-- Built-in modes: `fundamental-mode` (default, auto-assigned to new buffers), `text-mode` (sets auto-fill True)
-- `describe-mode` (C-h m) updated: shows major mode name + doc, minor modes list, then key bindings
-- Modeline updated: shows mode name (e.g., `(Fundamental)`, `(Text)`) and minor mode indicators, with smart truncation for narrow windows
-- Python-based configuration file support deferred — the variable/mode API is fully functional via commands and programmatic access
-- 1172 total tests (52 new: 29 variable system, 23 mode system)
+| Key             | Action                                                      |
+| --------------- | ----------------------------------------------------------- |
+| `SPC` or `y`    | Replace current match, advance to next                      |
+| `DEL` or `n`    | Skip current match, advance to next                         |
+| `RET` or `q`    | Exit query-replace (do not replace current)                 |
+| `.`             | Replace current match and exit                              |
+| `!`             | Replace all remaining matches with no further prompting     |
+| `u`             | Undo the previous replacement (stay in query-replace)       |
+| `U`             | Undo all replacements made in this session, then exit       |
+| `e`             | Edit the replacement string in the minibuffer, then resume  |
+| `C-g`           | Cancel (restore point, do not apply current)                |
+| `?`             | Show help with the above list                               |
 
-#### 6h. Replace string + text filling — **COMPLETE**
-**Goal**: Implement the text manipulation commands the tutorial covers: interactive find/replace and paragraph filling.
+The whole session is one undo group by default; `u` / `U` manipulate a per-session in-memory stack of applied replacements so they can be rolled back without leaving the session. On session exit, everything collapses into a single undoable group via `add_undo_boundary()`.
 
-- `replace-string` (M-x replace-string): two sequential minibuffer prompts (search, replacement), replaces all from point to end of buffer, reports count, undoable as one group
-- `fill-paragraph` (M-q): rewrap current paragraph to `fill-column` width, paragraph boundaries at blank lines. Helpers: `_find_paragraph_bounds()` (blank-line delimited), `_fill_lines()` (word-wrap reflow)
-- `set-fill-column` (C-x f): with prefix arg sets to that value, without sets to current column
-- `auto-fill-mode` (M-x auto-fill-mode): minor mode toggle, auto-breaks lines at fill-column during self-insert via `_auto_fill_break()` hook in `self-insert-command`. Modeline shows "Fill" when active.
-- `Mode.indicator` field: optional short modeline string for minor modes (falls back to name-derived string if empty)
-- 1215 total tests (43 new: 13 replace-string, 5 paragraph bounds, 6 fill-lines, 9 fill-paragraph, 3 set-fill-column, 7 auto-fill-mode)
+Tests (`test_query_replace.py`): every key path; undo one / undo all; edit replacement then resume; cancel via C-g; exit via RET; `!` replace-all; `?` help; interaction with highlighting; multi-line paragraph (depends on multi-line search — see 6l-5).
 
-#### 6i. Window system — **COMPLETE**
-**Goal**: Emacs-style window splitting so a single frame displays multiple buffers simultaneously. The prerequisite for shell-in-editor and the "desktop environment" vision.
+#### 6l-5. Deferred items pulled forward
 
-**Architecture**:
-- `Window` class (`editor/window.py`): `buffer`, `_point` (tracked Mark), `scroll_top`, layout fields (`_height`, `_width`, `_top`, `_left`). Implements `Viewport` protocol (`scroll_top`, `text_height`, `scroll_to`). Factory `Window.for_buffer(buf)` creates a window with a tracked mark at the buffer's point.
-- `SplitDirection` enum: `HORIZONTAL` (C-x 2, top/bottom), `VERTICAL` (C-x 3, left/right)
-- `WindowSplit` dataclass: `direction`, `first` (WindowNode), `second` (WindowNode). `WindowNode = Window | WindowSplit`.
-- `WindowTree` class: manages the binary split tree. `root: WindowNode`, `active: Window`. Methods: `split()`, `delete_window()`, `next_window()`, `windows()` (depth-first leaf list), `delete_other_windows()`, `is_single()`, `other_window()`.
+Items carried from earlier phases, to be addressed **in this phase** where they support the core goals:
 
-**Dual-point sync**: `Window._point` is a tracked Mark in the buffer (maintained by mark tracking during insert/delete). Movement commands only move `buffer.point`, so EditorView syncs after each key: `active._point ← buffer.point`. On window switch: save old `buffer.point → old._point`, restore `new._point → buffer.point`, update `editor.viewport` to new window, switch editor's current buffer. Existing 1215+ headless tests see `_window_tree = None` and are unaffected.
+- **Multi-line search** — `find_forward` / `find_backward` are currently line-based (`buffer.py:996-1048`), preventing search patterns that contain `\n`. `query-replace` and `isearch` both benefit from fixing this. Implement buffer-wide scanning (e.g., search across a joined view with newline offsets).
+- **Undo granularity bug** (6k deferred) — a second `C-/` after `Backspace` appears to redo rather than continue undoing. Root-cause and fix while we're in the editor.
 
-**EditorView refactored**: creates a `WindowTree` on init (single root window). `_render()` walks the tree: `_compute_layout()` assigns regions, `_render_window()` draws text + modeline per window, `_render_dividers()` draws `│` columns for vertical splits. Active modeline: `\033[7m` (reverse), inactive: `\033[2;7m` (dim reverse). Message line is global (last screen row). `ScreenBuffer.set_region()` added for column-range writes.
+Items **explicitly deferred again** (document but do not implement here):
 
-**Single-window equivalence**: window height = `total - 1` (message), text_height = `height - 1` (modeline), so text_height = `total - 2`. Identical to current layout. All existing TUI tests produce same output.
+- **Python configuration file / extension API** (from 6a "Future 6a extensions" and 6k deferred) — `~/.neon-edit.py` loader, sandboxed extension registration. Infrastructure (`defvar`, `defmode`, `@defcommand`) exists; loader and sandbox do not. Still out of scope for a polish pass.
+- **Syntax highlighting** (from 6a "Future 6a extensions", 6k deferred) — the highlight mechanism added for isearch in 6l-3 could in principle carry syntax highlighting, but a proper regex-based system is a separate initiative.
+- **Game-world integration hooks** (6k deferred) — NPC-triggered buffer events, editor↔game-state bridge.
+- **Raw-mode TUI apps inside shell buffer** (6j deferred) — requires raw-mode passthrough architecture.
+- **Interactive programs (chat) in shell buffer** (6j deferred) — `ShellBufferInput` stub (`shell_mode.py:82-100`) still raises `EOFError`. Needs a minibuffer↔`get_line` bridge. Revisit in a shell-mode follow-up phase.
+- **Output region protection in shell buffer** (6j deferred) — per-region read-only.
+- **ANSI rendering in shell buffer** (6j deferred) — attributed-text model.
+- **TD-003: TUI framework timer/auto-refresh** — `on_tick()` so `sysmon` updates without keypresses. Unrelated to editor; belongs to a small TUI-framework phase.
 
-**Commands**: `split-window-below` (C-x 2), `split-window-right` (C-x 3), `other-window` (C-x o), `delete-window` (C-x 0), `delete-other-windows` (C-x 1), `scroll-other-window` (C-M-v), `find-file-other-window` (C-x 4 C-f). New `C-x 4` prefix keymap.
+#### 6l-6. Files likely to be modified
 
-**Files**: new `editor/window.py`, modified `editor/editor.py` (+1 field), `editor/view.py` (refactored), `editor/default_commands.py` (+7 commands), `shell/tui/__init__.py` (+`set_region`), `editor/__init__.py` (exports). Tests: `test_window.py`, `test_window_view.py`, `test_window_commands.py` (~65 new tests).
+- `editor/default_commands.py` — new `keyboard-escape-quit`, `query-replace`, rename old isearch → `search-forward`/`search-backward`, reimplemented `isearch-forward`/`isearch-backward`, key bindings (`M-%`, ESC handling)
+- `editor/editor.py` — ESC-as-Meta state machine, `highlight_term` field, query-replace capture mode, keyboard-quit audit fixes
+- `editor/view.py` — render `highlight_term` matches per visible line via `set_region`
+- `editor/buffer.py` — multi-line `find_forward` / `find_backward` (new or enhanced), match-iteration helper for highlighting, undo-granularity fix
+- `editor/minibuffer.py` — verify and adjust C-g / ESC cancellation paths to play nicely with ESC-as-Meta
+- `shell/tui/__init__.py` — potentially `set_region` highlight helpers (if needed)
+- `initial_fs/Documents/TUTORIAL.txt` — update the search chapter to describe true isearch behavior; add a short query-replace section
+- New test files: `tests/unit/editor/test_keyboard_quit.py`, `tests/unit/editor/test_escape_meta.py`, `tests/unit/editor/test_query_replace.py`; extensions to `tests/unit/editor/test_isearch.py`
 
-#### 6j. Shell-in-editor (shell mode) — **COMPLETE**
-**Goal**: Run the game's shell inside an editor window, like Emacs `M-x shell`. The keystone feature that makes neon-edit the game's "desktop environment."
+#### 6l-7. Success criteria
 
-**Architecture — direct execution model**: The Shell's `run()` loop is NOT used. Instead, the editor drives command execution: user presses Enter → `on_key()` (sync) extracts input, stores an async callback on `editor._pending_async` → TUI runner calls `EditorView.on_after_key()` (async) which awaits `shell.execute_line()` → output appended to buffer → new prompt rendered. This avoids background-task coordination entirely.
-
-**Async bridge — `on_after_key` protocol**: 4-line backward-compatible addition to `run_tui_app()`. After each keystroke, the runner checks for an optional `on_after_key()` method on the TuiApp and awaits it. Existing TUI apps (CodeBreaker, sysmon, notes browser) have no such method and are unaffected.
-
-**Components**:
-- `BufferOutput(Output)` (`editor/shell_mode.py`): captures shell output as ANSI-stripped plain text for buffer insertion.
-- `ShellState` dataclass: per-buffer state — Shell reference, `input_start` mark (kind="left"), history index, saved input, finished flag. Stored as `buf._shell_state`.
-- `ShellBufferInput`: stub `InputSource` that raises `EOFError` for interactive programs (chat, etc.) — deferred to future phase.
-- `setup_shell_buffer()`: initialises buffer with shell-mode keymap, welcome banner, prompt, tracked marks.
-- Shell-mode keymap: Enter → `_comint_send_input`, M-p/M-n → history navigation, Tab → completion. Parent = global keymap, so all normal editing keys work.
-- `execute_shell_command()`: async function that runs the command, captures output via `BufferOutput`, appends output + new prompt, updates `input_start` mark. Undo recording disabled during output insertion.
-
-**Editor integration**:
-- `Editor.shell_factory: Callable[[], Any]` — set by the `edit` shell program to create Shell instances.
-- `Editor._pending_async: Callable[[], Awaitable[None]]` — set by Enter handler, consumed by `on_after_key`.
-- `EditorView.on_after_key()` — awaits `_pending_async`, syncs window, re-renders.
-
-**Commands**: `shell` (M-x shell) creates or switches to `*shell*` buffer. Modeline shows `(Shell)`.
-
-**Deferred to future phases**:
-- Raw-mode TUI apps inside the shell buffer (requires raw-mode passthrough)
-- Interactive programs (chat) need a minibuffer↔get_line bridge for sub-prompts
-- Output region protection (per-region read-only) — buffer is fully writable; shell reads only from input_start to EOB
-- ANSI rendering in buffer (would need attributed-text model)
-- The `on_after_key` pattern is general-purpose and could support other async features (e.g., background NPC responses)
-
-**Files**: new `editor/shell_mode.py` (~310 lines), modified `editor/editor.py` (+2 fields), `editor/view.py` (+`on_after_key`), `shell/tui/runner.py` (+4 lines), `shell/programs/edit.py` (+shell_factory wiring), `editor/default_commands.py` (+1 import), `editor/__init__.py` (exports). Tests: `test_shell_mode.py` (66 new tests). 1348 total tests.
-
-#### 6k. Tutorial verification + polish — **COMPLETE**
-**Goal**: Verify every feature in the tutorial works end-to-end. Fix gaps, polish UX.
-
-- **Tutorial walk-through integration test** — `test_tutorial_walkthrough.py` exercises every chapter (1–14) programmatically via `EditorHarness`. 72 tests covering movement, scrolling, editing, kill/yank, mark/region, word/sentence motion, search, files/buffers, help, replace, fill, windows, and shell mode (async). Autouse fixture saves/restores `VARIABLES` defaults so fill-column mutations don't leak across tests.
-- **`describe-bindings` (C-h b)** — Lists every reachable keybinding grouped by layer (buffer-local → minor modes → major mode → global). Prefix keymaps recursively expanded (`C-x C-s`, `C-h k`, `C-x 4 C-f`, …). New `_format_bindings_local` helper prevents parent-chain duplication between layers. 10 new tests in `test_help.py`.
-- **TUTORIAL.txt cleanup** — Removed all 5 `[NOT YET IMPLEMENTED]` markers (chapters 10–14). Each chapter now has real practice prompts. Quick Reference expanded with sentence motion, fill, windows, shell mode, `C-h b`, `C-h m`, `C-h v`, `C-x s`.
-- **Modeline improvements** — Listed as a deliverable but already shipped in 6g/6h (`(Shell)`, `(Text Fill)`, `(Fundamental)`). Walk-through tests verify this now works end-to-end.
-- 1433 total tests (82 new: 72 walkthrough, 10 describe-bindings).
-
-**Files**: modified `editor/default_commands.py` (+58 lines: describe-bindings + `_format_bindings_local` + `C-h b` binding), `initial_fs/Documents/TUTORIAL.txt` (+51/−22), `tests/unit/editor/test_help.py` (+10 tests); new `tests/unit/editor/test_tutorial_walkthrough.py` (787 lines, 72 tests).
-
-**Deferred from 6k** (carry forward to a later phase):
-- **Python config file loading** — the `EditorVariable`/`Mode` API exists (Phase 6g) but there is no `~/.neon-edit.py` loader or sandboxed extension entry point. Tracked in the long-standing "Future 6a extensions" list as the "Python extension API" item.
-- **Game-world integration hooks** — no NPC-triggered buffer events, no in-game script callbacks, no editor↔game-state bridge. A tutorial chapter covering this would require those hooks to be designed and implemented first.
-- **Syntax highlighting** — already listed under "Future 6a extensions"; still deferred.
-- **Undo granularity inspection** — observed during the walk-through that a second C-/ after Backspace appears to redo rather than continue undoing. Out of scope for 6k; worth investigating if/when we do an undo polish pass.
+- All 1433 existing tests still pass.
+- C-g reliably cancels every interactive mode listed in 6l-1; `keyboard-escape-quit` works from normal mode, minibuffer, *Help* buffer, and query-replace.
+- ESC acts as a Meta prefix: `ESC f` === `M-f`, `ESC x` === `M-x`, `ESC ESC ESC` === `keyboard-escape-quit`.
+- `isearch-forward` visibly highlights all matches in the visible region (harness-verifiable) and wraps at EOB with the "Failing" → "Wrapped" progression.
+- `query-replace` (M-%) supports SPC/y, DEL/n, RET/q, `.`, `!`, `u`, `U`, `e`, `C-g`, `?`; undo-one and undo-all function correctly.
+- The tutorial document reflects the new search and query-replace behaviour.
 
 ### Phase 8: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.
