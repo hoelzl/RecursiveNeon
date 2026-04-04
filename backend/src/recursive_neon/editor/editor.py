@@ -11,7 +11,7 @@ Undo boundaries are inserted automatically between commands.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS
@@ -88,6 +88,15 @@ class Editor:
 
         # Window tree — set by EditorView, None in headless mode
         self._window_tree: WindowTree | None = None
+
+        # Shell factory — set by the hosting environment to create Shell
+        # instances for M-x shell.  Signature: () -> Shell.
+        self.shell_factory: Callable[[], Any] | None = None
+
+        # Pending async work — set by commands that need async execution
+        # (e.g., shell command dispatch).  The TUI runner awaits this
+        # after each keystroke via ``EditorView.on_after_key()``.
+        self._pending_async: Callable[[], Awaitable[None]] | None = None
 
     # ------------------------------------------------------------------
     # Buffer management

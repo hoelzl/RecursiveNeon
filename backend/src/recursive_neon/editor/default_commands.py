@@ -1092,6 +1092,9 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
 
 
 def build_default_keymap() -> Keymap:
+    # Ensure shell-mode commands/mode are registered
+    import recursive_neon.editor.shell_mode  # noqa: F401
+
     """Build and return the default global keymap with Emacs bindings."""
     km = Keymap("global")
 

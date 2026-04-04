@@ -10,7 +10,7 @@ Usage: edit <path>    — open an existing file for editing
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
@@ -122,5 +122,15 @@ async def _run_edit(ctx: ProgramContext) -> int:
         return _path_completions(partial, ctx.cwd_id, app_service, quote=False)
 
     view.editor.path_completer = path_completer
+
+    # Wire up shell factory for M-x shell
+    data_dir = ctx.env.get("_data_dir")
+
+    def shell_factory() -> Any:
+        from recursive_neon.shell.shell import Shell
+
+        return Shell(ctx.services, data_dir=data_dir)
+
+    view.editor.shell_factory = shell_factory
 
     return await ctx.run_tui(view)

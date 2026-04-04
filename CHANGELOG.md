@@ -2,6 +2,18 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6j — Shell-in-Editor (2026-04-04)
+
+### Added
+- **Shell-in-editor (M-x shell)** — Run the game's shell inside an editor buffer, like Emacs comint-mode. `shell-mode` major mode with a buffer-local keymap. Type commands at a prompt, press Enter, see output appear inline. The shell is an in-process Python object (no subprocess).
+- **Async bridge (`on_after_key`)** — Backward-compatible TUI runner extension: after each keystroke, the runner checks for an optional async `on_after_key()` method on the TuiApp and awaits it. Enables sync `on_key()` to trigger async shell command execution. Existing TUI apps are unaffected.
+- **`BufferOutput`** — `Output` subclass that captures shell output as ANSI-stripped plain text for insertion into the editor buffer.
+- **`ShellState`** — Per-buffer shell state tracking: Shell reference, `input_start` mark, history navigation index, finished flag.
+- **Shell-mode commands**: `comint-send-input` (Enter), `comint-previous-input` (M-p), `comint-next-input` (M-n), shell Tab completion.
+- **`Editor.shell_factory`** — Callback set by the `edit` shell program so `M-x shell` can create Shell instances without the editor knowing about the service layer.
+- **`Editor._pending_async`** — General-purpose mechanism for commands to schedule async work that the TUI runner executes after the current keystroke.
+- **66 new tests** — `test_shell_mode.py`: ANSI stripping (5), BufferOutput (6), setup (9), input extraction (4), input replacement (4), comint-send-input (5), history navigation (8), completion (5), async execution (8), on_after_key (3), M-x shell command (4), integration (5). 1348 total tests.
+
 ## Phase 6i — Window System (2026-04-04)
 
 ### Added

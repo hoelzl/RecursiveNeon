@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6i are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting). Phase 6j (shell-in-editor) is next.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6j are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting, shell-in-editor). Phase 6k (tutorial polish) is next.
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1282 tests
+../.venv/Scripts/pytest              # All 1348 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -81,6 +81,7 @@ All three must pass before committing.
 | NPC manager | `backend/src/recursive_neon/services/npc_manager.py` |
 | TUI framework | `backend/src/recursive_neon/shell/tui/` |
 | Editor core | `backend/src/recursive_neon/editor/` |
+| Shell-in-editor | `backend/src/recursive_neon/editor/shell_mode.py` |
 | Window system | `backend/src/recursive_neon/editor/window.py` |
 | CodeBreaker minigame | `backend/src/recursive_neon/shell/programs/codebreaker.py` |
 | Models | `backend/src/recursive_neon/models/` |
@@ -129,8 +130,17 @@ neon-edit is an Emacs-inspired TUI editor with:
 - **Window system** (Phase 6i): `Window` class with tracked point + scroll state, `WindowTree` binary split tree, 7 window commands (C-x 2/3/o/0/1, C-M-v, C-x 4 C-f)
 - EditorView renders the window tree with per-window modelines and vertical dividers
 
-## What's Next (Phase 6j)
+## Shell-in-Editor (Phase 6j)
 
-Phase 6j is shell-in-editor — running the game's shell inside an editor window (like Emacs `M-x shell`).
+Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mode:
+- **Direct execution model**: the Shell's `run()` loop is not used. The editor's Enter key handler stores a pending async callback; the TUI runner's `on_after_key()` hook awaits `shell.execute_line()` and appends output to the buffer.
+- **`editor/shell_mode.py`**: `BufferOutput` (ANSI-stripped output capture), `ShellState` (per-buffer state), `setup_shell_buffer()`, comint commands (Enter, M-p, M-n, Tab).
+- **Async bridge**: `on_after_key` is a backward-compatible TUI runner extension — existing apps unaffected.
+- **Shell factory**: `Editor.shell_factory` callback decouples the editor from the service layer; set by the `edit` shell program.
+- **Deferred**: interactive programs (chat), TUI apps in shell buffer, output region protection — see handover.
+
+## What's Next (Phase 6k)
+
+Phase 6k is tutorial verification + polish — walk through every tutorial exercise, fix gaps, add `describe-bindings`.
 
 See `docs/V2_HANDOVER.md` Section 6 for the full plan.

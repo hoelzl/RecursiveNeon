@@ -98,6 +98,21 @@ class EditorView:
         self._height = height
         return self._render()
 
+    async def on_after_key(self) -> ScreenBuffer | None:
+        """Process pending async work (e.g., shell command execution).
+
+        Called by the TUI runner after each keystroke.  Returns a fresh
+        ``ScreenBuffer`` if the display needs updating, or ``None``.
+        """
+        handler = self.editor._pending_async
+        if handler is None:
+            return None
+        self.editor._pending_async = None
+        await handler()
+        # Re-sync active window after async work modified the buffer
+        self._tree.active.sync_from_buffer()
+        return self._render()
+
     # ------------------------------------------------------------------
     # Viewport compatibility (single-window convenience)
     # ------------------------------------------------------------------

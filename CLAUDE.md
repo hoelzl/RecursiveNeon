@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6i complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system). Phase 6j (shell-in-editor) next. Phases 6j-6k add shell-in-editor, tutorial polish. Browser GUI deferred to Phase 8.
+**Status**: V2 reboot. Phases 0-6j complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor). Phase 6k (tutorial polish) next. Browser GUI deferred to Phase 8.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -73,7 +73,8 @@ cd backend
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
 - Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`)
-- Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion)
+- Shell-in-editor: `backend/src/recursive_neon/editor/shell_mode.py` (`BufferOutput`, `ShellState`, `setup_shell_buffer`, comint commands, `execute_shell_command`)
+- Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion, shell factory)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)
 - Backend main: `backend/src/recursive_neon/main.py` (includes `/ws/terminal` endpoint)

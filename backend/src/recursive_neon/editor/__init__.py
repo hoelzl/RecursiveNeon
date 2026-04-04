@@ -22,6 +22,13 @@ from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
 from recursive_neon.editor.modes import MODES, Mode, defmode
+from recursive_neon.editor.shell_mode import (
+    BufferOutput,
+    ShellBufferInput,
+    ShellState,
+    setup_shell_buffer,
+    strip_ansi,
+)
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -40,6 +47,7 @@ from recursive_neon.editor.window import (
 
 __all__ = [
     "Buffer",
+    "BufferOutput",
     "COMMANDS",
     "Command",
     "Editor",
@@ -49,6 +57,8 @@ __all__ = [
     "MODES",
     "Mark",
     "Mode",
+    "ShellBufferInput",
+    "ShellState",
     "UndoBoundary",
     "UndoCursorMove",
     "UndoDelete",
@@ -65,4 +75,6 @@ __all__ = [
     "defmode",
     "defvar",
     "get_command",
+    "setup_shell_buffer",
+    "strip_ansi",
 ]

@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6i complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system). 1282 tests. Phase 6j (shell-in-editor) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6j complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor). 1348 tests. Phase 6k (tutorial polish) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -121,6 +121,7 @@ backend/
       variables.py                    # EditorVariable, VARIABLES registry, defvar, built-in variables (Phase 6g)
       modes.py                        # Mode, MODES registry, defmode, fundamental-mode, text-mode (Phase 6g)
       window.py                       # Window, WindowSplit, WindowTree: Emacs-style window splitting (Phase 6i)
+      shell_mode.py                   # Shell-in-editor: BufferOutput, ShellState, comint commands, M-x shell (Phase 6j)
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -208,6 +209,7 @@ backend/
     unit/editor/test_window.py        # Window/WindowTree: create, split, delete, navigate, point tracking (30 tests, Phase 6i)
     unit/editor/test_window_view.py   # Window rendering: compat, splits, modelines, dividers, resize (15 tests, Phase 6i)
     unit/editor/test_window_commands.py # Window commands: split, navigate, delete, scroll-other, find-file-other (22 tests, Phase 6i)
+    unit/editor/test_shell_mode.py    # Shell-in-editor: setup, comint commands, history, completion, execution (66 tests, Phase 6j)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -376,16 +378,36 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 
 **Files**: new `editor/window.py`, modified `editor/editor.py` (+1 field), `editor/view.py` (refactored), `editor/default_commands.py` (+7 commands), `shell/tui/__init__.py` (+`set_region`), `editor/__init__.py` (exports). Tests: `test_window.py`, `test_window_view.py`, `test_window_commands.py` (~65 new tests).
 
-#### 6j. Shell-in-editor (shell mode)
+#### 6j. Shell-in-editor (shell mode) — **COMPLETE**
 **Goal**: Run the game's shell inside an editor window, like Emacs `M-x shell`. The keystone feature that makes neon-edit the game's "desktop environment."
 
-- Shell mode (`editor/shell_mode.py`): major mode with `shell-mode-map` keymap. Output region read-only, input region after prompt editable.
-- Comint model with in-process Shell: `ShellBufferInput` (asyncio queue, feeds lines on Enter) and `ShellBufferOutput` (appends text to buffer at output marker). No subprocess — our Shell is a Python object.
-- `shell` (M-x shell): creates `*shell*` buffer in shell mode, wires to Shell instance
-- `comint-send-input` (Enter in shell mode): send input line to shell
-- `comint-previous-input` (M-p) / `comint-next-input` (M-n): history navigation
-- Tab completion in shell buffer reuses shell's completion infrastructure
-- Raw-mode TUI apps inside the shell buffer are **deferred** — only cooked-mode shell interaction in this phase
+**Architecture — direct execution model**: The Shell's `run()` loop is NOT used. Instead, the editor drives command execution: user presses Enter → `on_key()` (sync) extracts input, stores an async callback on `editor._pending_async` → TUI runner calls `EditorView.on_after_key()` (async) which awaits `shell.execute_line()` → output appended to buffer → new prompt rendered. This avoids background-task coordination entirely.
+
+**Async bridge — `on_after_key` protocol**: 4-line backward-compatible addition to `run_tui_app()`. After each keystroke, the runner checks for an optional `on_after_key()` method on the TuiApp and awaits it. Existing TUI apps (CodeBreaker, sysmon, notes browser) have no such method and are unaffected.
+
+**Components**:
+- `BufferOutput(Output)` (`editor/shell_mode.py`): captures shell output as ANSI-stripped plain text for buffer insertion.
+- `ShellState` dataclass: per-buffer state — Shell reference, `input_start` mark (kind="left"), history index, saved input, finished flag. Stored as `buf._shell_state`.
+- `ShellBufferInput`: stub `InputSource` that raises `EOFError` for interactive programs (chat, etc.) — deferred to future phase.
+- `setup_shell_buffer()`: initialises buffer with shell-mode keymap, welcome banner, prompt, tracked marks.
+- Shell-mode keymap: Enter → `_comint_send_input`, M-p/M-n → history navigation, Tab → completion. Parent = global keymap, so all normal editing keys work.
+- `execute_shell_command()`: async function that runs the command, captures output via `BufferOutput`, appends output + new prompt, updates `input_start` mark. Undo recording disabled during output insertion.
+
+**Editor integration**:
+- `Editor.shell_factory: Callable[[], Any]` — set by the `edit` shell program to create Shell instances.
+- `Editor._pending_async: Callable[[], Awaitable[None]]` — set by Enter handler, consumed by `on_after_key`.
+- `EditorView.on_after_key()` — awaits `_pending_async`, syncs window, re-renders.
+
+**Commands**: `shell` (M-x shell) creates or switches to `*shell*` buffer. Modeline shows `(Shell)`.
+
+**Deferred to future phases**:
+- Raw-mode TUI apps inside the shell buffer (requires raw-mode passthrough)
+- Interactive programs (chat) need a minibuffer↔get_line bridge for sub-prompts
+- Output region protection (per-region read-only) — buffer is fully writable; shell reads only from input_start to EOB
+- ANSI rendering in buffer (would need attributed-text model)
+- The `on_after_key` pattern is general-purpose and could support other async features (e.g., background NPC responses)
+
+**Files**: new `editor/shell_mode.py` (~310 lines), modified `editor/editor.py` (+2 fields), `editor/view.py` (+`on_after_key`), `shell/tui/runner.py` (+4 lines), `shell/programs/edit.py` (+shell_factory wiring), `editor/default_commands.py` (+1 import), `editor/__init__.py` (exports). Tests: `test_shell_mode.py` (66 new tests). 1348 total tests.
 
 #### 6k. Tutorial verification + polish
 **Goal**: Verify every feature in the tutorial works end-to-end. Fix gaps, polish UX.

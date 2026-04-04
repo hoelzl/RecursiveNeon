@@ -57,6 +57,12 @@ async def run_tui_app(
             if result is None:
                 break
             _deliver_screen(result, output, send_screen)
+            # Optional async post-key processing (e.g., shell command execution)
+            on_after = getattr(app, "on_after_key", None)
+            if on_after is not None:
+                after_result = await on_after()
+                if after_result is not None:
+                    _deliver_screen(after_result, output, send_screen)
     except EOFError:
         logger.debug("TUI raw input EOF — exiting app")
     finally:
