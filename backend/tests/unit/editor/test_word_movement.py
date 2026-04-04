@@ -7,7 +7,6 @@ from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
 from recursive_neon.editor.mark import Mark
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # forward_word
 # ═══════════════════════════════════════════════════════════════════════

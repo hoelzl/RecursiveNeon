@@ -166,7 +166,7 @@ async def _headless_loop(ws) -> None:
     for task in done:
         exc = task.exception()
         if exc is not None and not isinstance(
-            exc, (ConnectionClosed, asyncio.CancelledError)
+            exc, ConnectionClosed | asyncio.CancelledError
         ):
             raise exc
 
@@ -231,7 +231,7 @@ async def _session_loop(ws) -> None:
     for task in done:
         exc = task.exception()
         if exc is not None and not isinstance(
-            exc, (ConnectionClosed, asyncio.CancelledError)
+            exc, ConnectionClosed | asyncio.CancelledError
         ):
             raise exc
 

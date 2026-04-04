@@ -109,9 +109,7 @@ class EditorView:
                 screen.set_line(message_row, mb.display[: self._width])
                 # Cursor goes in the minibuffer
                 screen.cursor_row = message_row
-                screen.cursor_col = min(
-                    len(mb.prompt) + mb.cursor, self._width - 1
-                )
+                screen.cursor_col = min(len(mb.prompt) + mb.cursor, self._width - 1)
                 screen.cursor_visible = True
             else:
                 screen.set_line(message_row, self.editor.message[: self._width])
@@ -142,7 +140,7 @@ class EditorView:
         right = f"  ({line_col}) "
         padding = max(0, self._width - len(left) - len(right))
         modeline_text = left + "-" * padding + right
-        return f"{_MODELINE_STYLE}{modeline_text[:self._width]}{_RESET}"
+        return f"{_MODELINE_STYLE}{modeline_text[: self._width]}{_RESET}"
 
 
 def create_editor_for_file(

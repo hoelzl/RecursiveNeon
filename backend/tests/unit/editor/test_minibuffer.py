@@ -6,7 +6,6 @@ from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
 from recursive_neon.editor.minibuffer import Minibuffer
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Minibuffer standalone
 # ═══════════════════════════════════════════════════════════════════════
@@ -351,6 +350,7 @@ class TestFileOperations:
         """Save callback should use buf.filepath, not the initial captured path."""
         saved_paths: list[str] = []
         ed = make_editor("content")
+
         # Simulate a save callback that tracks what filepath the buffer has
         def save_cb(buf):
             saved_paths.append(buf.filepath or "")

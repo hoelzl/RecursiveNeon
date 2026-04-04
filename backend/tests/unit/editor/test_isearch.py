@@ -6,7 +6,6 @@ from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Buffer.find_forward / find_backward
 # ═══════════════════════════════════════════════════════════════════════

@@ -175,9 +175,7 @@ async def _note_create(ctx: ProgramContext) -> int:
     # No -c flag — open editor if TUI is available
     if ctx.run_tui is None:
         # No TUI — create with empty content (graceful fallback)
-        note = ctx.services.app_service.create_note(
-            {"title": title, "content": ""}
-        )
+        note = ctx.services.app_service.create_note({"title": title, "content": ""})
         ctx.stdout.writeln(f"Created note: {ctx.stdout.styled(note.title, BOLD)}")
         return 0
 
@@ -483,7 +481,15 @@ async def _note_browse(ctx: ProgramContext) -> int:
 
 
 _NOTE_SUBCOMMANDS = [
-    "list", "ls", "show", "create", "new", "edit", "delete", "rm", "browse",
+    "list",
+    "ls",
+    "show",
+    "create",
+    "new",
+    "edit",
+    "delete",
+    "rm",
+    "browse",
 ]
 _NOTE_REF_SUBCOMMANDS = {"show", "edit", "delete", "rm"}
 

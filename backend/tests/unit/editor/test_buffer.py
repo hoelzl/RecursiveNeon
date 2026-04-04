@@ -6,7 +6,6 @@ from __future__ import annotations
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.mark import Mark
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Creation and text access
 # ═══════════════════════════════════════════════════════════════════════

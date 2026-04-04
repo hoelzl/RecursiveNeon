@@ -9,7 +9,6 @@ import pytest
 from recursive_neon.models.process import ProcessTable
 from recursive_neon.shell.programs.sysmon import SysMonApp, _format_uptime, _render_bar
 
-
 # ── Helper rendering functions ───────────────────────────────────────
 
 

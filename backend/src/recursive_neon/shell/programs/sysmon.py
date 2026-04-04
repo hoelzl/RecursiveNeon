@@ -129,8 +129,7 @@ class SysMonApp:
 
         screen.set_line(
             2,
-            f"  Uptime: {BOLD}{uptime}{RESET}   "
-            f"Processes: {BOLD}{proc_count}{RESET}",
+            f"  Uptime: {BOLD}{uptime}{RESET}   Processes: {BOLD}{proc_count}{RESET}",
         )
 
         # CPU and memory bars
@@ -138,8 +137,7 @@ class SysMonApp:
         mem_bar = _render_bar(total_mem)
         screen.set_line(
             3,
-            f"  CPU {cpu_bar} {total_cpu:5.1f}%   "
-            f"MEM {mem_bar} {total_mem:5.1f}%",
+            f"  CPU {cpu_bar} {total_cpu:5.1f}%   MEM {mem_bar} {total_mem:5.1f}%",
         )
 
         # Column header

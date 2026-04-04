@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.mark import Mark
-from recursive_neon.editor.undo import UndoBoundary, UndoInsert
-
+from recursive_neon.editor.undo import UndoBoundary
 
 # ═══════════════════════════════════════════════════════════════════════
 # Basic undo of insertions

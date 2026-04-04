@@ -586,9 +586,7 @@ class TestNoteBrowse:
         ctx.run_tui = mock_run_tui
         assert await prog_note(ctx) == 0
 
-    async def test_auto_refresh_on_switch_back(
-        self, make_ctx, output, test_container
-    ):
+    async def test_auto_refresh_on_switch_back(self, make_ctx, output, test_container):
         """Switching back to *Notes* auto-refreshes the list."""
         app = test_container.app_service
         app.create_note({"title": "Existing", "content": ""})

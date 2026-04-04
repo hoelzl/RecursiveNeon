@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.killring import KillRing
-from recursive_neon.editor.mark import Mark
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # KillRing standalone
