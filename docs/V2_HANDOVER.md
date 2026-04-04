@@ -1,7 +1,7 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-03-27)
-> **Status**: Phases 0-5 + 6a (editor) + E1-E5 (editor enhancements) + 6b (notes integration) complete. Phase 6c (additional TUI apps) or 6d (notes mode) next. Browser GUI deferred to Phase 7.
+> **Date**: 2025-03-23 (updated 2026-04-04)
+> **Status**: Phases 0-6d complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser). 1031 tests. Phase 7 (browser GUI) next.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -95,6 +95,7 @@ backend/
       app_models.py                   # FileNode, Note, Task, TaskList + state models
       game_state.py                   # GameState, SystemState, StatusResponse
       npc.py                          # NPC, NPCMemory, ChatRequest/Response, enums
+      process.py                      # Process, ProcessState models for system monitor (Phase 6c)
     npcs/__init__.py                  # Empty (for future NPC definitions)
     services/
       __init__.py
@@ -112,8 +113,8 @@ backend/
       killring.py                     # Kill ring: push, append_to_top, yank, rotate
       commands.py                     # Command dataclass, @defcommand decorator, COMMANDS registry
       keymap.py                       # Keymap class: key bindings with parent inheritance
-      editor.py                       # Editor coordinator: buffer list, key dispatch, prefix arg, help
-      default_commands.py             # 40+ Emacs-style commands + global/C-x/C-h keymaps
+      editor.py                       # Editor coordinator: buffer list, key dispatch, prefix arg, help, remove_buffer
+      default_commands.py             # 45+ Emacs-style commands + global/C-x/C-h keymaps (incl. kill-buffer)
       minibuffer.py                   # Single-line input widget with completion (M-x, C-x C-f, etc.)
       view.py                         # EditorView (TuiApp): rendering, scrolling, modeline
     shell/                            # CLI shell package (Phase 1-5)
@@ -137,7 +138,8 @@ backend/
         codebreaker.py                # Mastermind-style TUI minigame (Phase 4)
         edit.py                       # Shell `edit` command: TUI editor host, file I/O callbacks
         filesystem.py                 # ls, pwd, cat, mkdir, touch, rm, cp, mv, grep, find, write
-        notes.py                      # note list/show/create/edit/delete
+        notes.py                      # note list/show/create/edit/delete/browse (6b + 6d)
+        sysmon.py                     # System monitor TUI: fake htop with process model (Phase 6c)
         tasks.py                      # task lists/list/add/done/undone/delete
         utility.py                    # help, clear, echo, env, whoami, hostname, date, save
     wsclient/                         # WebSocket CLI client (Phase 3)
@@ -168,7 +170,8 @@ backend/
     unit/shell/test_glob.py           # Glob expansion: tokenize_ext, expand_globs (Phase 5b)
     unit/shell/test_pipeline.py       # Pipes, redirection, parse_pipeline (Phase 5c)
     unit/shell/test_filesystem_enhanced.py  # grep, find, write tests
-    unit/shell/test_note_program.py   # Note CLI program tests
+    unit/shell/test_note_program.py   # Note CLI program tests + notes browser (Phase 6d)
+    unit/shell/test_sysmon.py         # System monitor TUI tests (Phase 6c)
     unit/shell/test_parser.py         # Tokenizer tests
     unit/shell/test_path_resolver.py  # Path resolution tests
     unit/shell/test_programs.py       # Filesystem + utility program tests
@@ -183,7 +186,8 @@ backend/
     unit/editor/test_killring.py      # Kill ring: push, rotate, append, kill merging (37 tests)
     unit/editor/test_keymap.py        # Keymap bind, lookup, parent inheritance (13 tests)
     unit/editor/test_commands.py      # Command registry, dispatch, prefix arg (40 tests)
-    unit/editor/test_minibuffer.py    # Minibuffer input, completion, callbacks (38 tests)
+    unit/editor/test_minibuffer.py    # Minibuffer input, completion, callbacks, kill-buffer (38+17 tests)
+    unit/editor/test_buffer_keymap.py # Buffer-local keymaps, callable targets, on_focus (Phase 6d)
     unit/editor/test_view.py          # EditorView rendering, scrolling, modeline (26 tests)
     unit/editor/test_word_movement.py # Word movement, additional keys, read-only buffers (30 tests)
     unit/editor/test_isearch.py       # Incremental search: find, isearch dispatch (21 tests)
@@ -264,21 +268,25 @@ With the editor available, notes commands open neon-edit for interactive editing
 - When TUI mode is unavailable, `note edit` shows an error suggesting flags; `note create` falls back to creating an empty note.
 - 946 total tests (19 new: format/parse helpers, editor integration for both create and edit, fallback paths).
 
-#### 6c. Additional TUI apps
-More minigames and utilities to flesh out the game world.
+#### 6c. System monitor TUI — **COMPLETE**
+A fake "htop"-style system monitor showing in-game processes. `Process` and `ProcessState` models in `models/process.py`. `sysmon` shell command launches the TUI with animated CPU/memory bars, process list, and sort/kill key bindings. 980 total tests.
 
-Tasks (scope TBD — pick based on what's fun and tests the framework):
+Future 6c candidates (not yet scheduled):
 - File browser TUI (navigate virtual filesystem, preview files, open in editor)
 - Port scanner minigame (network puzzle)
 - Memory dump minigame (hex viewer puzzle)
-- System monitor (fake htop showing game processes)
 
-#### 6d. Editor "notes mode"
-An editor mode that surfaces the note list inside neon-edit, so the player can browse, open, and manage notes without leaving the editor.
+#### 6d. Notes browser in neon-edit — **COMPLETE**
+Interactive notes browser inside the editor. Loose coupling approach: a `*Notes*` read-only buffer with buffer-local keymap lists notes; Enter opens a note in a new buffer with `# Title` convention and save callback.
 
-*Design needed*: how tightly coupled should the editor and notes system be? Options:
-- Loose coupling: a special `*Notes*` read-only buffer that lists notes; pressing Enter opens the selected note. Notes are just buffers with a save callback.
-- Tighter coupling: a sidebar/split view showing the note list alongside the active note buffer.
+- `note browse` command opens neon-edit with the `*Notes*` buffer
+- Buffer-local keymaps: `Buffer.keymap` field, checked first by `_resolve_keymap()`, falls through to global via parent
+- Callable keymap targets: `BindingTarget` now accepts `Callable[..., Any]` alongside command name strings
+- `Buffer.on_focus` callback: triggered on `switch_to_buffer` / `remove_buffer`, used to auto-refresh the note list
+- `kill-buffer` command (C-x k): remove a buffer with minibuffer prompt
+- Improved prefix key display: "C-x z is undefined" instead of "z is undefined"
+- Windows C-h / Backspace disambiguation via `_win_ctrl_pressed()`
+- 1031 total tests (51 new: 12 notes browser, 8 buffer-local keymaps, 7 callable targets, 5 kill-buffer, 3 prefix display, 3 on_focus, plus supporting tests).
 
 ### Phase 7: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.

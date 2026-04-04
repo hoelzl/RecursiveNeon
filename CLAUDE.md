@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-5 + 6a (editor) + E1-E5 (editor enhancements) complete. Phase 6b (notes integration) next.
+**Status**: V2 reboot. Phases 0-6d complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser). Phase 7 (browser GUI) next.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -50,11 +50,11 @@ cd backend
 
 **Filesystem**: `ls`, `pwd`, `cat`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `grep`, `find`, `write`
 
-**Notes/Tasks**: `note` (list/show/create/edit/delete), `task` (lists/list/add/done/undone/delete)
+**Notes/Tasks**: `note` (list/show/create/edit/delete/browse), `task` (lists/list/add/done/undone/delete)
 
 **NPC**: `chat` (list NPCs or enter conversation; supports `/exit`, `/help`, `/relationship`, `/status`)
 
-**TUI Apps**: `edit` (Emacs-inspired text editor — neon-edit), `codebreaker` (Mastermind-style minigame); both require raw mode — work in local CLI and WebSocket client
+**TUI Apps**: `edit` (Emacs-inspired text editor — neon-edit), `codebreaker` (Mastermind-style minigame), `sysmon` (system monitor); all require raw mode — work in local CLI and WebSocket client
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
@@ -66,7 +66,7 @@ cd backend
 
 - Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)
 - Shell REPL: `backend/src/recursive_neon/shell/shell.py` (transport-agnostic via `InputSource` protocol)
-- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, utility)
+- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, sysmon, utility)
 - Completion: `backend/src/recursive_neon/shell/completion.py` (`CompletionContext`, per-command completers)
 - Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, virtual filesystem matching)
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)

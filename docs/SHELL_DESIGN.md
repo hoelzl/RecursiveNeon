@@ -1,7 +1,7 @@
 # Shell Design Document
 
-> **Status**: Phases 1-5 + 6a (editor) + E1-E5 (editor enhancements) implemented. Design document kept for architecture reference.
-> **Date**: 2026-03-23 (updated 2026-03-27)
+> **Status**: Phases 1-6d implemented. Design document kept for architecture reference.
+> **Date**: 2026-03-23 (updated 2026-04-04)
 
 ## 1. Overview
 
@@ -49,7 +49,8 @@ backend/src/recursive_neon/shell/
     ├── chat.py          # chat <npc> — NPC conversation mode with /commands
     ├── codebreaker.py   # Mastermind-style TUI minigame (raw mode)
     ├── edit.py          # TUI text editor host (file I/O, path completion)
-    ├── notes.py         # note list/show/create/edit/delete
+    ├── notes.py         # note list/show/create/edit/delete/browse
+    ├── sysmon.py        # System monitor TUI (fake htop, Phase 6c)
     └── tasks.py         # task lists/list/add/done/undone/delete
 ```
 
@@ -451,6 +452,7 @@ Chat supports slash commands: `/exit`, `/help`, `/relationship`, `/status`. All 
 | `note create` | `note create <title> [-c <content>]` | Create a note |
 | `note edit` | `note edit <ref> [-t <title>] [-c <content>]` | Update a note |
 | `note delete` | `note delete <ref>` | Delete a note |
+| `note browse` | `note browse` | Interactive notes browser in neon-edit |
 
 Aliases: `ls` for `list`, `new` for `create`, `rm` for `delete`.
 
@@ -901,7 +903,9 @@ Implemented across Phases 2-5 (see Sections 5.1, 5.4, 5.5):
 - `save` — Save game state to disk
 - `codebreaker` — Mastermind-style TUI minigame (Phase 4)
 
-Also implemented in Phase 6a + E1-E5:
+Also implemented in Phases 6a-6d:
 | Program | Description |
 |---------|-------------|
 | `edit` | TUI text editor — neon-edit (Emacs-inspired, minibuffer, incremental search, help system) |
+| `note browse` | Interactive notes browser inside neon-edit (buffer-local keymaps, CRUD) |
+| `sysmon` | System monitor TUI — fake htop with animated process list |
