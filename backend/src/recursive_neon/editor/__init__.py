@@ -31,6 +31,12 @@ from recursive_neon.editor.undo import (
 )
 from recursive_neon.editor.variables import VARIABLES, EditorVariable, defvar
 from recursive_neon.editor.viewport import Viewport
+from recursive_neon.editor.window import (
+    SplitDirection,
+    Window,
+    WindowSplit,
+    WindowTree,
+)
 
 __all__ = [
     "Buffer",
@@ -50,6 +56,10 @@ __all__ = [
     "UndoInsert",
     "VARIABLES",
     "Viewport",
+    "Window",
+    "WindowSplit",
+    "WindowTree",
+    "SplitDirection",
     "build_default_keymap",
     "defcommand",
     "defmode",

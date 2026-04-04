@@ -144,7 +144,7 @@ class Buffer:
 
     def track_mark(self, m: Mark) -> None:
         """Register a mark for automatic maintenance during edits."""
-        if m not in self._tracked_marks:
+        if not any(t is m for t in self._tracked_marks):
             self._tracked_marks.append(m)
 
     def untrack_mark(self, m: Mark) -> None:

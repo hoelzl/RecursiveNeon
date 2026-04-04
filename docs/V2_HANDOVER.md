@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6h complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling). 1215 tests. Phase 6i (window system) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6i complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system). 1282 tests. Phase 6j (shell-in-editor) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -120,6 +120,7 @@ backend/
       viewport.py                     # Viewport protocol: scroll_top, text_height, scroll_to (Phase 6e)
       variables.py                    # EditorVariable, VARIABLES registry, defvar, built-in variables (Phase 6g)
       modes.py                        # Mode, MODES registry, defmode, fundamental-mode, text-mode (Phase 6g)
+      window.py                       # Window, WindowSplit, WindowTree: Emacs-style window splitting (Phase 6i)
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -204,6 +205,9 @@ backend/
     unit/editor/test_modes.py         # Mode system: registry, switching, keymaps, modeline (23 tests, Phase 6g)
     unit/editor/test_replace.py       # Replace string: basic, from-point, undo, cancel (13 tests, Phase 6h)
     unit/editor/test_fill.py          # Fill paragraph, set-fill-column, auto-fill-mode (30 tests, Phase 6h)
+    unit/editor/test_window.py        # Window/WindowTree: create, split, delete, navigate, point tracking (30 tests, Phase 6i)
+    unit/editor/test_window_view.py   # Window rendering: compat, splits, modelines, dividers, resize (15 tests, Phase 6i)
+    unit/editor/test_window_commands.py # Window commands: split, navigate, delete, scroll-other, find-file-other (22 tests, Phase 6i)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -353,14 +357,24 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 - `Mode.indicator` field: optional short modeline string for minor modes (falls back to name-derived string if empty)
 - 1215 total tests (43 new: 13 replace-string, 5 paragraph bounds, 6 fill-lines, 9 fill-paragraph, 3 set-fill-column, 7 auto-fill-mode)
 
-#### 6i. Window system
+#### 6i. Window system — **COMPLETE**
 **Goal**: Emacs-style window splitting so a single frame displays multiple buffers simultaneously. The prerequisite for shell-in-editor and the "desktop environment" vision.
 
-- `Window` class (`editor/window.py`): `buffer`, `point` (Mark), `mark`, `scroll_top`, `height`, `width`, `top`, `left`. Window-local cursor and scroll state.
-- `WindowNode` / `WindowTree`: binary tree of horizontal/vertical splits. Leaf = Window, internal node = split direction + children. `split_horizontally`, `split_vertically`, `delete_window`, `next_window`.
-- **Dual-point strategy** for backward compatibility: `Buffer.point` remains for headless/single-window tests. `Window.point` is the active cursor in windowed mode. On window switch, sync point between window and buffer. Existing 1100+ tests continue to work unchanged.
-- EditorView refactored: renders window tree into ScreenBuffer. Each window gets its own text region + modeline. Active window visually distinct. Vertical dividers for horizontal splits.
-- `split-window-below` (C-x 2), `split-window-right` (C-x 3), `other-window` (C-x o), `delete-window` (C-x 0), `delete-other-windows` (C-x 1), `scroll-other-window` (C-M-v), `find-file-other-window` (C-x 4 C-f)
+**Architecture**:
+- `Window` class (`editor/window.py`): `buffer`, `_point` (tracked Mark), `scroll_top`, layout fields (`_height`, `_width`, `_top`, `_left`). Implements `Viewport` protocol (`scroll_top`, `text_height`, `scroll_to`). Factory `Window.for_buffer(buf)` creates a window with a tracked mark at the buffer's point.
+- `SplitDirection` enum: `HORIZONTAL` (C-x 2, top/bottom), `VERTICAL` (C-x 3, left/right)
+- `WindowSplit` dataclass: `direction`, `first` (WindowNode), `second` (WindowNode). `WindowNode = Window | WindowSplit`.
+- `WindowTree` class: manages the binary split tree. `root: WindowNode`, `active: Window`. Methods: `split()`, `delete_window()`, `next_window()`, `windows()` (depth-first leaf list), `delete_other_windows()`, `is_single()`, `other_window()`.
+
+**Dual-point sync**: `Window._point` is a tracked Mark in the buffer (maintained by mark tracking during insert/delete). Movement commands only move `buffer.point`, so EditorView syncs after each key: `active._point ← buffer.point`. On window switch: save old `buffer.point → old._point`, restore `new._point → buffer.point`, update `editor.viewport` to new window, switch editor's current buffer. Existing 1215+ headless tests see `_window_tree = None` and are unaffected.
+
+**EditorView refactored**: creates a `WindowTree` on init (single root window). `_render()` walks the tree: `_compute_layout()` assigns regions, `_render_window()` draws text + modeline per window, `_render_dividers()` draws `│` columns for vertical splits. Active modeline: `\033[7m` (reverse), inactive: `\033[2;7m` (dim reverse). Message line is global (last screen row). `ScreenBuffer.set_region()` added for column-range writes.
+
+**Single-window equivalence**: window height = `total - 1` (message), text_height = `height - 1` (modeline), so text_height = `total - 2`. Identical to current layout. All existing TUI tests produce same output.
+
+**Commands**: `split-window-below` (C-x 2), `split-window-right` (C-x 3), `other-window` (C-x o), `delete-window` (C-x 0), `delete-other-windows` (C-x 1), `scroll-other-window` (C-M-v), `find-file-other-window` (C-x 4 C-f). New `C-x 4` prefix keymap.
+
+**Files**: new `editor/window.py`, modified `editor/editor.py` (+1 field), `editor/view.py` (refactored), `editor/default_commands.py` (+7 commands), `shell/tui/__init__.py` (+`set_region`), `editor/__init__.py` (exports). Tests: `test_window.py`, `test_window_view.py`, `test_window_commands.py` (~65 new tests).
 
 #### 6j. Shell-in-editor (shell mode)
 **Goal**: Run the game's shell inside an editor window, like Emacs `M-x shell`. The keystone feature that makes neon-edit the game's "desktop environment."

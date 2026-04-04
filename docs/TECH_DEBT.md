@@ -64,6 +64,39 @@ monitor or countdown timer) could animate without requiring keypresses.
 
 ---
 
+## TD-004: Mark tracking uses identity but Mark.__eq__ uses value equality
+
+**Added**: 2026-04-04
+**Affected files**:
+- `backend/src/recursive_neon/editor/buffer.py` — `track_mark()`, `untrack_mark()`
+- `backend/src/recursive_neon/editor/mark.py` — `Mark.__eq__`
+
+**Problem**: `Mark.__eq__` compares by position `(line, col)`, not identity.
+`Buffer.track_mark()` was fixed in Phase 6i to use identity (`any(t is m ...)`)
+instead of equality (`m not in ...`), but any future code that uses `in` or
+`==` to check for a specific Mark object in `_tracked_marks` will match the
+*wrong* mark if another mark happens to be at the same position. This is
+particularly relevant with the window system, where multiple windows can have
+independent tracked marks at the same buffer position.
+
+`untrack_mark()` already uses identity (`is not`), which is correct.
+
+**Risk**: Low (the fix is in place), but the mismatch between `__eq__`
+semantics and tracking semantics is a latent footgun for future code.
+
+**Options**:
+1. Add a `Mark.__eq__` override that uses identity — but this breaks
+   legitimate value comparisons (e.g., `assert point == Mark(1, 0)`).
+2. Use a dedicated `MarkSet` that wraps identity-based membership — cleaner
+   but more indirection.
+3. Keep the current approach (identity checks in track/untrack) and document
+   the invariant. This is what Emacs does internally.
+
+**Current decision**: Option 3. The `track_mark`/`untrack_mark` methods are
+the only place that needs identity semantics, and they already use it.
+
+---
+
 ## Resolved
 
 ### ~~TD-002: Unused LLM/AI dependencies~~ (resolved 2026-03-26)

@@ -2,6 +2,19 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6i — Window System (2026-04-04)
+
+### Added
+- **Emacs-style window splitting** — `Window` class with independent cursor (tracked `Mark`) and scroll state per window. `WindowTree` manages a binary tree of horizontal/vertical splits. Each window implements the `Viewport` protocol for per-window scrolling.
+- **Window commands**: `split-window-below` (C-x 2), `split-window-right` (C-x 3), `other-window` (C-x o), `delete-window` (C-x 0), `delete-other-windows` (C-x 1), `scroll-other-window` (C-M-v), `find-file-other-window` (C-x 4 C-f). New `C-x 4` prefix keymap.
+- **Window rendering** — EditorView refactored to render a window tree: per-window text regions, per-window modelines (active = bright reverse, inactive = dim reverse), vertical dividers (`│`) for side-by-side splits, global message line at bottom.
+- **`ScreenBuffer.set_region()`** — Column-range write method for rendering vertical split windows without disturbing adjacent content.
+- **Dual-point sync** — Window-local tracked marks stay correct during edits via buffer mark tracking. Movement sync happens around each keystroke dispatch. All 1215 pre-existing headless and TUI tests pass unchanged.
+- **67 new tests** — `test_window.py` (30: tree ops, point tracking), `test_window_view.py` (15: rendering), `test_window_commands.py` (22: command integration + headless no-ops). 1282 total tests.
+
+### Fixed
+- **`Buffer.track_mark()` identity bug** — Changed from equality-based (`not in`) to identity-based (`any(t is m ...)`) duplicate detection. Two marks at the same position but different objects (e.g., `buffer.point` and `window._point`) were incorrectly treated as duplicates, preventing multi-window point tracking.
+
 ## Phase 5 — Shell Improvements (2026-03-26)
 
 ### Added

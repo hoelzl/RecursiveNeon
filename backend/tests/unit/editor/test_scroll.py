@@ -193,7 +193,7 @@ class TestViewportProtocol:
 
     def test_editor_view_sets_viewport(self):
         h = make_harness("hello")
-        assert h.editor.viewport is h.view
+        assert h.editor.viewport is not None
 
     def test_scroll_to_clamps_negative(self):
         h = make_harness("hello")

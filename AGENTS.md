@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-5 are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection). Phase 6 (text editor + TUI apps) is next.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6i are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting). Phase 6j (shell-in-editor) is next.
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 527 tests
+../.venv/Scripts/pytest              # All 1282 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -80,6 +80,8 @@ All three must pass before committing.
 | App service | `backend/src/recursive_neon/services/app_service.py` |
 | NPC manager | `backend/src/recursive_neon/services/npc_manager.py` |
 | TUI framework | `backend/src/recursive_neon/shell/tui/` |
+| Editor core | `backend/src/recursive_neon/editor/` |
+| Window system | `backend/src/recursive_neon/editor/window.py` |
 | CodeBreaker minigame | `backend/src/recursive_neon/shell/programs/codebreaker.py` |
 | Models | `backend/src/recursive_neon/models/` |
 | Test fixtures | `backend/tests/conftest.py`, `backend/tests/unit/shell/conftest.py` |
@@ -119,11 +121,16 @@ The shell supports Unix-like features:
 - **Output redirection** (`>`, `>>`) — captured output written to virtual files.
 - **Pipe-aware completion** — `_last_pipe_segment()` scopes completions to the current segment.
 
-## What's Next (Phase 6)
+## Editor + Window System (Phase 6a-6i)
 
-Phase 6 is the text editor + TUI apps:
-- TUI text editor ("neon-edit") with model-view split
-- Improved notes integration (open notes in editor)
-- Additional TUI apps (file browser, minigames)
+neon-edit is an Emacs-inspired TUI editor with:
+- `Buffer`/`Mark` text model, undo/kill ring, layered keymaps, minibuffer, incremental search
+- Variable system, mode infrastructure (fundamental-mode, text-mode, auto-fill-mode)
+- **Window system** (Phase 6i): `Window` class with tracked point + scroll state, `WindowTree` binary split tree, 7 window commands (C-x 2/3/o/0/1, C-M-v, C-x 4 C-f)
+- EditorView renders the window tree with per-window modelines and vertical dividers
 
-See `docs/V2_HANDOVER.md` Section 6 (Phase 6) for the full plan.
+## What's Next (Phase 6j)
+
+Phase 6j is shell-in-editor — running the game's shell inside an editor window (like Emacs `M-x shell`).
+
+See `docs/V2_HANDOVER.md` Section 6 for the full plan.

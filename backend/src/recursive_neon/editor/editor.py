@@ -23,6 +23,7 @@ from recursive_neon.editor.variables import VARIABLES
 
 if TYPE_CHECKING:
     from recursive_neon.editor.viewport import Viewport
+    from recursive_neon.editor.window import WindowTree
 
 
 class Editor:
@@ -84,6 +85,9 @@ class Editor:
 
         # Recenter cycle index (center=0, top=1, bottom=2)
         self._recenter_index: int = 0
+
+        # Window tree — set by EditorView, None in headless mode
+        self._window_tree: WindowTree | None = None
 
     # ------------------------------------------------------------------
     # Buffer management

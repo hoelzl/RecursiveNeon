@@ -42,6 +42,21 @@ class ScreenBuffer:
         if 0 <= row < self.height:
             self.lines[row] = text
 
+    def set_region(self, row: int, col: int, width: int, text: str) -> None:
+        """Write *text* into columns [col, col+width) of *row*.
+
+        Text is padded/truncated to exactly *width* characters.
+        Existing content outside the region is preserved.
+        """
+        if not (0 <= row < self.height) or width <= 0:
+            return
+        line = self.lines[row]
+        # Pad line to reach the target region
+        if len(line) < col + width:
+            line = line.ljust(col + width)
+        segment = text[:width].ljust(width)
+        self.lines[row] = line[:col] + segment + line[col + width :]
+
     def clear(self) -> None:
         """Clear all rows."""
         self.lines = [""] * self.height

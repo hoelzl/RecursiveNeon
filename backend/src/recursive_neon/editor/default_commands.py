@@ -17,6 +17,7 @@ from recursive_neon.editor.mark import Mark
 if TYPE_CHECKING:
     from recursive_neon.editor.buffer import Buffer
     from recursive_neon.editor.editor import Editor
+    from recursive_neon.editor.window import Window
 
 _TUTORIAL_PATH = (
     Path(__file__).resolve().parent.parent / "initial_fs" / "Documents" / "TUTORIAL.txt"
@@ -933,6 +934,159 @@ def quit_editor(ed: Editor, prefix: int | None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Window commands
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _switch_to_window(ed: Editor, win: Window) -> None:
+    """Common logic: switch editor focus to *win*."""
+    # Switch editor's current buffer to the window's buffer
+    for i, b in enumerate(ed._buffers):
+        if b is win.buffer:
+            ed._current_index = i
+            break
+    # Restore window's point into buffer
+    win.sync_to_buffer()
+    # Update viewport
+    ed.viewport = win
+
+
+@defcommand(
+    "split-window-below",
+    "Split the current window into two, one above the other (C-x 2).",
+)
+def split_window_below(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.window import SplitDirection
+
+    tree = ed._window_tree
+    if tree is None:
+        ed.message = "No window system"
+        return
+    tree.active.sync_from_buffer()
+    tree.split(SplitDirection.HORIZONTAL)
+    ed.message = ""
+
+
+@defcommand(
+    "split-window-right",
+    "Split the current window side by side (C-x 3).",
+)
+def split_window_right(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.window import SplitDirection
+
+    tree = ed._window_tree
+    if tree is None:
+        ed.message = "No window system"
+        return
+    tree.active.sync_from_buffer()
+    tree.split(SplitDirection.VERTICAL)
+    ed.message = ""
+
+
+@defcommand("other-window", "Select the next window (C-x o).")
+def other_window(ed: Editor, prefix: int | None) -> None:
+    tree = ed._window_tree
+    if tree is None or tree.is_single():
+        ed.message = "Only one window"
+        return
+    tree.active.sync_from_buffer()
+    new = tree.next_window()
+    _switch_to_window(ed, new)
+
+
+@defcommand(
+    "delete-window",
+    "Delete the current window (C-x 0).",
+)
+def delete_window(ed: Editor, prefix: int | None) -> None:
+    tree = ed._window_tree
+    if tree is None or tree.is_single():
+        ed.message = "Attempt to delete sole ordinary window"
+        return
+    tree.active.sync_from_buffer()
+    new = tree.delete_window()
+    if new is not None:
+        _switch_to_window(ed, new)
+
+
+@defcommand(
+    "delete-other-windows",
+    "Make the current window fill the frame (C-x 1).",
+)
+def delete_other_windows(ed: Editor, prefix: int | None) -> None:
+    tree = ed._window_tree
+    if tree is None:
+        ed.message = "No window system"
+        return
+    if tree.is_single():
+        ed.message = "Already only one window"
+        return
+    tree.active.sync_from_buffer()
+    tree.delete_other_windows()
+    ed.message = ""
+
+
+@defcommand(
+    "scroll-other-window",
+    "Scroll the other window forward one screenful (C-M-v).",
+)
+def scroll_other_window(ed: Editor, prefix: int | None) -> None:
+    tree = ed._window_tree
+    if tree is None or tree.is_single():
+        ed.message = "Only one window"
+        return
+    other = tree.other_window()
+    if other is None:
+        ed.message = "Only one window"
+        return
+    n = prefix if prefix is not None else other.text_height
+    new_top = min(other.scroll_top + n, max(0, other.buffer.line_count - 1))
+    other.scroll_to(new_top)
+
+
+@defcommand(
+    "find-file-other-window",
+    "Open a file in the other window (C-x 4 C-f).",
+)
+def find_file_other_window(ed: Editor, prefix: int | None) -> None:
+    tree = ed._window_tree
+    if tree is None:
+        ed.message = "No window system"
+        return
+
+    def callback(path: str) -> None:
+        from recursive_neon.editor.window import SplitDirection
+
+        path = path.strip()
+        if not path:
+            return
+        # If only one window, split first
+        if tree.is_single():
+            tree.active.sync_from_buffer()
+            tree.split(SplitDirection.HORIZONTAL)
+        # Switch to the other window
+        tree.active.sync_from_buffer()
+        other = tree.other_window()
+        if other is not None:
+            tree.active = other
+            _switch_to_window(ed, other)
+        # Now open/switch to the file in this window
+        for buf in ed.buffers:
+            if buf.filepath == path:
+                ed.switch_to_buffer(buf.name)
+                ed.message = f"Switched to {buf.name}"
+                return
+        content = ""
+        if ed.open_callback is not None:
+            content = ed.open_callback(path)
+        name = path.rsplit("/", 1)[-1] if "/" in path else path
+        ed.create_buffer(name=name, text=content, filepath=path)
+        ed.message = f"Opened {path}" if content else f"(New file) {path}"
+
+    ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Default keymap
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1005,6 +1159,7 @@ def build_default_keymap() -> Keymap:
     km.bind("M-v", "scroll-down")
     km.bind("PageUp", "scroll-down")
     km.bind("C-l", "recenter")
+    km.bind("C-M-v", "scroll-other-window")
 
     # M-x
     km.bind("M-x", "execute-extended-command")
@@ -1032,6 +1187,16 @@ def build_default_keymap() -> Keymap:
     cx.bind("C-c", "quit-editor")
     cx.bind("u", "undo")
     cx.bind("f", "set-fill-column")
+    # Window commands
+    cx.bind("2", "split-window-below")
+    cx.bind("3", "split-window-right")
+    cx.bind("o", "other-window")
+    cx.bind("0", "delete-window")
+    cx.bind("1", "delete-other-windows")
+    # C-x 4 prefix map
+    cx4 = Keymap("C-x 4 prefix")
+    cx4.bind("C-f", "find-file-other-window")
+    cx.bind("4", cx4)
     km.bind("C-x", cx)
 
     return km
