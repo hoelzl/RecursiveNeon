@@ -7,6 +7,7 @@ global keymap.  Import this module to populate the command table.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from recursive_neon.editor.commands import defcommand
@@ -14,6 +15,10 @@ from recursive_neon.editor.keymap import Keymap
 
 if TYPE_CHECKING:
     from recursive_neon.editor.editor import Editor
+
+_TUTORIAL_PATH = (
+    Path(__file__).resolve().parent.parent / "initial_fs" / "Documents" / "TUTORIAL.txt"
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -59,6 +64,61 @@ def forward_word(ed: Editor, prefix: int | None) -> None:
 @defcommand("backward-word", "Move point backward one word.")
 def backward_word(ed: Editor, prefix: int | None) -> None:
     ed.buffer.backward_word(prefix if prefix is not None else 1)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Viewport scrolling
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand("scroll-up", "Scroll forward one screenful.")
+def scroll_up(ed: Editor, prefix: int | None) -> None:
+    vp = ed.viewport
+    if vp is None:
+        return
+    n = prefix if prefix is not None else vp.text_height
+    new_top = min(vp.scroll_top + n, max(0, ed.buffer.line_count - 1))
+    vp.scroll_to(new_top)
+    ed.buffer.point.move_to(new_top, 0)
+
+
+@defcommand("scroll-down", "Scroll backward one screenful.")
+def scroll_down(ed: Editor, prefix: int | None) -> None:
+    vp = ed.viewport
+    if vp is None:
+        return
+    n = prefix if prefix is not None else vp.text_height
+    new_top = max(0, vp.scroll_top - n)
+    vp.scroll_to(new_top)
+    target_line = min(new_top + vp.text_height - 1, ed.buffer.line_count - 1)
+    ed.buffer.point.move_to(target_line, 0)
+
+
+_RECENTER_POSITIONS = ("center", "top", "bottom")
+
+
+@defcommand(
+    "recenter",
+    "Center viewport around point; consecutive presses cycle center/top/bottom.",
+)
+def recenter(ed: Editor, prefix: int | None) -> None:
+    vp = ed.viewport
+    if vp is None:
+        return
+    cursor_line = ed.buffer.point.line
+
+    if ed._last_command_name == "recenter":
+        ed._recenter_index = (ed._recenter_index + 1) % 3
+    else:
+        ed._recenter_index = 0
+
+    position = _RECENTER_POSITIONS[ed._recenter_index]
+    if position == "center":
+        vp.scroll_to(cursor_line - vp.text_height // 2)
+    elif position == "top":
+        vp.scroll_to(cursor_line)
+    elif position == "bottom":
+        vp.scroll_to(cursor_line - vp.text_height + 1)
 
 
 @defcommand("beginning-of-buffer", "Move point to the beginning of the buffer.")
@@ -447,6 +507,24 @@ def command_apropos(ed: Editor, prefix: int | None) -> None:
     ed.start_minibuffer("Apropos command: ", callback)
 
 
+@defcommand("help-tutorial", "Open the neon-edit tutorial (C-h t).")
+def help_tutorial(ed: Editor, prefix: int | None) -> None:
+    # Switch to existing tutorial buffer if open
+    for buf in ed.buffers:
+        if buf.name == "TUTORIAL.txt":
+            ed.switch_to_buffer("TUTORIAL.txt")
+            return
+    # Load from disk
+    try:
+        text = _TUTORIAL_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        ed.message = "Tutorial file not found"
+        return
+    ed.create_buffer(name="TUTORIAL.txt", text=text)
+    ed.buffer.read_only = True
+    ed.buffer.modified = False
+
+
 def _show_help_buffer(ed: Editor, text: str) -> None:
     """Show text in a read-only *Help* buffer."""
     if not ed.switch_to_buffer("*Help*"):
@@ -535,6 +613,13 @@ def build_default_keymap() -> Keymap:
     km.bind("C-s", "isearch-forward")
     km.bind("C-r", "isearch-backward")
 
+    # Viewport scrolling
+    km.bind("C-v", "scroll-up")
+    km.bind("PageDown", "scroll-up")
+    km.bind("M-v", "scroll-down")
+    km.bind("PageUp", "scroll-down")
+    km.bind("C-l", "recenter")
+
     # M-x
     km.bind("M-x", "execute-extended-command")
 
@@ -542,6 +627,7 @@ def build_default_keymap() -> Keymap:
     ch = Keymap("C-h prefix")
     ch.bind("k", "describe-key")
     ch.bind("a", "command-apropos")
+    ch.bind("t", "help-tutorial")
     km.bind("C-h", ch)
 
     # C-x prefix map

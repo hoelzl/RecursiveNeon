@@ -1,0 +1,377 @@
+                    ╔══════════════════════════════════╗
+                    ║   NEON-EDIT TUTORIAL              ║
+                    ║   Recursive://Neon Text Editor    ║
+                    ╚══════════════════════════════════╝
+
+Welcome, operator.  You have gained access to neon-edit, the standard
+text editor on this system.  This tutorial will teach you the core
+commands you need to navigate data streams, manipulate text buffers,
+and move through the system efficiently.
+
+Neon-edit descends from an ancient line of editors dating back to the
+pre-Collapse era.  Its keybindings are terse but powerful — once your
+neural pathways adapt, you will be able to edit text at the speed of
+thought.
+
+NOTE: Throughout this tutorial, "C-" means hold Control and press the
+key.  "M-" means hold Alt (Meta) and press the key.  For example,
+"C-f" means Control+F, and "M-f" means Alt+F.
+
+
+* * *
+
+
+>> CHAPTER 1: MOVING THE CURSOR
+
+The most basic operation is moving your cursor (called "point" in
+neon-edit) through the text.  There are four fundamental movement
+keys:
+
+    C-f    Move forward one character
+    C-b    Move backward one character
+    C-n    Move to the next line
+    C-p    Move to the previous line
+
+You can also use the arrow keys, but experienced operators prefer
+C-f/C-b/C-n/C-p because your fingers never leave the home row.
+
+>> Try it now: use C-n to move down to the line marked with ">>"
+>> below, then use C-f to move to the end of the line.
+
+>> -------- move here and practice --------
+
+Good.  You can also move in larger jumps:
+
+    C-a    Move to the beginning of the line
+    C-e    Move to the end of the line
+    M-<    Move to the beginning of the buffer (Alt+Shift+<)
+    M->    Move to the end of the buffer (Alt+Shift+>)
+
+>> Practice: use C-a and C-e to jump between the beginning and
+>> end of this line.
+
+
+* * *
+
+
+>> CHAPTER 2: VIEWPORT SCROLLING
+
+This tutorial is longer than your screen.  When the text extends
+beyond the visible area, you need to scroll the viewport.
+
+    C-v       Scroll forward one screenful (PageDown)
+    M-v       Scroll backward one screenful (PageUp)
+    C-l       Re-center the display around point
+
+C-v moves the viewport forward by one screen.  Your cursor moves to
+the top of the new viewport.  M-v does the reverse — it scrolls
+backward, placing your cursor at the bottom of the viewport.
+
+C-l is particularly useful: the first press centers the current line
+in the viewport.  Press C-l again to place the current line at the
+top of the screen.  A third press puts it at the bottom.  The cycle
+then repeats.
+
+>> Try it: press C-v to scroll forward, then M-v to scroll back.
+>> Then press C-l a few times to see the cycling behavior.
+
+
+* * *
+
+
+>> CHAPTER 3: BASIC EDITING
+
+To insert text, simply type.  Each character is inserted at point.
+
+    Enter       Insert a newline
+    Backspace   Delete the character before point
+    C-d         Delete the character after point (also Delete key)
+
+>> Practice: move to the line below and fix the typo:
+
+     This lne has a misssing letter and an extra s.
+
+To undo a mistake:
+
+    C-/    Undo the last change (also C-_)
+
+You can press C-/ multiple times to undo further.  Neon-edit keeps
+a deep undo history — nothing is permanently lost until you close
+the buffer.
+
+
+* * *
+
+
+>> CHAPTER 4: KILL AND YANK (CUT AND PASTE)
+
+Neon-edit uses "kill" (cut) and "yank" (paste) for text transfer.
+Killed text goes onto the "kill ring", a stack of past kills.
+
+    C-k    Kill from point to the end of the line
+    C-w    Kill the region (selected text between point and mark)
+    C-y    Yank (paste) the most recent kill
+    M-y    After C-y, replace with the previous kill ring entry
+
+C-k is the workhorse.  On a non-empty line, it kills the text from
+point to the end.  On an empty line, it kills the newline itself.
+Consecutive C-k presses accumulate into a single kill ring entry,
+so killing three lines with C-k C-k C-k lets you yank them all back
+with a single C-y.
+
+You can also kill individual words:
+
+    M-d           Kill forward to end of word
+    M-Backspace   Kill backward to start of word
+
+>> Practice: use C-k to kill the following line, then move elsewhere
+>> and use C-y to yank it back:
+
+     NEON INDUSTRIES CLASSIFIED — Handle with care.
+
+
+* * *
+
+
+>> CHAPTER 5: MARK AND REGION
+
+To operate on a specific stretch of text, you set the "mark" to
+define one end of a region.  Point is the other end.
+
+    C-space   Set the mark at point
+    C-w       Kill the region (between mark and point)
+    C-g       Cancel (deactivate the mark)
+
+Workflow: move to the start of the text you want, press C-space,
+move to the end, then C-w to kill (or C-y to copy after killing).
+
+>> Practice: use C-space, move with C-f/C-n, then C-w to kill the
+>> text "DELETE THIS" from the line below:
+
+     Keep this DELETE THIS but not that.
+
+
+* * *
+
+
+>> CHAPTER 6: WORD MOVEMENT
+
+For faster navigation, move by words instead of characters:
+
+    M-f    Move forward one word
+    M-b    Move backward one word
+
+Combined with kill:
+
+    M-d           Kill from point to end of word
+    M-Backspace   Kill from point to beginning of word
+
+>> Practice: use M-f and M-b to jump through this line:
+
+     quantum-encrypted data-stream buffer-overflow exploit-chain
+
+
+* * *
+
+
+>> CHAPTER 7: SEARCH
+
+To find text in the buffer, use incremental search:
+
+    C-s   Search forward (I-search)
+    C-r   Search backward
+
+As you type the search string, point jumps to the first match.
+Press C-s again to find the next match.  Press Enter to stop
+searching at the current match, or C-g to cancel and return to
+where you started.
+
+>> Practice: press C-s and type "NEON" to find occurrences in
+>> this tutorial.  Press C-s again to jump to the next match.
+
+
+* * *
+
+
+>> CHAPTER 8: FILES AND BUFFERS
+
+Neon-edit can have multiple buffers open simultaneously.  Each
+buffer holds a piece of text — usually a file, but also special
+buffers like *scratch* or *Help*.
+
+    C-x C-f   Find (open) a file
+    C-x C-s   Save the current buffer
+    C-x C-w   Write buffer to a new file path
+    C-x b     Switch to a different buffer
+    C-x k     Kill (close) a buffer
+    C-x C-b   List all open buffers
+
+When you open a file with C-x C-f, neon-edit prompts for a path.
+Tab completion is available.  If the file doesn't exist, a new
+empty buffer is created.
+
+>> Practice: press C-x C-b to see the list of open buffers.
+
+
+* * *
+
+
+>> CHAPTER 9: GETTING HELP
+
+Neon-edit has a built-in help system:
+
+    C-h k   Describe a key binding (press the key after C-h k)
+    C-h a   Search commands by name (apropos)
+    C-h t   Open this tutorial
+
+C-h k is especially useful: after pressing it, type any key
+sequence and neon-edit will tell you what command it runs.
+
+>> Practice: press C-h k, then press C-f.  You should see a
+>> *Help* buffer describing the forward-char command.  Switch
+>> back with C-x b.
+
+
+* * *
+
+
+>> CHAPTER 10: SENTENCE MOTION  [NOT YET IMPLEMENTED]
+
+Sentence motion commands allow you to jump between sentences:
+
+    M-a    Move backward to the beginning of the sentence
+    M-e    Move forward to the end of the sentence
+    M-k    Kill to the end of the sentence
+
+These commands recognize sentences as text ending with ".", "?",
+or "!" followed by whitespace.  They will be available in a future
+system update.
+
+
+* * *
+
+
+>> CHAPTER 11: FIND AND REPLACE  [NOT YET IMPLEMENTED]
+
+To replace text throughout the buffer:
+
+    M-x replace-string   Replace all occurrences from point to end
+
+This prompts for a search string, then a replacement.  All matches
+from point onward are replaced.  The entire replacement can be
+undone as a single operation with C-/.
+
+This command will be available in a future system update.
+
+
+* * *
+
+
+>> CHAPTER 12: TEXT FILLING  [NOT YET IMPLEMENTED]
+
+When writing prose, paragraphs can be reformatted to a specific
+width:
+
+    M-q             Fill (rewrap) the current paragraph
+    C-x f           Set the fill column (default: 70)
+    M-x auto-fill   Toggle auto-fill mode (auto-wrap on typing)
+
+These commands will be available in a future system update.
+
+
+* * *
+
+
+>> CHAPTER 13: WINDOWS  [NOT YET IMPLEMENTED]
+
+Neon-edit can split the display to show multiple buffers at once:
+
+    C-x 2     Split window horizontally (above/below)
+    C-x 3     Split window vertically (side by side)
+    C-x o     Switch to the other window
+    C-x 0     Delete the current window
+    C-x 1     Delete all other windows
+
+Window management will be available in a future system update.
+
+
+* * *
+
+
+>> CHAPTER 14: SHELL MODE  [NOT YET IMPLEMENTED]
+
+The ultimate integration — run the system shell inside an editor
+buffer:
+
+    M-x shell   Open a shell in a buffer
+
+This allows you to run commands, see their output, and edit the
+command line with all of neon-edit's editing power.  Copy text
+between shell output and other buffers seamlessly.
+
+Shell mode will be available in a future system update.
+
+
+* * *
+
+
+>> QUICK REFERENCE
+
+Movement:
+    C-f / C-b       Forward / backward one character
+    C-n / C-p       Next / previous line
+    C-a / C-e       Beginning / end of line
+    M-f / M-b       Forward / backward one word
+    M-< / M->       Beginning / end of buffer
+    C-v / M-v       Scroll forward / backward one screenful
+    C-l             Re-center display
+
+Editing:
+    Backspace       Delete character before point
+    C-d             Delete character after point
+    C-k             Kill to end of line
+    C-w             Kill region
+    M-d             Kill word forward
+    M-Backspace     Kill word backward
+    C-y             Yank (paste)
+    M-y             Yank previous kill
+    C-/             Undo
+
+Search:
+    C-s             Incremental search forward
+    C-r             Incremental search backward
+
+Mark:
+    C-space         Set mark
+
+Files & Buffers:
+    C-x C-f         Find (open) file
+    C-x C-s         Save buffer
+    C-x C-w         Write buffer to new path
+    C-x b           Switch buffer
+    C-x k           Kill buffer
+    C-x C-b         List buffers
+
+Help:
+    C-h k           Describe key
+    C-h a           Command apropos
+    C-h t           Open this tutorial
+
+Control:
+    C-g             Cancel / keyboard-quit
+    C-x C-c         Exit neon-edit
+
+
+* * *
+
+
+End of tutorial.  You are now equipped to operate neon-edit.
+Remember: the system rewards efficiency.  Learn the keybindings,
+and the data will flow through your fingers like light through
+fiber optics.
+
+    "In the neon dark, the fast survive." — Operator's Proverb
+
+
+Copyright 2025-2026 Recursive://Neon contributors.
+Licensed under the Apache License, Version 2.0.

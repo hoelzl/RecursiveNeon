@@ -31,6 +31,8 @@ class EditorView:
         self._width: int = 80
         self._height: int = 24
         self._scroll_top: int = 0  # first visible line
+        # Register as the viewport so scroll commands can reach us
+        self.editor.viewport = self
 
     # ------------------------------------------------------------------
     # TuiApp protocol
@@ -55,13 +57,26 @@ class EditorView:
         return self._render()
 
     # ------------------------------------------------------------------
-    # Rendering
+    # Viewport protocol
     # ------------------------------------------------------------------
 
     @property
-    def _text_height(self) -> int:
-        """Number of rows available for buffer text (excluding modeline + message)."""
+    def scroll_top(self) -> int:
+        """First visible line index (Viewport protocol)."""
+        return self._scroll_top
+
+    @property
+    def text_height(self) -> int:
+        """Number of rows available for buffer text (Viewport protocol)."""
         return max(1, self._height - 2)
+
+    def scroll_to(self, line: int) -> None:
+        """Set the first visible line, clamped to >= 0 (Viewport protocol)."""
+        self._scroll_top = max(0, line)
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
 
     def _render(self) -> ScreenBuffer:
         """Render the current editor state into a ScreenBuffer."""
@@ -72,7 +87,7 @@ class EditorView:
         self._ensure_cursor_visible(buf.point.line)
 
         # Render text lines
-        for row in range(self._text_height):
+        for row in range(self.text_height):
             line_idx = self._scroll_top + row
             if line_idx < buf.line_count:
                 line_text = buf.lines[line_idx]
@@ -83,11 +98,11 @@ class EditorView:
                 screen.set_line(row, "~")
 
         # Modeline
-        modeline_row = self._text_height
+        modeline_row = self.text_height
         screen.set_line(modeline_row, self._render_modeline())
 
         # Message line / minibuffer
-        message_row = self._text_height + 1
+        message_row = self.text_height + 1
         if message_row < self._height:
             if self.editor.minibuffer is not None:
                 mb = self.editor.minibuffer
@@ -111,8 +126,8 @@ class EditorView:
         """Scroll the viewport so that cursor_line is visible."""
         if cursor_line < self._scroll_top:
             self._scroll_top = cursor_line
-        elif cursor_line >= self._scroll_top + self._text_height:
-            self._scroll_top = cursor_line - self._text_height + 1
+        elif cursor_line >= self._scroll_top + self.text_height:
+            self._scroll_top = cursor_line - self.text_height + 1
 
     def _render_modeline(self) -> str:
         """Render the Emacs-style modeline."""

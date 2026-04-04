@@ -28,6 +28,7 @@ from recursive_neon.editor.undo import (
     UndoEntry,
     UndoInsert,
 )
+from recursive_neon.editor.viewport import Viewport
 
 __all__ = [
     "Buffer",
@@ -42,6 +43,7 @@ __all__ = [
     "UndoDelete",
     "UndoEntry",
     "UndoInsert",
+    "Viewport",
     "build_default_keymap",
     "defcommand",
     "get_command",

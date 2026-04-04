@@ -95,3 +95,45 @@ class TestCommandApropos:
         assert ed.buffer.name == "*Help*"
         # Should find kill-line, kill-region, kill-word, etc.
         assert "kill-line" in ed.buffer.text
+
+
+class TestHelpTutorial:
+    def test_opens_tutorial_buffer(self):
+        ed = make_editor()
+        ed.process_key("C-h")
+        ed.process_key("t")
+        assert ed.buffer.name == "TUTORIAL.txt"
+
+    def test_tutorial_is_read_only(self):
+        ed = make_editor()
+        ed.process_key("C-h")
+        ed.process_key("t")
+        assert ed.buffer.read_only
+
+    def test_tutorial_not_modified(self):
+        ed = make_editor()
+        ed.process_key("C-h")
+        ed.process_key("t")
+        assert not ed.buffer.modified
+
+    def test_tutorial_contains_expected_text(self):
+        ed = make_editor()
+        ed.process_key("C-h")
+        ed.process_key("t")
+        assert "NEON-EDIT TUTORIAL" in ed.buffer.text
+        assert "C-f" in ed.buffer.text
+
+    def test_reopening_switches_to_existing_buffer(self):
+        ed = make_editor()
+        ed.process_key("C-h")
+        ed.process_key("t")
+        # Switch away
+        ed.switch_to_buffer("*scratch*")
+        assert ed.buffer.name == "*scratch*"
+        # Open tutorial again
+        ed.process_key("C-h")
+        ed.process_key("t")
+        assert ed.buffer.name == "TUTORIAL.txt"
+        # Should still be only one TUTORIAL.txt buffer
+        tutorial_bufs = [b for b in ed.buffers if b.name == "TUTORIAL.txt"]
+        assert len(tutorial_bufs) == 1

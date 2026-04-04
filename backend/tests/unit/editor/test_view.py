@@ -67,21 +67,21 @@ class TestViewRendering:
         view = make_view("hello")
         view.editor.buffer.modified = True
         screen = view._render()
-        modeline = screen.lines[view._text_height]
+        modeline = screen.lines[view.text_height]
         assert "**" in modeline
 
     def test_modeline_shows_unmodified(self):
         view = make_view("hello")
         view.editor.buffer.modified = False
         screen = view._render()
-        modeline = screen.lines[view._text_height]
+        modeline = screen.lines[view.text_height]
         assert "--" in modeline
 
     def test_modeline_shows_filepath(self):
         view = make_view("hello")
         view.editor.buffer.filepath = "Documents/notes.txt"
         screen = view._render()
-        modeline = screen.lines[view._text_height]
+        modeline = screen.lines[view.text_height]
         assert "Documents/notes.txt" in modeline
 
     def test_modeline_shows_line_col(self):
@@ -89,14 +89,14 @@ class TestViewRendering:
         view.editor.buffer.point.line = 1
         view.editor.buffer.point.col = 3
         screen = view._render()
-        modeline = screen.lines[view._text_height]
+        modeline = screen.lines[view.text_height]
         assert "L2:C3" in modeline
 
     def test_message_line(self):
         view = make_view("hello")
         view.editor.message = "Mark set"
         screen = view._render()
-        message_row = view._text_height + 1
+        message_row = view.text_height + 1
         assert screen.lines[message_row] == "Mark set"
 
 
@@ -151,7 +151,7 @@ class TestViewScrolling:
         screen = view._render()
         # Scroll should have adjusted so line 5 is visible
         assert view._scroll_top <= 5
-        assert view._scroll_top + view._text_height > 5
+        assert view._scroll_top + view.text_height > 5
         # Cursor row should be relative to viewport
         assert screen.cursor_row == 5 - view._scroll_top
 
@@ -184,7 +184,7 @@ class TestViewScrolling:
                 view.on_key(ch)
         # Should have scrolled to keep cursor visible
         assert view._scroll_top > 0
-        assert view.editor.buffer.point.line - view._scroll_top < view._text_height
+        assert view.editor.buffer.point.line - view._scroll_top < view.text_height
 
 
 # ═══════════════════════════════════════════════════════════════════════

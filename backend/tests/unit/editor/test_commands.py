@@ -304,6 +304,18 @@ class TestEditorPrefixArg:
         ed.process_key("C-f")
         assert ed.buffer.point.col == 5  # 4 + 1
 
+    def test_c_u_digit_works_after_prior_command(self):
+        """C-u <digit> should replace the default 4 even after a prior command."""
+        ed = make_editor("a" * 20)
+        # Execute a command first to ensure _prefix_has_digits is reset
+        ed.process_key("C-f")
+        assert ed.buffer.point.col == 1
+        # Now C-u 3 should give prefix 3, not 43
+        ed.process_key("C-u")
+        ed.process_key("3")
+        ed.process_key("C-f")
+        assert ed.buffer.point.col == 4  # 1 + 3
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Unknown keys

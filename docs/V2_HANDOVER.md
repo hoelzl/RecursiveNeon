@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6d complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser). 1031 tests. Phase 7 (browser GUI) next.
+> **Status**: Phases 0-6e complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial). 1073 tests. Phase 6f (sentence motion, help commands, save-some-buffers) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -114,9 +114,10 @@ backend/
       commands.py                     # Command dataclass, @defcommand decorator, COMMANDS registry
       keymap.py                       # Keymap class: key bindings with parent inheritance
       editor.py                       # Editor coordinator: buffer list, key dispatch, prefix arg, help, remove_buffer
-      default_commands.py             # 45+ Emacs-style commands + global/C-x/C-h keymaps (incl. kill-buffer)
+      default_commands.py             # 50+ Emacs-style commands + global/C-x/C-h keymaps (incl. scroll, tutorial)
       minibuffer.py                   # Single-line input widget with completion (M-x, C-x C-f, etc.)
-      view.py                         # EditorView (TuiApp): rendering, scrolling, modeline
+      view.py                         # EditorView (TuiApp): rendering, scrolling, modeline, Viewport protocol
+      viewport.py                     # Viewport protocol: scroll_top, text_height, scroll_to (Phase 6e)
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -148,7 +149,7 @@ backend/
       client.py                       # Interactive WS client using prompt_toolkit
     initial_fs/                       # Sample files for virtual filesystem init
       welcome.txt
-      Documents/{readme.txt, sample.txt, my test file.txt}
+      Documents/{readme.txt, sample.txt, my test file.txt, TUTORIAL.txt}
       My Folder/another file.txt
       Pictures/about.txt
       Projects/my-first-project.txt
@@ -185,13 +186,16 @@ backend/
     unit/editor/test_undo.py          # Undo/redo round-trips, boundaries, chains (22 tests)
     unit/editor/test_killring.py      # Kill ring: push, rotate, append, kill merging (37 tests)
     unit/editor/test_keymap.py        # Keymap bind, lookup, parent inheritance (13 tests)
-    unit/editor/test_commands.py      # Command registry, dispatch, prefix arg (40 tests)
+    unit/editor/test_commands.py      # Command registry, dispatch, prefix arg (41 tests)
     unit/editor/test_minibuffer.py    # Minibuffer input, completion, callbacks, kill-buffer (38+17 tests)
     unit/editor/test_buffer_keymap.py # Buffer-local keymaps, callable targets, on_focus (Phase 6d)
     unit/editor/test_view.py          # EditorView rendering, scrolling, modeline (26 tests)
     unit/editor/test_word_movement.py # Word movement, additional keys, read-only buffers (30 tests)
     unit/editor/test_isearch.py       # Incremental search: find, isearch dispatch (21 tests)
-    unit/editor/test_help.py          # Help system: describe-key, apropos (9 tests)
+    unit/editor/test_help.py          # Help system: describe-key, apropos, tutorial (14 tests)
+    unit/editor/harness.py            # EditorHarness: TUI-level test driver (Phase 6e)
+    unit/editor/test_harness.py       # Harness self-tests (14 tests, Phase 6e)
+    unit/editor/test_scroll.py        # Viewport scroll commands + recenter (22 tests, Phase 6e)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -288,7 +292,84 @@ Interactive notes browser inside the editor. Loose coupling approach: a `*Notes*
 - Windows C-h / Backspace disambiguation via `_win_ctrl_pressed()`
 - 1031 total tests (51 new: 12 notes browser, 8 buffer-local keymaps, 7 callable targets, 5 kill-buffer, 3 prefix display, 3 on_focus, plus supporting tests).
 
-### Phase 7: Browser Terminal + Desktop GUI
+#### 6e. Test harness + viewport scrolling + tutorial document — **COMPLETE**
+Programmatic test harness for TUI-level editor testing, viewport scrolling commands, game-themed tutorial document, and a bugfix for C-u prefix digit parsing.
+
+- `EditorHarness` class (`tests/unit/editor/harness.py`): `send_keys(*keys)`, `type_string(s)`, `screen_text(row)`, `screen_lines()`, `cursor_position()`, `message_line()`, `modeline()`, `buffer_text()`, `point()`. Factory: `make_harness(text, width, height)`. ANSI auto-stripping on all screen accessors.
+- `Viewport` protocol (`editor/viewport.py`): `scroll_top`, `text_height`, `scroll_to`. EditorView implements it and sets `editor.viewport = self`. Commands fall back gracefully when viewport is None (headless).
+- `scroll-up` (C-v / PageDown): forward one screenful, move point to top of new viewport
+- `scroll-down` (M-v / PageUp): backward one screenful, move point to bottom of new viewport
+- `recenter` (C-l): center viewport around point; consecutive presses cycle center/top/bottom
+- Tutorial document (`initial_fs/Documents/TUTORIAL.txt`): ~280-line game-themed tutorial (Apache 2.0), Emacs tutorial pedagogical structure, 14 chapters. Chapters 10-14 marked `[NOT YET IMPLEMENTED]`.
+- `help-tutorial` (C-h t): opens the tutorial in a read-only buffer; re-opening switches to existing buffer
+- Bugfix: C-u prefix digit parsing — `_prefix_has_digits` now properly initialized and reset, fixing a bug where digits after C-u failed to replace the default 4 after any prior command had executed
+- 1073 total tests (42 new: 14 harness, 22 scroll/viewport, 5 tutorial, 1 prefix-arg fix)
+
+#### 6f. Sentence motion, undo alias, help commands, save-some-buffers
+**Goal**: Implement the "easy" missing tutorial commands — straightforward features that don't require new infrastructure.
+
+- Sentence motion on Buffer: `forward_sentence`, `backward_sentence` (sentence ends at `.`/`?`/`!` followed by whitespace or end-of-line)
+- `backward-sentence` (M-a), `forward-sentence` (M-e), `kill-sentence` (M-k)
+- `C-x u` → undo (keybinding alias in C-x prefix keymap)
+- `describe-key-briefly` (C-h c): show binding in message area (not *Help* buffer)
+- `describe-mode` (C-h m): show current mode and key bindings in *Help* buffer
+- `where-is` (C-h x): prompt for command name, show which key(s) it's bound to (reverse keymap lookup)
+- `save-some-buffers` (C-x s): iterate modified buffers with y/n minibuffer prompt, save confirmed ones
+
+#### 6g. Variable system + mode infrastructure
+**Goal**: Implement an editor variable system with Python-based configuration and a mode infrastructure. Foundation for fill-column, auto-fill-mode, and per-mode keymaps. Also enables future in-game extensibility.
+
+- `EditorVariable` dataclass (`editor/variables.py`): `name`, `default`, `doc`, `type`. Global `VARIABLES` registry. `defvar()` registration function.
+- `Editor.get_variable(name)`: checks buffer-local → minor mode → major mode → global default
+- `Editor.set_variable(name, value)`, `Buffer.set_variable_local(name, value)`, `Buffer.local_variables` dict
+- Built-in variables: `fill-column` (70), `tab-width` (8), `indent-tabs-mode` (False), `truncate-lines` (True), `auto-fill` (False)
+- `describe-variable` (C-h v): prompt with completion, show value + docs in *Help* buffer
+- `set-variable` (M-x set-variable): prompt for name + value, validate type
+- `Mode` dataclass (`editor/modes.py`): `name`, `keymap`, `is_major`, `variables`, `on_enter`/`on_exit`, `doc`. Global `MODES` registry.
+- `Buffer.major_mode`, `Buffer.minor_modes`. Keymap resolution updated: buffer-local > minor mode > major mode > global.
+- Built-in modes: `fundamental-mode` (default), `text-mode` (sets auto-fill True)
+- Python-based configuration file support for setting variables
+
+#### 6h. Replace string + text filling
+**Goal**: Implement the text manipulation commands the tutorial covers: interactive find/replace and paragraph filling.
+
+- `replace-string` (M-x replace-string): two sequential minibuffer prompts (search, replacement), replaces all from point to end of buffer, reports count, undoable as one group
+- `fill-paragraph` (M-q): rewrap current paragraph to `fill-column` width, paragraph boundaries at blank lines
+- `set-fill-column` (C-x f): with prefix arg sets to that value, without sets to current column
+- `auto-fill-mode` (M-x auto-fill-mode): minor mode toggle, auto-breaks lines at fill-column during self-insert. Modeline shows "Fill" when active.
+
+#### 6i. Window system
+**Goal**: Emacs-style window splitting so a single frame displays multiple buffers simultaneously. The prerequisite for shell-in-editor and the "desktop environment" vision.
+
+- `Window` class (`editor/window.py`): `buffer`, `point` (Mark), `mark`, `scroll_top`, `height`, `width`, `top`, `left`. Window-local cursor and scroll state.
+- `WindowNode` / `WindowTree`: binary tree of horizontal/vertical splits. Leaf = Window, internal node = split direction + children. `split_horizontally`, `split_vertically`, `delete_window`, `next_window`.
+- **Dual-point strategy** for backward compatibility: `Buffer.point` remains for headless/single-window tests. `Window.point` is the active cursor in windowed mode. On window switch, sync point between window and buffer. Existing 1100+ tests continue to work unchanged.
+- EditorView refactored: renders window tree into ScreenBuffer. Each window gets its own text region + modeline. Active window visually distinct. Vertical dividers for horizontal splits.
+- `split-window-below` (C-x 2), `split-window-right` (C-x 3), `other-window` (C-x o), `delete-window` (C-x 0), `delete-other-windows` (C-x 1), `scroll-other-window` (C-M-v), `find-file-other-window` (C-x 4 C-f)
+
+#### 6j. Shell-in-editor (shell mode)
+**Goal**: Run the game's shell inside an editor window, like Emacs `M-x shell`. The keystone feature that makes neon-edit the game's "desktop environment."
+
+- Shell mode (`editor/shell_mode.py`): major mode with `shell-mode-map` keymap. Output region read-only, input region after prompt editable.
+- Comint model with in-process Shell: `ShellBufferInput` (asyncio queue, feeds lines on Enter) and `ShellBufferOutput` (appends text to buffer at output marker). No subprocess — our Shell is a Python object.
+- `shell` (M-x shell): creates `*shell*` buffer in shell mode, wires to Shell instance
+- `comint-send-input` (Enter in shell mode): send input line to shell
+- `comint-previous-input` (M-p) / `comint-next-input` (M-n): history navigation
+- Tab completion in shell buffer reuses shell's completion infrastructure
+- Raw-mode TUI apps inside the shell buffer are **deferred** — only cooked-mode shell interaction in this phase
+
+#### 6k. Tutorial verification + polish
+**Goal**: Verify every feature in the tutorial works end-to-end. Fix gaps, polish UX.
+
+- Integration test: programmatic walk-through of entire tutorial using EditorHarness, verifying expected behavior for every exercise
+- Remove all `[NOT YET IMPLEMENTED]` tags from TUTORIAL.txt
+- `describe-bindings` (C-h b): show all active keybindings in *Help* buffer
+- Modeline improvements: show major mode name, minor mode indicators
+- Edge case fixes discovered during walk-through
+- Documentation updates (handover, CLAUDE.md, SHELL_DESIGN.md)
+- Add neon-edit-specific sections to tutorial (shell mode, Python config, game world integration)
+
+### Phase 8: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.
 
 Tasks:

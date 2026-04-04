@@ -11,13 +11,16 @@ Undo boundaries are inserted automatically between commands.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.minibuffer import CompleterFn, Minibuffer
+
+if TYPE_CHECKING:
+    from recursive_neon.editor.viewport import Viewport
 
 
 class Editor:
@@ -42,6 +45,7 @@ class Editor:
         # Prefix argument (C-u): None = no prefix, int = numeric arg
         self._prefix_arg: int | None = None
         self._building_prefix: bool = False
+        self._prefix_has_digits: bool = False
 
         # Message to display (e.g., "C-x-" while waiting for second key)
         self.message: str = ""
@@ -71,6 +75,12 @@ class Editor:
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
         self._last_command_name: str = ""
+
+        # Viewport — set by EditorView when attached, None in headless mode
+        self.viewport: Viewport | None = None
+
+        # Recenter cycle index (center=0, top=1, bottom=2)
+        self._recenter_index: int = 0
 
     # ------------------------------------------------------------------
     # Buffer management
@@ -242,13 +252,14 @@ class Editor:
         else:
             self._prefix_arg *= 4
         self._building_prefix = True
+        self._prefix_has_digits = False
         self.message = f"C-u {self._prefix_arg}"
 
     def _extend_prefix_digit(self, digit: str) -> None:
         """Extend the prefix argument with a digit."""
         if self._prefix_arg is not None and self._building_prefix:
             # First digit replaces the default 4
-            if self._prefix_arg == 4 and not hasattr(self, "_prefix_has_digits"):
+            if self._prefix_arg == 4 and not self._prefix_has_digits:
                 self._prefix_arg = int(digit)
                 self._prefix_has_digits = True
             else:
