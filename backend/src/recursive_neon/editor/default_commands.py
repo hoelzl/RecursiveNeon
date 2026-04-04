@@ -12,8 +12,10 @@ from typing import TYPE_CHECKING
 
 from recursive_neon.editor.commands import defcommand
 from recursive_neon.editor.keymap import Keymap
+from recursive_neon.editor.mark import Mark
 
 if TYPE_CHECKING:
+    from recursive_neon.editor.buffer import Buffer
     from recursive_neon.editor.editor import Editor
 
 _TUTORIAL_PATH = (
@@ -154,6 +156,32 @@ def self_insert_command(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.insert_char(key)
+    # Auto-fill: break line at fill-column when typing a space
+    if key == " " and ed.get_variable("auto-fill"):
+        fill_col = ed.get_variable("fill-column") or 70
+        buf = ed.buffer
+        if buf.point.col > fill_col:
+            _auto_fill_break(buf, fill_col)
+
+
+def _auto_fill_break(buf: Buffer, fill_col: int) -> None:
+    """Break the current line at the last space before *fill_col*."""
+    line = buf.lines[buf.point.line]
+    # Find the last space at or before fill_col
+    break_col = line.rfind(" ", 0, fill_col)
+    if break_col <= 0:
+        return
+    # Replace the space with a newline
+    saved_line = buf.point.line
+    saved_col = buf.point.col
+    buf.point.move_to(saved_line, break_col)
+    buf.delete_char_forward()  # remove the space
+    buf.insert_char("\n")
+    # Restore point relative to the break
+    if saved_col > break_col:
+        buf.point.move_to(saved_line + 1, saved_col - break_col - 1)
+    else:
+        buf.point.move_to(saved_line, saved_col)
 
 
 @defcommand("newline", "Insert a newline.")
@@ -743,6 +771,150 @@ def save_some_buffers(ed: Editor, prefix: int | None) -> None:
     _ask_next()
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Replace
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand(
+    "replace-string",
+    "Replace occurrences of a string from point to end of buffer.",
+)
+def replace_string(ed: Editor, prefix: int | None) -> None:
+    def ask_search(search: str) -> None:
+        search = search.strip()
+        if not search:
+            return
+
+        def ask_replacement(replacement: str) -> None:
+            buf = ed.buffer
+            count = 0
+            # Single undo group for the entire replacement
+            buf.add_undo_boundary()
+            ln = buf.point.line
+            col = buf.point.col
+            while True:
+                pos = buf.find_forward(search, ln, col)
+                if pos is None:
+                    break
+                # Move point to start of match, delete match, insert replacement
+                buf.point.move_to(pos[0], pos[1])
+                end = Mark(pos[0], pos[1] + len(search))
+                # Handle multi-line search strings would need more, but
+                # for now search is single-line (find_forward is line-based)
+                buf.delete_region(buf.point.copy(), end)
+                buf.insert_string(replacement)
+                count += 1
+                # Continue from after the replacement
+                ln = buf.point.line
+                col = buf.point.col
+            buf.add_undo_boundary()
+            if count:
+                ed.message = f"Replaced {count} occurrence{'s' if count != 1 else ''}"
+            else:
+                ed.message = "No matches"
+
+        ed.start_minibuffer(f"Replace string {search} with: ", ask_replacement)
+
+    ed.start_minibuffer("Replace string: ", ask_search)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Fill / paragraph
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _find_paragraph_bounds(buf: Buffer, line: int) -> tuple[int, int]:
+    """Return (start_line, end_line) of the paragraph containing *line*.
+
+    A paragraph is delimited by blank lines (or buffer boundaries).
+    *end_line* is inclusive.
+    """
+    # Search backward for paragraph start
+    start = line
+    while start > 0 and buf.lines[start - 1].strip():
+        start -= 1
+    # Search forward for paragraph end
+    end = line
+    while end < buf.line_count - 1 and buf.lines[end + 1].strip():
+        end += 1
+    return start, end
+
+
+def _fill_lines(lines: list[str], fill_column: int) -> list[str]:
+    """Re-flow *lines* into a paragraph wrapped at *fill_column*."""
+    # Join all words
+    words: list[str] = []
+    for line in lines:
+        words.extend(line.split())
+    if not words:
+        return [""]
+
+    result: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        if len(current) + 1 + len(word) <= fill_column:
+            current += " " + word
+        else:
+            result.append(current)
+            current = word
+    result.append(current)
+    return result
+
+
+@defcommand(
+    "fill-paragraph",
+    "Rewrap the current paragraph to fill-column width (M-q).",
+)
+def fill_paragraph(ed: Editor, prefix: int | None) -> None:
+    buf = ed.buffer
+    if buf.read_only:
+        ed.message = "Buffer is read-only"
+        return
+    # If point is on a blank line, nothing to fill
+    if not buf.lines[buf.point.line].strip():
+        ed.message = "No paragraph to fill"
+        return
+    fill_col = ed.get_variable("fill-column") or 70
+    start, end = _find_paragraph_bounds(buf, buf.point.line)
+    para_lines = buf.lines[start : end + 1]
+    new_lines = _fill_lines(para_lines, fill_col)
+    if new_lines == para_lines:
+        ed.message = "Paragraph unchanged"
+        return
+    # Replace the paragraph text
+    buf.add_undo_boundary()
+    start_mark = Mark(start, 0)
+    end_mark = Mark(end, len(buf.lines[end]))
+    buf.delete_region(start_mark, end_mark)
+    buf.point.move_to(start, 0)
+    buf.insert_string("\n".join(new_lines))
+    buf.add_undo_boundary()
+    ed.message = "Filled paragraph"
+
+
+@defcommand(
+    "set-fill-column",
+    "Set the fill column (C-x f). With prefix arg, set to that value.",
+)
+def set_fill_column(ed: Editor, prefix: int | None) -> None:
+    if prefix is not None:
+        ed.set_variable("fill-column", prefix)
+        ed.message = f"fill-column set to {prefix}"
+    else:
+        col = ed.buffer.point.col
+        ed.set_variable("fill-column", col)
+        ed.message = f"fill-column set to {col}"
+
+
+@defcommand(
+    "auto-fill-mode",
+    "Toggle auto-fill minor mode.",
+)
+def auto_fill_mode(ed: Editor, prefix: int | None) -> None:
+    ed.toggle_minor_mode("auto-fill-mode")
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     if ed.save_callback is None:
@@ -787,6 +959,9 @@ def build_default_keymap() -> Keymap:
     km.bind("M-e", "forward-sentence")
     km.bind("M-a", "backward-sentence")
     km.bind("M-k", "kill-sentence")
+
+    # Fill
+    km.bind("M-q", "fill-paragraph")
 
     # Arrow keys
     km.bind("ArrowRight", "forward-char")
@@ -856,6 +1031,7 @@ def build_default_keymap() -> Keymap:
     cx.bind("C-b", "list-buffers")
     cx.bind("C-c", "quit-editor")
     cx.bind("u", "undo")
+    cx.bind("f", "set-fill-column")
     km.bind("C-x", cx)
 
     return km

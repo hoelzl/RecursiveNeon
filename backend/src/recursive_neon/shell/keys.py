@@ -56,113 +56,113 @@ CTRL_KEYS: dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # Platform-specific raw key reading
+#
+# Guarded with sys.platform so mypy only type-checks the branch that
+# matches the analysis platform (avoids attr-defined errors for
+# ctypes.windll on Linux and termios on Windows).
 # ---------------------------------------------------------------------------
 
-
-def _win_alt_pressed() -> bool:
-    """Check whether Alt is physically held using the Win32 API.
-
-    ``msvcrt.getwch()`` on Windows Terminal silently drops the Alt
-    modifier for regular letter keys, so we probe the hardware state
-    via ``GetAsyncKeyState(VK_MENU)`` immediately after each read.
-    """
+if sys.platform == "win32":
     import ctypes
-
-    VK_MENU = 0x12  # Alt key (either left or right)
-    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-
-
-def _win_ctrl_pressed() -> bool:
-    """Check whether Ctrl is physically held using the Win32 API.
-
-    Used to distinguish Backspace (\\x08 without Ctrl) from C-h
-    (\\x08 with Ctrl) on Windows, where both produce the same byte.
-    """
-    import ctypes
-
-    VK_CONTROL = 0x11
-    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
-
-
-def read_key_windows() -> str:
-    """Read a single key on Windows using msvcrt + Win32 Alt detection."""
     import msvcrt
 
-    ch = msvcrt.getwch()
-    alt = _win_alt_pressed()
+    def _win_alt_pressed() -> bool:
+        """Check whether Alt is physically held using the Win32 API.
 
-    # Special keys start with \x00 or \xe0
-    if ch in ("\x00", "\xe0"):
-        ch2 = msvcrt.getwch()
-        key = WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
-        return f"M-{key}" if alt else key
+        ``msvcrt.getwch()`` on Windows Terminal silently drops the Alt
+        modifier for regular letter keys, so we probe the hardware state
+        via ``GetAsyncKeyState(VK_MENU)`` immediately after each read.
+        """
+        VK_MENU = 0x12  # Alt key (either left or right)
+        return bool(ctypes.windll.user32.GetAsyncKeyState(VK_MENU) & 0x8000)
 
-    # \x08: Backspace and Ctrl-H both produce this on Windows.
-    # Distinguish by checking whether Ctrl is physically held.
-    if ch == "\x08":
-        key = "C-h" if _win_ctrl_pressed() else "Backspace"
-        return f"M-{key}" if alt else key
+    def _win_ctrl_pressed() -> bool:
+        """Check whether Ctrl is physically held using the Win32 API.
 
-    # Ctrl combinations (except ESC which is also < 32)
-    if ord(ch) < 32 and ch != "\x1b":
-        key = CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
-        return f"M-{key}" if alt else key
+        Used to distinguish Backspace (\\x08 without Ctrl) from C-h
+        (\\x08 with Ctrl) on Windows, where both produce the same byte.
+        """
+        VK_CONTROL = 0x11
+        return bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
 
-    # Escape — could be a real Escape key, or ESC+key from a Unix-style
-    # terminal (e.g. SSH session).  Also handle Alt+Escape.
-    if ch == "\x1b":
-        if msvcrt.kbhit():
+    def read_key_windows() -> str:
+        """Read a single key on Windows using msvcrt + Win32 Alt detection."""
+        ch = msvcrt.getwch()
+        alt = _win_alt_pressed()
+
+        # Special keys start with \x00 or \xe0
+        if ch in ("\x00", "\xe0"):
             ch2 = msvcrt.getwch()
-            if ch2 in ("\x00", "\xe0"):
-                ch3 = msvcrt.getwch()
-                special = WINDOWS_SPECIAL_KEYS.get(ch3, f"Unknown-{ord(ch3)}")
-                return f"M-{special}"
-            if ord(ch2) < 32:
-                ctrl = CTRL_KEYS.get(ch2, f"C-{chr(ord(ch2) + 64).lower()}")
-                return f"M-{ctrl}"
-            return f"M-{ch2}"
-        return "Escape"
+            key = WINDOWS_SPECIAL_KEYS.get(ch2, f"Unknown-{ord(ch2)}")
+            return f"M-{key}" if alt else key
 
-    # Regular printable character — Alt detected via Win32 API
-    if alt:
-        return f"M-{ch}"
+        # \x08: Backspace and Ctrl-H both produce this on Windows.
+        # Distinguish by checking whether Ctrl is physically held.
+        if ch == "\x08":
+            key = "C-h" if _win_ctrl_pressed() else "Backspace"
+            return f"M-{key}" if alt else key
 
-    return ch
+        # Ctrl combinations (except ESC which is also < 32)
+        if ord(ch) < 32 and ch != "\x1b":
+            key = CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+            return f"M-{key}" if alt else key
 
-
-def read_key_unix() -> str:  # pragma: no cover (Unix only)
-    """Read a single key on Unix using tty/termios."""
-    import select
-    import termios
-    import tty
-
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)  # type: ignore[attr-defined]
-    try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
-        ch = sys.stdin.read(1)
-
+        # Escape — could be a real Escape key, or ESC+key from a Unix-style
+        # terminal (e.g. SSH session).  Also handle Alt+Escape.
         if ch == "\x1b":
-            # Could be an escape sequence
-            if select.select([sys.stdin], [], [], 0.05)[0]:
-                ch2 = sys.stdin.read(1)
-                if ch2 == "[":
-                    ch3 = sys.stdin.read(1)
-                    return ANSI_SEQUENCES.get(ch3, f"Unknown-[{ch3}")
+            if msvcrt.kbhit():
+                ch2 = msvcrt.getwch()
+                if ch2 in ("\x00", "\xe0"):
+                    ch3 = msvcrt.getwch()
+                    special = WINDOWS_SPECIAL_KEYS.get(ch3, f"Unknown-{ord(ch3)}")
+                    return f"M-{special}"
+                if ord(ch2) < 32:
+                    ctrl = CTRL_KEYS.get(ch2, f"C-{chr(ord(ch2) + 64).lower()}")
+                    return f"M-{ctrl}"
                 return f"M-{ch2}"
             return "Escape"
 
-        # Ctrl combinations
-        if ord(ch) < 32:
-            return CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
-
-        # Backspace (DEL)
-        if ch == "\x7f":
-            return "Backspace"
+        # Regular printable character — Alt detected via Win32 API
+        if alt:
+            return f"M-{ch}"
 
         return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore[attr-defined]
+
+else:
+
+    def read_key_unix() -> str:  # pragma: no cover (Unix only)
+        """Read a single key on Unix using tty/termios."""
+        import select
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+
+            if ch == "\x1b":
+                # Could be an escape sequence
+                if select.select([sys.stdin], [], [], 0.05)[0]:
+                    ch2 = sys.stdin.read(1)
+                    if ch2 == "[":
+                        ch3 = sys.stdin.read(1)
+                        return ANSI_SEQUENCES.get(ch3, f"Unknown-[{ch3}")
+                    return f"M-{ch2}"
+                return "Escape"
+
+            # Ctrl combinations
+            if ord(ch) < 32:
+                return CTRL_KEYS.get(ch, f"C-{chr(ord(ch) + 64).lower()}")
+
+            # Backspace (DEL)
+            if ch == "\x7f":
+                return "Backspace"
+
+            return ch
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 def read_key_blocking() -> str:

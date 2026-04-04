@@ -37,6 +37,7 @@ class Mode:
     on_enter: Callable[[Editor], None] | None = None
     on_exit: Callable[[Editor], None] | None = None
     doc: str = ""
+    indicator: str = ""  # short modeline string; falls back to name if empty
 
 
 # Global registry: mode name -> Mode
@@ -52,6 +53,7 @@ def defmode(
     on_enter: Callable[[Editor], None] | None = None,
     on_exit: Callable[[Editor], None] | None = None,
     doc: str = "",
+    indicator: str = "",
 ) -> Mode:
     """Register a new mode and return it."""
     mode = Mode(
@@ -62,6 +64,7 @@ def defmode(
         on_enter=on_enter,
         on_exit=on_exit,
         doc=doc,
+        indicator=indicator,
     )
     MODES[name] = mode
     return mode
@@ -80,4 +83,12 @@ defmode(
     "text-mode",
     variables={"auto-fill": True},
     doc="Major mode for editing plain text.  Enables auto-fill by default.",
+)
+
+defmode(
+    "auto-fill-mode",
+    is_major=False,
+    variables={"auto-fill": True},
+    doc="Automatically break lines at fill-column during typing.",
+    indicator="Fill",
 )

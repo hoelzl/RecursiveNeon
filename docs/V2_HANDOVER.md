@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6g complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure). 1172 tests. Phase 6h (replace string + text filling) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6h complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling). 1215 tests. Phase 6i (window system) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -202,6 +202,8 @@ backend/
     unit/editor/test_phase6f.py       # Phase 6f commands: keybindings, help, save-some-buffers (25 tests)
     unit/editor/test_variables.py     # Variable system: defvar, validation, cascade, commands (29 tests, Phase 6g)
     unit/editor/test_modes.py         # Mode system: registry, switching, keymaps, modeline (23 tests, Phase 6g)
+    unit/editor/test_replace.py       # Replace string: basic, from-point, undo, cancel (13 tests, Phase 6h)
+    unit/editor/test_fill.py          # Fill paragraph, set-fill-column, auto-fill-mode (30 tests, Phase 6h)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -341,13 +343,15 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 - Python-based configuration file support deferred — the variable/mode API is fully functional via commands and programmatic access
 - 1172 total tests (52 new: 29 variable system, 23 mode system)
 
-#### 6h. Replace string + text filling
+#### 6h. Replace string + text filling — **COMPLETE**
 **Goal**: Implement the text manipulation commands the tutorial covers: interactive find/replace and paragraph filling.
 
 - `replace-string` (M-x replace-string): two sequential minibuffer prompts (search, replacement), replaces all from point to end of buffer, reports count, undoable as one group
-- `fill-paragraph` (M-q): rewrap current paragraph to `fill-column` width, paragraph boundaries at blank lines
+- `fill-paragraph` (M-q): rewrap current paragraph to `fill-column` width, paragraph boundaries at blank lines. Helpers: `_find_paragraph_bounds()` (blank-line delimited), `_fill_lines()` (word-wrap reflow)
 - `set-fill-column` (C-x f): with prefix arg sets to that value, without sets to current column
-- `auto-fill-mode` (M-x auto-fill-mode): minor mode toggle, auto-breaks lines at fill-column during self-insert. Modeline shows "Fill" when active.
+- `auto-fill-mode` (M-x auto-fill-mode): minor mode toggle, auto-breaks lines at fill-column during self-insert via `_auto_fill_break()` hook in `self-insert-command`. Modeline shows "Fill" when active.
+- `Mode.indicator` field: optional short modeline string for minor modes (falls back to name-derived string if empty)
+- 1215 total tests (43 new: 13 replace-string, 5 paragraph bounds, 6 fill-lines, 9 fill-paragraph, 3 set-fill-column, 7 auto-fill-mode)
 
 #### 6i. Window system
 **Goal**: Emacs-style window splitting so a single frame displays multiple buffers simultaneously. The prerequisite for shell-in-editor and the "desktop environment" vision.

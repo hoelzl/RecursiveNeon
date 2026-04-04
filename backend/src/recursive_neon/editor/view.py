@@ -142,7 +142,8 @@ class EditorView:
         else:
             display = "Fundamental"
         minor_indicators = "".join(
-            f" {m.name.removesuffix('-mode').capitalize()}" for m in buf.minor_modes
+            f" {m.indicator or m.name.removesuffix('-mode').capitalize()}"
+            for m in buf.minor_modes
         )
         mode_str = f"({display}{minor_indicators})"
         # Pad to width, ensuring the right side (mode + position) is visible
