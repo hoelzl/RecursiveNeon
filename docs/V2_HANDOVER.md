@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6j complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor). 1348 tests. Phase 6k (tutorial polish) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6k complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish). 1433 tests. Phase 8 (browser terminal + desktop GUI) next.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -210,6 +210,7 @@ backend/
     unit/editor/test_window_view.py   # Window rendering: compat, splits, modelines, dividers, resize (15 tests, Phase 6i)
     unit/editor/test_window_commands.py # Window commands: split, navigate, delete, scroll-other, find-file-other (22 tests, Phase 6i)
     unit/editor/test_shell_mode.py    # Shell-in-editor: setup, comint commands, history, completion, execution (66 tests, Phase 6j)
+    unit/editor/test_tutorial_walkthrough.py  # Tutorial walk-through: every chapter exercised via EditorHarness (72 tests, Phase 6k)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -409,16 +410,22 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 
 **Files**: new `editor/shell_mode.py` (~310 lines), modified `editor/editor.py` (+2 fields), `editor/view.py` (+`on_after_key`), `shell/tui/runner.py` (+4 lines), `shell/programs/edit.py` (+shell_factory wiring), `editor/default_commands.py` (+1 import), `editor/__init__.py` (exports). Tests: `test_shell_mode.py` (66 new tests). 1348 total tests.
 
-#### 6k. Tutorial verification + polish
+#### 6k. Tutorial verification + polish — **COMPLETE**
 **Goal**: Verify every feature in the tutorial works end-to-end. Fix gaps, polish UX.
 
-- Integration test: programmatic walk-through of entire tutorial using EditorHarness, verifying expected behavior for every exercise
-- Remove all `[NOT YET IMPLEMENTED]` tags from TUTORIAL.txt
-- `describe-bindings` (C-h b): show all active keybindings in *Help* buffer
-- Modeline improvements: show major mode name, minor mode indicators
-- Edge case fixes discovered during walk-through
-- Documentation updates (handover, CLAUDE.md, SHELL_DESIGN.md)
-- Add neon-edit-specific sections to tutorial (shell mode, Python config, game world integration)
+- **Tutorial walk-through integration test** — `test_tutorial_walkthrough.py` exercises every chapter (1–14) programmatically via `EditorHarness`. 72 tests covering movement, scrolling, editing, kill/yank, mark/region, word/sentence motion, search, files/buffers, help, replace, fill, windows, and shell mode (async). Autouse fixture saves/restores `VARIABLES` defaults so fill-column mutations don't leak across tests.
+- **`describe-bindings` (C-h b)** — Lists every reachable keybinding grouped by layer (buffer-local → minor modes → major mode → global). Prefix keymaps recursively expanded (`C-x C-s`, `C-h k`, `C-x 4 C-f`, …). New `_format_bindings_local` helper prevents parent-chain duplication between layers. 10 new tests in `test_help.py`.
+- **TUTORIAL.txt cleanup** — Removed all 5 `[NOT YET IMPLEMENTED]` markers (chapters 10–14). Each chapter now has real practice prompts. Quick Reference expanded with sentence motion, fill, windows, shell mode, `C-h b`, `C-h m`, `C-h v`, `C-x s`.
+- **Modeline improvements** — Listed as a deliverable but already shipped in 6g/6h (`(Shell)`, `(Text Fill)`, `(Fundamental)`). Walk-through tests verify this now works end-to-end.
+- 1433 total tests (82 new: 72 walkthrough, 10 describe-bindings).
+
+**Files**: modified `editor/default_commands.py` (+58 lines: describe-bindings + `_format_bindings_local` + `C-h b` binding), `initial_fs/Documents/TUTORIAL.txt` (+51/−22), `tests/unit/editor/test_help.py` (+10 tests); new `tests/unit/editor/test_tutorial_walkthrough.py` (787 lines, 72 tests).
+
+**Deferred from 6k** (carry forward to a later phase):
+- **Python config file loading** — the `EditorVariable`/`Mode` API exists (Phase 6g) but there is no `~/.neon-edit.py` loader or sandboxed extension entry point. Tracked in the long-standing "Future 6a extensions" list as the "Python extension API" item.
+- **Game-world integration hooks** — no NPC-triggered buffer events, no in-game script callbacks, no editor↔game-state bridge. A tutorial chapter covering this would require those hooks to be designed and implemented first.
+- **Syntax highlighting** — already listed under "Future 6a extensions"; still deferred.
+- **Undo granularity inspection** — observed during the walk-through that a second C-/ after Backspace appears to redo rather than continue undoing. Out of scope for 6k; worth investigating if/when we do an undo polish pass.
 
 ### Phase 8: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.

@@ -573,6 +573,63 @@ def _format_bindings(km: Keymap, prefix: str, lines: list[str]) -> None:
             _format_bindings(target, full, lines)
 
 
+def _format_bindings_local(km: Keymap, prefix: str, lines: list[str]) -> None:
+    """Append binding lines from *km* only (no parent-chain walk).
+
+    Sub-keymaps bound as prefix keys *are* recursed into — those are
+    proper children, not ancestors in the inheritance chain.
+    """
+    for key, target in sorted(km.bindings().items()):
+        full = f"{prefix} {key}" if prefix else key
+        if isinstance(target, str):
+            lines.append(f"  {full:<20s} {target}")
+        elif isinstance(target, Keymap):
+            _format_bindings_local(target, full, lines)
+
+
+@defcommand(
+    "describe-bindings",
+    "Show all currently-active key bindings (C-h b).",
+)
+def describe_bindings(ed: Editor, prefix: int | None) -> None:
+    """List every key binding reachable from the current buffer.
+
+    Bindings are grouped by layer (buffer-local → minor modes → major
+    mode → global) so the resolution order is visible at a glance.
+    """
+    buf = ed.buffer
+    lines: list[str] = ["Key Bindings", "=" * 40, ""]
+
+    # Buffer-local keymap (e.g., *Notes*, *shell*)
+    if buf.keymap is not None:
+        lines.append(f"Buffer-local bindings ({buf.keymap.name}):")
+        lines.append("")
+        _format_bindings_local(buf.keymap, "", lines)
+        lines.append("")
+
+    # Minor-mode keymaps (last added = highest priority)
+    for mode in reversed(buf.minor_modes):
+        if mode.keymap is not None:
+            lines.append(f"Minor mode bindings ({mode.name}):")
+            lines.append("")
+            _format_bindings_local(mode.keymap, "", lines)
+            lines.append("")
+
+    # Major-mode keymap
+    if buf.major_mode is not None and buf.major_mode.keymap is not None:
+        lines.append(f"Major mode bindings ({buf.major_mode.name}):")
+        lines.append("")
+        _format_bindings_local(buf.major_mode.keymap, "", lines)
+        lines.append("")
+
+    # Global keymap (always present)
+    lines.append(f"Global bindings ({ed.global_keymap.name}):")
+    lines.append("")
+    _format_bindings_local(ed.global_keymap, "", lines)
+
+    _show_help_buffer(ed, "\n".join(lines))
+
+
 @defcommand(
     "where-is",
     "Show which key(s) a command is bound to (C-h x).",
@@ -1172,6 +1229,7 @@ def build_default_keymap() -> Keymap:
     ch.bind("k", "describe-key")
     ch.bind("c", "describe-key-briefly")
     ch.bind("a", "command-apropos")
+    ch.bind("b", "describe-bindings")
     ch.bind("t", "help-tutorial")
     ch.bind("m", "describe-mode")
     ch.bind("v", "describe-variable")

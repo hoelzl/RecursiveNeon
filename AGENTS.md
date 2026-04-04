@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6j are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting, shell-in-editor). Phase 6k (tutorial polish) is next.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting, shell-in-editor, tutorial verification + `describe-bindings`). Phase 8 (browser terminal + desktop GUI) is next.
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1348 tests
+../.venv/Scripts/pytest              # All 1433 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -139,8 +139,15 @@ Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mo
 - **Shell factory**: `Editor.shell_factory` callback decouples the editor from the service layer; set by the `edit` shell program.
 - **Deferred**: interactive programs (chat), TUI apps in shell buffer, output region protection — see handover.
 
-## What's Next (Phase 6k)
+## Tutorial Verification + `describe-bindings` (Phase 6k)
 
-Phase 6k is tutorial verification + polish — walk through every tutorial exercise, fix gaps, add `describe-bindings`.
+- **`describe-bindings` (C-h b)** in `editor/default_commands.py` lists every reachable keybinding in a `*Help*` buffer, grouped by layer (buffer-local → minor → major → global). Use `_format_bindings_local` (no parent walk) when showing bindings by layer so inherited bindings don't duplicate under each header.
+- **Tutorial walk-through test** (`tests/unit/editor/test_tutorial_walkthrough.py`, 72 tests) exercises every chapter of `TUTORIAL.txt` via `EditorHarness`. When adding new editor features that belong in the tutorial, add a matching test class there.
+- **Window-tree gotcha for tests**: `EditorView.on_key` calls `_ensure_editor_on_buffer(active_window.buffer)` at the start of every keystroke. If a test uses `editor.create_buffer()` to make a new buffer current and then sends a key, the active window silently reverts the editor's current buffer to whatever the window shows. To test commands on a specific buffer, route through `C-x b switch-to-buffer` key events (the proper flow updates the window too).
+- **Variable-registry leakage**: `M-x set-variable` and `C-x f` mutate `VARIABLES[name].default` (module-level global). Tests that touch `fill-column` or similar must save/restore defaults — see the `_restore_global_variables` autouse fixture in `test_tutorial_walkthrough.py` for the pattern.
+
+## What's Next (Phase 8)
+
+Phase 8 is browser terminal + desktop GUI: xterm.js over `/ws/terminal`, raw/cooked rendering, desktop chrome (window manager, taskbar), cyberpunk CSS restore.
 
 See `docs/V2_HANDOVER.md` Section 6 for the full plan.

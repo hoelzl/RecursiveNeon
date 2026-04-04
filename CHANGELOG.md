@@ -2,6 +2,25 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6k — Tutorial Verification + Polish (2026-04-04)
+
+### Added
+- **Tutorial walk-through integration test** — `test_tutorial_walkthrough.py` drives every chapter (1–14) of `TUTORIAL.txt` programmatically through the `EditorHarness`. One test class per chapter covers movement, scrolling, editing, kill/yank, mark/region, word/sentence motion, search, files/buffers, help, replace-string, fill, windows, and (async) shell mode. A Quick-Reference consistency class ensures every advertised command appears in `describe-bindings` output. 72 new tests.
+- **`describe-bindings` (C-h b)** — Lists every reachable keybinding in a `*Help*` buffer, grouped by layer (buffer-local → minor modes → major mode → global). Prefix keymaps are recursively expanded so nested sequences like `C-x C-s`, `C-h k`, and `C-x 4 C-f` all appear.
+- **`_format_bindings_local` helper** — Local-only variant of the existing `_format_bindings` that walks sub-keymaps without inheriting parent chain entries, so layered display doesn't duplicate global bindings under each layer.
+- **Autouse variable-restore fixture** in the walk-through test — Saves and restores `VARIABLES` defaults around each test so `set-fill-column` and `M-x set-variable` mutations don't leak into `test_variables.py`.
+- **10 new `describe-bindings` unit tests** in `test_help.py` covering section headers, prefix expansion, self-reference, nested prefixes, buffer-local and major-mode layers, and the no-duplication invariant.
+- **82 new tests total** (10 describe-bindings + 72 walkthrough). 1433 total tests.
+
+### Changed
+- **TUTORIAL.txt** — Removed all 5 `[NOT YET IMPLEMENTED]` markers (chapters 10–14: sentence motion, find/replace, text filling, windows, shell mode). Each chapter now has real practice prompts instead of "will be available in a future system update" placeholders. Quick Reference expanded with `M-a`/`M-e`/`M-k` (sentence), `M-q`/`C-x f` (fill), `C-x s` (save-some-buffers), window commands (`C-x 2`/`3`/`o`/`0`/`1`, `C-x 4 C-f`), shell mode (`M-x shell`, `M-p`, `M-n`), and help additions (`C-h b`, `C-h m`, `C-h v`).
+- **`C-h` prefix keymap** gains `b` → `describe-bindings`.
+
+### Deferred
+- **Python config file loading** — the `EditorVariable`/`Mode` API (Phase 6g) is fully functional but there's no `~/.neon-edit.py` loader. Tracked as "Python extension API" under Future 6a extensions.
+- **Game-world integration hooks** — no NPC-triggered buffer events or editor↔game-state bridge. A dedicated phase would need to design those hooks before a tutorial chapter makes sense.
+- **Undo granularity inspection** — observed during walk-through that a second C-/ after a single Backspace appears to redo rather than continue undoing. Not blocking; noted in handover for a future polish pass.
+
 ## Phase 6j — Shell-in-Editor (2026-04-04)
 
 ### Added

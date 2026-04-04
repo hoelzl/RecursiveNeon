@@ -235,7 +235,7 @@ sequence and neon-edit will tell you what command it runs.
 * * *
 
 
->> CHAPTER 10: SENTENCE MOTION  [NOT YET IMPLEMENTED]
+>> CHAPTER 10: SENTENCE MOTION
 
 Sentence motion commands allow you to jump between sentences:
 
@@ -243,15 +243,20 @@ Sentence motion commands allow you to jump between sentences:
     M-e    Move forward to the end of the sentence
     M-k    Kill to the end of the sentence
 
-These commands recognize sentences as text ending with ".", "?",
-or "!" followed by whitespace.  They will be available in a future
-system update.
+Sentences are recognized as text ending with ".", "?", or "!"
+followed by whitespace or end-of-line.  Combined with C-y (yank),
+M-k lets you rearrange prose sentence by sentence.
+
+>> Practice: move to the line below, then use M-e to jump sentence
+>> by sentence through it, and M-k to kill the last one.
+
+     First sentence. Second sentence! Third sentence?
 
 
 * * *
 
 
->> CHAPTER 11: FIND AND REPLACE  [NOT YET IMPLEMENTED]
+>> CHAPTER 11: FIND AND REPLACE
 
 To replace text throughout the buffer:
 
@@ -261,55 +266,80 @@ This prompts for a search string, then a replacement.  All matches
 from point onward are replaced.  The entire replacement can be
 undone as a single operation with C-/.
 
-This command will be available in a future system update.
+>> Practice: move to the beginning of the buffer with M-<, then
+>> run M-x replace-string, enter "NEON" as the search and "NEON"
+>> (or any other string) as the replacement.  Undo with C-/ when
+>> you're done.
 
 
 * * *
 
 
->> CHAPTER 12: TEXT FILLING  [NOT YET IMPLEMENTED]
+>> CHAPTER 12: TEXT FILLING
 
 When writing prose, paragraphs can be reformatted to a specific
 width:
 
-    M-q             Fill (rewrap) the current paragraph
-    C-x f           Set the fill column (default: 70)
-    M-x auto-fill   Toggle auto-fill mode (auto-wrap on typing)
+    M-q                  Fill (rewrap) the current paragraph
+    C-x f                Set the fill column (default: 70)
+    M-x auto-fill-mode   Toggle auto-fill mode (auto-wrap on typing)
 
-These commands will be available in a future system update.
+Paragraphs are delimited by blank lines.  When auto-fill is on,
+the modeline displays "Fill" and lines break automatically at
+``fill-column`` as you type past that width.
+
+>> Practice: move point inside a paragraph and press M-q to see
+>> it rewrap.  Use C-x f with a prefix argument (C-u 50 C-x f) to
+>> set a narrower fill column, then M-q again.
 
 
 * * *
 
 
->> CHAPTER 13: WINDOWS  [NOT YET IMPLEMENTED]
+>> CHAPTER 13: WINDOWS
 
 Neon-edit can split the display to show multiple buffers at once:
 
-    C-x 2     Split window horizontally (above/below)
-    C-x 3     Split window vertically (side by side)
-    C-x o     Switch to the other window
-    C-x 0     Delete the current window
-    C-x 1     Delete all other windows
+    C-x 2       Split window horizontally (above/below)
+    C-x 3       Split window vertically (side by side)
+    C-x o       Switch to the other window
+    C-x 0       Delete the current window
+    C-x 1       Delete all other windows
+    C-M-v       Scroll the other window forward
+    C-x 4 C-f   Find a file in the other window
 
-Window management will be available in a future system update.
+The active window has a brighter modeline.  Each window keeps
+its own point and scroll position, so you can compare two
+locations in the same buffer or view two different buffers side
+by side.
+
+>> Practice: press C-x 2 to split the window.  Use C-x o to move
+>> between them.  Press C-x 1 to return to a single window.
 
 
 * * *
 
 
->> CHAPTER 14: SHELL MODE  [NOT YET IMPLEMENTED]
+>> CHAPTER 14: SHELL MODE
 
 The ultimate integration — run the system shell inside an editor
 buffer:
 
     M-x shell   Open a shell in a buffer
 
-This allows you to run commands, see their output, and edit the
-command line with all of neon-edit's editing power.  Copy text
-between shell output and other buffers seamlessly.
+The *shell* buffer shows a prompt; type a command and press Enter
+to run it.  Output appears in the buffer and you can edit, copy,
+and yank it like any other text.  Two shell-specific bindings
+help with workflow:
 
-Shell mode will be available in a future system update.
+    M-p         Previous input (history)
+    M-n         Next input
+    Tab         Complete file names and commands
+
+Reuse is automatic: running M-x shell a second time switches to
+the existing *shell* buffer instead of creating a new one.  Split
+a window with C-x 2 and call M-x shell in one half to keep your
+shell and editor side by side.
 
 
 * * *
@@ -322,6 +352,7 @@ Movement:
     C-n / C-p       Next / previous line
     C-a / C-e       Beginning / end of line
     M-f / M-b       Forward / backward one word
+    M-a / M-e       Backward / forward one sentence
     M-< / M->       Beginning / end of buffer
     C-v / M-v       Scroll forward / backward one screenful
     C-l             Re-center display
@@ -333,13 +364,17 @@ Editing:
     C-w             Kill region
     M-d             Kill word forward
     M-Backspace     Kill word backward
+    M-k             Kill to end of sentence
     C-y             Yank (paste)
     M-y             Yank previous kill
     C-/             Undo
+    M-q             Fill paragraph
+    C-x f           Set fill column
 
-Search:
+Search & Replace:
     C-s             Incremental search forward
     C-r             Incremental search backward
+    M-x replace-string    Replace throughout buffer
 
 Mark:
     C-space         Set mark
@@ -347,15 +382,31 @@ Mark:
 Files & Buffers:
     C-x C-f         Find (open) file
     C-x C-s         Save buffer
+    C-x s           Save some buffers
     C-x C-w         Write buffer to new path
     C-x b           Switch buffer
     C-x k           Kill buffer
     C-x C-b         List buffers
 
+Windows:
+    C-x 2           Split window horizontally
+    C-x 3           Split window vertically
+    C-x o           Other window
+    C-x 0           Delete current window
+    C-x 1           Delete other windows
+    C-x 4 C-f       Find file in other window
+
 Help:
     C-h k           Describe key
+    C-h b           List all key bindings
     C-h a           Command apropos
+    C-h m           Describe mode
+    C-h v           Describe variable
     C-h t           Open this tutorial
+
+Shell Mode:
+    M-x shell       Open a shell buffer
+    M-p / M-n       Previous / next shell input
 
 Control:
     C-g             Cancel / keyboard-quit
