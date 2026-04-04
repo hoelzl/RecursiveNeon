@@ -66,6 +66,16 @@ def backward_word(ed: Editor, prefix: int | None) -> None:
     ed.buffer.backward_word(prefix if prefix is not None else 1)
 
 
+@defcommand("forward-sentence", "Move point forward one sentence.")
+def forward_sentence(ed: Editor, prefix: int | None) -> None:
+    ed.buffer.forward_sentence(prefix if prefix is not None else 1)
+
+
+@defcommand("backward-sentence", "Move point backward one sentence.")
+def backward_sentence(ed: Editor, prefix: int | None) -> None:
+    ed.buffer.backward_sentence(prefix if prefix is not None else 1)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Viewport scrolling
 # ═══════════════════════════════════════════════════════════════════════
@@ -194,6 +204,13 @@ def kill_backward_word(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_word_backward()
+
+
+@defcommand("kill-sentence", "Kill from point to the end of the sentence.")
+def kill_sentence(ed: Editor, prefix: int | None) -> None:
+    n = prefix if prefix is not None else 1
+    for _ in range(n):
+        ed.buffer.kill_sentence()
 
 
 @defcommand("yank", "Yank (paste) the most recent kill.")
@@ -475,9 +492,63 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
 def describe_key(ed: Editor, prefix: int | None) -> None:
     """Enter a key-reading mode: the next keystroke is described."""
     ed.message = "Describe key: "
-    # We need to intercept the NEXT keystroke. Use the minibuffer with
-    # a single-key handler that captures the first key and describes it.
     ed._describing_key = True
+
+
+@defcommand(
+    "describe-key-briefly",
+    "Show what command a key runs, in the message area (C-h c).",
+)
+def describe_key_briefly(ed: Editor, prefix: int | None) -> None:
+    """Like describe-key but shows in message area, not *Help* buffer."""
+    ed.message = "Describe key briefly: "
+    ed._describing_key_briefly = True
+
+
+@defcommand(
+    "describe-mode",
+    "Show the current mode and key bindings (C-h m).",
+)
+def describe_mode(ed: Editor, prefix: int | None) -> None:
+    keymap = ed._resolve_keymap()
+    lines = [f"Key bindings in {keymap.name}:", ""]
+    _format_bindings(keymap, "", lines)
+    _show_help_buffer(ed, "\n".join(lines))
+
+
+def _format_bindings(km: Keymap, prefix: str, lines: list[str]) -> None:
+    """Append formatted binding lines from *km* (recursing into sub-keymaps)."""
+    for key, target in sorted(km.all_bindings().items()):
+        full = f"{prefix} {key}" if prefix else key
+        if isinstance(target, str):
+            lines.append(f"  {full:<20s} {target}")
+        elif isinstance(target, Keymap):
+            _format_bindings(target, full, lines)
+
+
+@defcommand(
+    "where-is",
+    "Show which key(s) a command is bound to (C-h x).",
+)
+def where_is(ed: Editor, prefix: int | None) -> None:
+    from recursive_neon.editor.commands import COMMANDS
+
+    def completer(text: str) -> list[str]:
+        return sorted(n for n in COMMANDS if n.startswith(text))
+
+    def callback(name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        keymap = ed._resolve_keymap()
+        keys = keymap.reverse_lookup(name)
+        if keys:
+            key_str = ", ".join(keys)
+            ed.message = f"{name} is on {key_str}"
+        else:
+            ed.message = f"{name} is not on any key"
+
+    ed.start_minibuffer("Where is command: ", callback, completer=completer)
 
 
 @defcommand("command-apropos", "Search commands by name or doc (C-h a).")
@@ -537,6 +608,45 @@ def _show_help_buffer(ed: Editor, text: str) -> None:
     buf.read_only = True
 
 
+@defcommand(
+    "save-some-buffers",
+    "Offer to save each modified buffer (C-x s).",
+)
+def save_some_buffers(ed: Editor, prefix: int | None) -> None:
+    modified = [b for b in ed.buffers if b.modified and b.filepath]
+    if not modified:
+        ed.message = "(No buffers need saving)"
+        return
+
+    saved_count = [0]
+    remaining = list(modified)
+
+    def _ask_next() -> None:
+        if not remaining:
+            if saved_count[0]:
+                ed.message = f"Saved {saved_count[0]} buffer(s)"
+            else:
+                ed.message = "(No buffers saved)"
+            return
+        buf = remaining[0]
+
+        def callback(answer: str) -> None:
+            answer = answer.strip().lower()
+            buf_ref = remaining.pop(0)
+            if (
+                answer == "y"
+                and ed.save_callback is not None
+                and ed.save_callback(buf_ref)
+            ):
+                buf_ref.modified = False
+                saved_count[0] += 1
+            _ask_next()
+
+        ed.start_minibuffer(f"Save buffer {buf.name}? (y/n) ", callback)
+
+    _ask_next()
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     if ed.save_callback is None:
@@ -576,6 +686,11 @@ def build_default_keymap() -> Keymap:
     # Word movement
     km.bind("M-f", "forward-word")
     km.bind("M-b", "backward-word")
+
+    # Sentence movement
+    km.bind("M-e", "forward-sentence")
+    km.bind("M-a", "backward-sentence")
+    km.bind("M-k", "kill-sentence")
 
     # Arrow keys
     km.bind("ArrowRight", "forward-char")
@@ -626,19 +741,24 @@ def build_default_keymap() -> Keymap:
     # C-h prefix map (help)
     ch = Keymap("C-h prefix")
     ch.bind("k", "describe-key")
+    ch.bind("c", "describe-key-briefly")
     ch.bind("a", "command-apropos")
     ch.bind("t", "help-tutorial")
+    ch.bind("m", "describe-mode")
+    ch.bind("x", "where-is")
     km.bind("C-h", ch)
 
     # C-x prefix map
     cx = Keymap("C-x prefix")
     cx.bind("C-s", "save-buffer")
+    cx.bind("s", "save-some-buffers")
     cx.bind("C-w", "write-file")
     cx.bind("C-f", "find-file")
     cx.bind("b", "switch-to-buffer")
     cx.bind("k", "kill-buffer")
     cx.bind("C-b", "list-buffers")
     cx.bind("C-c", "quit-editor")
+    cx.bind("u", "undo")
     km.bind("C-x", cx)
 
     return km

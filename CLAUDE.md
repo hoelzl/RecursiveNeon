@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6e complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial). Phase 6f (sentence motion, help commands, save-some-buffers) next. Phases 6f-6k add remaining tutorial commands, variables, modes, windows, shell-in-editor. Browser GUI deferred to Phase 8.
+**Status**: V2 reboot. Phases 0-6f complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers). Phase 6g (variable system + mode infrastructure) next. Phases 6g-6k add variables, modes, replace/fill, windows, shell-in-editor. Browser GUI deferred to Phase 8.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction

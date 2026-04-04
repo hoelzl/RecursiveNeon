@@ -1,6 +1,6 @@
 # Shell Design Document
 
-> **Status**: Phases 1-6d implemented. Design document kept for architecture reference.
+> **Status**: Phases 1-6f implemented. Design document kept for architecture reference.
 > **Date**: 2026-03-23 (updated 2026-04-04)
 
 ## 1. Overview

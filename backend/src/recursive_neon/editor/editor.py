@@ -71,6 +71,7 @@ class Editor:
 
         # Describe-key mode: when True, next keystroke is described
         self._describing_key: bool = False
+        self._describing_key_briefly: bool = False
 
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
@@ -180,6 +181,12 @@ class Editor:
             self._do_describe_key(key)
             return
 
+        # Describe-key-briefly mode: show binding in message area only
+        if self._describing_key_briefly:
+            self._describing_key_briefly = False
+            self._do_describe_key_briefly(key)
+            return
+
         # Clear previous message (commands can set new ones)
         self.message = ""
 
@@ -266,9 +273,7 @@ class Editor:
                 self._prefix_arg = self._prefix_arg * 10 + int(digit)
         self.message = f"C-u {self._prefix_arg}"
 
-    def _execute_command_by_name(
-        self, name: str, *, key: str | None = None
-    ) -> None:
+    def _execute_command_by_name(self, name: str, *, key: str | None = None) -> None:
         """Look up and execute a named command."""
         cmd = COMMANDS.get(name)
         if cmd is None:
@@ -365,6 +370,37 @@ class Editor:
             from recursive_neon.editor.default_commands import _show_help_buffer
 
             _show_help_buffer(self, "\n".join(lines))
+        elif len(key) == 1 and key.isprintable():
+            self.message = f"{key_str} runs self-insert-command"
+        else:
+            self.message = f"{key_str} is not bound"
+
+    def _do_describe_key_briefly(self, key: str) -> None:
+        """Look up what a key is bound to and show in the message area."""
+        keymap = self._resolve_keymap()
+        target = keymap.lookup(key)
+
+        if isinstance(target, Keymap):
+            # Prefix key — wait for next key
+            self._dkb_prefix = key
+            self._dkb_map = target
+            self._describing_key_briefly = True
+            self.message = f"Describe key briefly: {key}-"
+            return
+
+        # Check if completing a prefix sequence
+        prefix_str = getattr(self, "_dkb_prefix", "")
+        if prefix_str:
+            key_str = f"{prefix_str} {key}"
+            self._dkb_prefix = ""
+            prefix_map = getattr(self, "_dkb_map", None)
+            if prefix_map:
+                target = prefix_map.lookup(key)
+        else:
+            key_str = key
+
+        if isinstance(target, str):
+            self.message = f"{key_str} runs {target}"
         elif len(key) == 1 and key.isprintable():
             self.message = f"{key_str} runs self-insert-command"
         else:

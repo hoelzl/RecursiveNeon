@@ -46,7 +46,9 @@ class Buffer:
         self.modified: bool = False
         self.read_only: bool = False
         self.keymap: Keymap | None = None  # buffer-local keymap (checked first)
-        self.on_focus: Callable[[], None] | None = None  # called when buffer becomes current
+        self.on_focus: Callable[[], None] | None = (
+            None  # called when buffer becomes current
+        )
 
         # Text storage — always at least one line
         if text:
@@ -202,9 +204,7 @@ class Buffer:
         self.modified = True
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*start))
-            self.undo_list.append(
-                UndoInsert(*start, self.point.line, self.point.col)
-            )
+            self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
 
     def insert_string(self, s: str) -> None:
         """Insert a (possibly multi-line) string at point."""
@@ -225,9 +225,7 @@ class Buffer:
         self.modified = True
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*start))
-            self.undo_list.append(
-                UndoInsert(*start, self.point.line, self.point.col)
-            )
+            self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
 
     def _insert_within_line(self, text: str) -> None:
         """Insert text (no newlines) at point on the current line."""
@@ -340,7 +338,9 @@ class Buffer:
         """
         if self.read_only and self._undo_recording:
             return ""
-        a, b = (start.copy(), end.copy()) if start <= end else (end.copy(), start.copy())
+        a, b = (
+            (start.copy(), end.copy()) if start <= end else (end.copy(), start.copy())
+        )
         deleted = self.get_text(a, b)
         if not deleted:
             return ""
@@ -616,9 +616,7 @@ class Buffer:
                 self._undo_recording = False
                 deleted = self.delete_region(start, end)
                 self._undo_recording = True
-                reverse.append(
-                    UndoDelete(entry.start_line, entry.start_col, deleted)
-                )
+                reverse.append(UndoDelete(entry.start_line, entry.start_col, deleted))
 
             elif isinstance(entry, UndoDelete):
                 self.point.move_to(entry.line, entry.col)
@@ -689,6 +687,26 @@ class Buffer:
                 self.kill_ring.append_to_top(killed)
             else:
                 self.kill_ring.push(killed)
+        self.last_command_type = "kill"
+        return killed
+
+    def kill_sentence(self) -> str:
+        """Kill from point to end of current sentence (M-k).
+
+        If point is at a sentence end (punctuation), kills through the
+        whitespace up to the next sentence.
+        """
+        start = self.point.copy()
+        self._move_sentence_forward()
+        end = self.point.copy()
+        if start == end:
+            return ""
+        self.point.move_to(start.line, start.col)
+        killed = self.delete_region(start, end)
+        if self.last_command_type == "kill":
+            self.kill_ring.append_to_top(killed)
+        else:
+            self.kill_ring.push(killed)
         self.last_command_type = "kill"
         return killed
 
@@ -832,6 +850,126 @@ class Buffer:
             if not (ch.isalnum() or ch == "_"):
                 break
             self.point.col -= 1
+        return self.point.to_tuple() != start
+
+    # ------------------------------------------------------------------
+    # Sentence motion
+    # ------------------------------------------------------------------
+
+    _SENTENCE_ENDINGS = frozenset(".?!")
+
+    def forward_sentence(self, n: int = 1) -> bool:
+        """Move point forward by *n* sentences (M-e).
+
+        A sentence ends at ``.``, ``?``, or ``!`` followed by whitespace,
+        end-of-line, or end-of-buffer.  Point lands after the terminating
+        punctuation.
+        """
+        self._goal_col = -1
+        moved = False
+        for _ in range(n):
+            if self._move_sentence_forward():
+                moved = True
+        return moved
+
+    def backward_sentence(self, n: int = 1) -> bool:
+        """Move point backward by *n* sentences (M-a).
+
+        Moves to the start of the current or previous sentence.
+        """
+        self._goal_col = -1
+        moved = False
+        for _ in range(n):
+            if self._move_sentence_backward():
+                moved = True
+        return moved
+
+    def _move_sentence_forward(self) -> bool:
+        """Move forward to the end of the next sentence."""
+        start = self.point.to_tuple()
+        ln = self.point.line
+        col = self.point.col
+
+        while ln < len(self.lines):
+            line = self.lines[ln]
+            while col < len(line):
+                ch = line[col]
+                if ch in self._SENTENCE_ENDINGS:
+                    # Found a sentence-ending character.
+                    # The sentence ends after this char if followed by
+                    # whitespace, end-of-line, or end-of-buffer.
+                    after_col = col + 1
+                    if after_col >= len(line):
+                        # End of line or buffer — sentence ends here
+                        self.point.move_to(ln, after_col)
+                        return self.point.to_tuple() != start
+                    if line[after_col].isspace():
+                        self.point.move_to(ln, after_col)
+                        return self.point.to_tuple() != start
+                col += 1
+            # Move to next line
+            ln += 1
+            col = 0
+
+        # Reached end of buffer
+        self.point.move_to(len(self.lines) - 1, len(self.lines[-1]))
+        return self.point.to_tuple() != start
+
+    def _move_sentence_backward(self) -> bool:
+        """Move backward to the start of the current or previous sentence."""
+        start = self.point.to_tuple()
+        ln = self.point.line
+        col = self.point.col
+
+        # Skip whitespace at/before point to get past any sentence gap
+        while True:
+            if col > 0:
+                if self.lines[ln][col - 1].isspace():
+                    col -= 1
+                    continue
+                # If we're right after a sentence-ending char, skip it too
+                if self.lines[ln][col - 1] in self._SENTENCE_ENDINGS:
+                    col -= 1
+                    continue
+                break
+            elif ln > 0:
+                ln -= 1
+                col = len(self.lines[ln])
+            else:
+                break
+
+        # Now scan backward to find the end of the previous sentence
+        # (a sentence-ending char followed by whitespace/EOL),
+        # then land after the whitespace that follows it.
+        while True:
+            if col > 0:
+                col -= 1
+                ch = self.lines[ln][col]
+                if ch in self._SENTENCE_ENDINGS:
+                    # Found a sentence boundary — land after the subsequent
+                    # whitespace (which is the start of the next sentence).
+                    pos_ln, pos_col = ln, col + 1
+                    # Skip whitespace/newlines forward from here
+                    while pos_ln < len(self.lines):
+                        line = self.lines[pos_ln]
+                        while pos_col < len(line):
+                            if not line[pos_col].isspace():
+                                self.point.move_to(pos_ln, pos_col)
+                                return self.point.to_tuple() != start
+                            pos_col += 1
+                        pos_ln += 1
+                        pos_col = 0
+                    # Reached end of buffer
+                    self.point.move_to(len(self.lines) - 1, len(self.lines[-1]))
+                    return self.point.to_tuple() != start
+            elif ln > 0:
+                ln -= 1
+                col = len(self.lines[ln])
+            else:
+                break
+
+        # No previous sentence boundary — go to beginning of buffer
+        self.point.move_to(0, 0)
         return self.point.to_tuple() != start
 
     # ------------------------------------------------------------------

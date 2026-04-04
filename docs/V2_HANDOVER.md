@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6e complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial). 1073 tests. Phase 6f (sentence motion, help commands, save-some-buffers) next. Browser GUI deferred to Phase 8.
+> **Status**: Phases 0-6f complete (shell, persistence, WebSocket, TUI, completion/globs/pipes, editor + enhancements, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers). 1120 tests. Phase 6g (variable system + mode infrastructure) next. Browser GUI deferred to Phase 8.
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 ---
@@ -196,6 +196,8 @@ backend/
     unit/editor/harness.py            # EditorHarness: TUI-level test driver (Phase 6e)
     unit/editor/test_harness.py       # Harness self-tests (14 tests, Phase 6e)
     unit/editor/test_scroll.py        # Viewport scroll commands + recenter (22 tests, Phase 6e)
+    unit/editor/test_sentence.py      # Sentence motion + kill (22 tests, Phase 6f)
+    unit/editor/test_phase6f.py       # Phase 6f commands: keybindings, help, save-some-buffers (25 tests)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -305,16 +307,17 @@ Programmatic test harness for TUI-level editor testing, viewport scrolling comma
 - Bugfix: C-u prefix digit parsing — `_prefix_has_digits` now properly initialized and reset, fixing a bug where digits after C-u failed to replace the default 4 after any prior command had executed
 - 1073 total tests (42 new: 14 harness, 22 scroll/viewport, 5 tutorial, 1 prefix-arg fix)
 
-#### 6f. Sentence motion, undo alias, help commands, save-some-buffers
+#### 6f. Sentence motion, undo alias, help commands, save-some-buffers — **COMPLETE**
 **Goal**: Implement the "easy" missing tutorial commands — straightforward features that don't require new infrastructure.
 
-- Sentence motion on Buffer: `forward_sentence`, `backward_sentence` (sentence ends at `.`/`?`/`!` followed by whitespace or end-of-line)
+- Sentence motion on Buffer: `forward_sentence`, `backward_sentence`, `kill_sentence` (sentence ends at `.`/`?`/`!` followed by whitespace or end-of-line)
 - `backward-sentence` (M-a), `forward-sentence` (M-e), `kill-sentence` (M-k)
 - `C-x u` → undo (keybinding alias in C-x prefix keymap)
 - `describe-key-briefly` (C-h c): show binding in message area (not *Help* buffer)
-- `describe-mode` (C-h m): show current mode and key bindings in *Help* buffer
-- `where-is` (C-h x): prompt for command name, show which key(s) it's bound to (reverse keymap lookup)
-- `save-some-buffers` (C-x s): iterate modified buffers with y/n minibuffer prompt, save confirmed ones
+- `describe-mode` (C-h m): show current mode and key bindings in *Help* buffer, recurses into prefix keymaps
+- `where-is` (C-h x): prompt for command name, show which key(s) it's bound to (reverse keymap lookup via `Keymap.reverse_lookup()`)
+- `save-some-buffers` (C-x s): iterate modified buffers with y/n minibuffer prompt, save confirmed ones via chained callbacks
+- 1120 total tests (47 new: 22 sentence motion/kill, 25 commands/keybindings/help/save-some-buffers/reverse-lookup)
 
 #### 6g. Variable system + mode infrastructure
 **Goal**: Implement an editor variable system with Python-based configuration and a mode infrastructure. Foundation for fill-column, auto-fill-mode, and per-mode keymaps. Also enables future in-game extensibility.

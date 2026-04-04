@@ -80,3 +80,27 @@ class Keymap:
             result.update(self.parent.all_bindings())
         result.update(self._bindings)
         return result
+
+    def reverse_lookup(self, command_name: str) -> list[str]:
+        """Return all key sequences bound to *command_name*.
+
+        Walks into sub-keymaps to produce prefixed sequences like
+        ``"C-x C-s"``.  Only string targets are matched (not callables).
+        """
+        results: list[str] = []
+        self._collect_reverse(command_name, "", results)
+        return sorted(results)
+
+    def _collect_reverse(
+        self, command_name: str, prefix: str, results: list[str]
+    ) -> None:
+        """Recursively collect key sequences for *command_name*."""
+        # Parent bindings first (can be overridden by local)
+        if self.parent is not None:
+            self.parent._collect_reverse(command_name, prefix, results)
+        for key, target in self._bindings.items():
+            full = f"{prefix} {key}" if prefix else key
+            if isinstance(target, str) and target == command_name:
+                results.append(full)
+            elif isinstance(target, Keymap):
+                target._collect_reverse(command_name, full, results)
