@@ -82,6 +82,14 @@ class Editor:
         self._dkb_prefix: str = ""
         self._dkb_map: Keymap | None = None
 
+        # ESC-as-Meta state machine.  A bare Escape keystroke sets
+        # ``_meta_pending``; the next non-ESC key is then rewritten as
+        # ``M-<key>`` (e.g., ESC f → M-f).  A second bare Escape
+        # transitions to ``_escape_quit_pending``; a third triggers
+        # ``keyboard-escape-quit``.  Mirrors real Emacs behaviour.
+        self._meta_pending: bool = False
+        self._escape_quit_pending: bool = False
+
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
         self._last_command_name: str = ""
@@ -184,6 +192,58 @@ class Editor:
         execution.  When the minibuffer is active, keystrokes are
         routed there instead.
         """
+        # Describe-key capture runs first: it consumes *any* key,
+        # including Escape, so that C-h k ESC describes Escape rather
+        # than triggering the ESC-as-Meta state machine.  Matches the
+        # C-g handling convention from Phase 6l-1.
+        if self._describing_key:
+            self._describing_key = False
+            self._do_describe_key(key)
+            return
+        if self._describing_key_briefly:
+            self._describing_key_briefly = False
+            self._do_describe_key_briefly(key)
+            return
+
+        # ESC-as-Meta state machine.  Runs before minibuffer routing so
+        # a bare Escape does not reach the minibuffer and so that
+        # ESC ESC ESC can dismiss the minibuffer via
+        # ``keyboard-escape-quit``.
+        if key == "Escape":
+            if self._escape_quit_pending:
+                # Third ESC — run keyboard-escape-quit directly.  Clear
+                # the pending flags first so ``_reset_transient_state``
+                # starts from a clean slate.
+                self._meta_pending = False
+                self._escape_quit_pending = False
+                self._execute_command_by_name("keyboard-escape-quit")
+                return
+            if self._meta_pending:
+                # Second ESC — transition to escape-quit-pending.
+                self._meta_pending = False
+                self._escape_quit_pending = True
+                self.message = "ESC ESC-"
+                return
+            # First ESC — enter meta-pending.
+            self._meta_pending = True
+            self.message = "ESC-"
+            return
+
+        if self._meta_pending or self._escape_quit_pending:
+            # Previous key(s) were bare Escape and the user followed
+            # up with something else.  C-g is a universal quit signal
+            # and must not be rewritten to C-M-g — clear the pending
+            # state and let it fall through to the C-g intercept below
+            # (which runs ``keyboard-quit``).  Every other key becomes
+            # M-<key>.  The follow-up character invalidates any
+            # escape-quit-pending state — only the most-recent ESC
+            # acts as the Meta prefix.
+            self._meta_pending = False
+            self._escape_quit_pending = False
+            if key != "C-g":
+                key = self._rewrite_as_meta(key)
+            self.message = ""
+
         # Route to minibuffer if active
         if self.minibuffer is not None:
             old_mb = self.minibuffer
@@ -203,23 +263,6 @@ class Editor:
                 # Re-dispatch replayed key (isearch exit-and-replay)
                 if replay is not None:
                     self.process_key(replay)
-            return
-
-        # Describe-key mode: capture the next key and show its binding.
-        # C-g is treated like any other key here — it describes the
-        # ``keyboard-quit`` command, matching Emacs behaviour.  To exit
-        # describe-key without describing, just describe any key you
-        # don't care about.
-        if self._describing_key:
-            self._describing_key = False
-            self._do_describe_key(key)
-            return
-
-        # Describe-key-briefly mode: show binding in message area only.
-        # Same rule as above for C-g.
-        if self._describing_key_briefly:
-            self._describing_key_briefly = False
-            self._do_describe_key_briefly(key)
             return
 
         # C-g is special: it interrupts any in-progress command,
@@ -285,6 +328,27 @@ class Editor:
             full_key = f"{prefix_display} {key}" if prefix_display else key
             self.message = f"{full_key} is undefined"
             self._prefix_arg = None
+
+    @staticmethod
+    def _rewrite_as_meta(key: str) -> str:
+        """Rewrite *key* as its Meta-prefixed equivalent for ESC-as-Meta.
+
+        Used when the editor has a pending bare-Escape and the user
+        presses a non-ESC follow-up key.  Follows the conventional
+        mapping:
+
+        - ``"f"`` → ``"M-f"`` (printable → M-prefixed)
+        - ``"Enter"`` → ``"M-Enter"`` (named key → M-prefixed)
+        - ``"C-f"`` → ``"C-M-f"`` (Ctrl → C-M-)
+        - ``"M-f"`` → ``"M-f"`` (already Meta — leave alone, e.g. the
+          key reader already combined ESC+f into M-f at the byte level)
+        - ``"C-M-f"`` → ``"C-M-f"`` (already C-M- — leave alone)
+        """
+        if key.startswith("M-") or key.startswith("C-M-"):
+            return key
+        if key.startswith("C-"):
+            return f"C-M-{key[2:]}"
+        return f"M-{key}"
 
     def _resolve_keymap(self) -> Keymap:
         """Resolve the effective keymap for the current buffer.
@@ -389,6 +453,21 @@ class Editor:
 
     def _do_describe_key(self, key: str) -> None:
         """Look up what a key is bound to and show in *Help*."""
+        # Special case: bare Escape is the ESC-as-Meta prefix, not a
+        # keymap binding.  Describe its role explicitly rather than
+        # falling through to "Escape is not bound".
+        if key == "Escape" and not self._describing_key_prefix:
+            from recursive_neon.editor.default_commands import _show_help_buffer
+
+            lines = [
+                "Escape acts as the Meta prefix (ESC-as-Meta).",
+                "",
+                "  ESC <key>   equivalent to M-<key> (e.g. ESC f runs forward-word)",
+                "  ESC ESC ESC runs the command keyboard-escape-quit",
+            ]
+            _show_help_buffer(self, "\n".join(lines))
+            return
+
         keymap = self._resolve_keymap()
         target = keymap.lookup(key)
 
@@ -430,6 +509,12 @@ class Editor:
 
     def _do_describe_key_briefly(self, key: str) -> None:
         """Look up what a key is bound to and show in the message area."""
+        # Special case: bare Escape is the ESC-as-Meta prefix.
+        if key == "Escape" and not self._dkb_prefix:
+            self.message = "Escape is the Meta prefix (ESC-as-Meta); "
+            self.message += "ESC ESC ESC runs keyboard-escape-quit"
+            return
+
         keymap = self._resolve_keymap()
         target = keymap.lookup(key)
 
@@ -589,3 +674,6 @@ class Editor:
         self._describing_key_map = None
         self._dkb_prefix = ""
         self._dkb_map = None
+        # Clear ESC-as-Meta state machine
+        self._meta_pending = False
+        self._escape_quit_pending = False

@@ -294,6 +294,53 @@ def keyboard_quit(ed: Editor, prefix: int | None) -> None:
     ed.message = "Quit"
 
 
+@defcommand(
+    "keyboard-escape-quit",
+    "Cancel operation and dismiss temporary windows (ESC ESC ESC).",
+)
+def keyboard_escape_quit(ed: Editor, prefix: int | None) -> None:
+    """Cancel everything *and* dismiss temporary display windows.
+
+    Like ``keyboard-quit`` but additionally:
+
+    - Dismisses the ``*Help*`` buffer if currently displayed (switches
+      back to the most recent non-``*Help*`` buffer — the buffer stays
+      on the list so the user can return to it later).
+    - Cancels the minibuffer, including isearch's position-restoring
+      cancel path (via the minibuffer's own ``C-g`` handling).
+    - Exits describe-key / describe-key-briefly capture modes.
+    - Clears mark/region, prefix-arg, and any pending prefix keymap.
+
+    Bound to ``ESC ESC ESC`` via the ESC-as-Meta state machine in
+    ``Editor.process_key``.  Can also be invoked directly via
+    ``M-x keyboard-escape-quit``.
+    """
+    # 1. Cancel the minibuffer, if any.  We delegate to the
+    # minibuffer's own C-g handling so isearch-style patched cancels
+    # (which restore the pre-search point) still fire.
+    if ed.minibuffer is not None:
+        old_mb = ed.minibuffer
+        old_mb.process_key("C-g")
+        # Only clear if the cancel callback didn't start a new minibuffer
+        if ed.minibuffer is old_mb:
+            ed.minibuffer = None
+
+    # 2. Dismiss the *Help* buffer: if it's current, switch to another
+    # buffer.  We intentionally do *not* kill the *Help* buffer — it
+    # stays on the list so the user can C-x b back to it if wanted.
+    if ed.buffer.name == "*Help*":
+        for i, buf in enumerate(ed._buffers):
+            if buf.name != "*Help*":
+                ed._current_index = i
+                if buf.on_focus is not None:
+                    buf.on_focus()
+                break
+
+    # 3. Clear every other transient interactive state.
+    ed._reset_transient_state()
+    ed.message = "Quit"
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Minibuffer commands (M-x, file ops, buffer switching)
 # ═══════════════════════════════════════════════════════════════════════

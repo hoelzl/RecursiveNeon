@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-05)
-> **Status**: Phases 0-6k complete, Phase 6l-1 complete. 1452 tests. **Phase 6l-2 (`keyboard-escape-quit` + ESC-as-Meta) is next**, followed by the rest of Phase 6l (true incremental search, query-replace, deferred items), Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt, extensibility, game hooks, TUI apps) and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 complete. 1490 passing tests + 13 xfail (TD-006 regressions). **Phase 6l-3 (true incremental search) is next**, followed by Phase 6l-4 (query-replace), 6l-5 (deferred items), Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt **incl. TD-006**, extensibility, game hooks, TUI apps), and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -329,22 +329,35 @@ Still handled as specified:
 
 Query-replace cancellation is deferred to 6l-4 (the command doesn't exist yet).
 
-#### 6l-2. `keyboard-escape-quit` + ESC-as-Meta
-New command `keyboard-escape-quit` — the "do everything C-g does, plus dismiss temporary windows". In our editor it should:
-- Dismiss the `*Help*` buffer if currently displayed (switch back to previous buffer)
-- Exit `query-replace` / `describe-key` capture modes
-- Dismiss the minibuffer
-- Clear mark/region, prefix-arg, pending keymap
+#### 6l-2. `keyboard-escape-quit` + ESC-as-Meta — **DONE** (1490 tests; +38 from 6l-1's 1452)
 
-Bind it to **`ESC ESC ESC`** (triple Escape). Also available as `M-ESC ESC` once ESC becomes a Meta prefix.
+Landed the `keyboard-escape-quit` command and the ESC-as-Meta state machine that drives it. New fields `_meta_pending` / `_escape_quit_pending` on `Editor` plus a `_rewrite_as_meta` static helper; the state machine runs at the top of `process_key` before minibuffer routing. `keyboard-escape-quit` in `default_commands.py` dismisses the minibuffer via its own `C-g` path (preserving isearch's point-restore), switches away from `*Help*` without killing it, and reuses `_reset_transient_state()` for everything else. New `tests/unit/editor/test_escape_meta.py` with 38 tests covering every documented path.
 
-**ESC-as-Meta**: Today ESC is only handled inside the minibuffer/isearch as a cancel key. In real Emacs, ESC is a valid Meta prefix — `ESC f` is equivalent to `M-f`, `ESC x` to `M-x`, etc. Implement this in `Editor.process_key`:
-- On bare ESC, set an internal `_meta_pending` flag.
-- The next keystroke is rewritten as `M-<key>` before keymap lookup. Printable keys become `M-<char>` (e.g., `M-f`); `Ctrl-` keys become `C-M-<char>`; a second ESC transitions into an "escape-quit pending" state.
-- A third ESC while escape-quit is pending triggers `keyboard-escape-quit`.
-- Inside the minibuffer, a bare ESC with no follow-up still cancels (preserving current behaviour) — i.e., minibuffer's own ESC handling remains as the terminal case if no follow-up key arrives. Verify this works given the TUI's synchronous keystroke model.
+**Deviations from the original 6l-2 prose, resolved to match Emacs**:
 
-Tests (`test_escape_meta.py`): ESC-f invokes forward-word; ESC-x opens M-x; ESC ESC ESC quits from normal mode / minibuffer / *Help* buffer; ESC inside minibuffer still cancels cleanly.
+- **Describe-key C-g/ESC are not cancelled**: `C-h k ESC` now describes Escape as the Meta prefix explicitly (special-cased in `_do_describe_key`), instead of treating it as "not bound". Describe-key runs *before* the ESC state machine in `process_key`, so it captures ESC cleanly.
+- **C-g during meta-pending always cancels**: a user who typed `ESC` and then `C-g` almost certainly wants to abort, not invoke `C-M-g`. The state machine special-cases `C-g` so it falls through to the normal `keyboard-quit` intercept rather than being Meta-rewritten. Documented inline.
+
+**Intentional deviation from the prose**: the original 6l-2 prose simultaneously required "three ESCs dismiss minibuffer" *and* "bare ESC in minibuffer still cancels cleanly" — inherently contradictory in a synchronous keystroke model (no way to detect "no follow-up" without a timer). The implementation prioritises the state-machine-clean interpretation: a single ESC in the minibuffer sets `_meta_pending` but does *not* cancel; three ESCs run `keyboard-escape-quit`, which dismisses the minibuffer via `mb.process_key("C-g")`. The unit-level `Minibuffer.process_key("Escape")` contract is preserved for direct callers — that is the "terminal case" the prose refers to (see `test_minibuffer_unit_level_escape_still_cancels`).
+
+**Discoveries affecting future phases**:
+
+- **Describe-key now runs *before* minibuffer routing in `process_key`.** The old order had describe-key after minibuffer routing; moving it up was necessary so the ESC state machine (which runs between describe-key and minibuffer routing) doesn't steal ESCs intended for `C-h k` / `C-h c` capture. No existing behaviour changes because describe-key only activates via `C-h k` / `C-h c`, which leave no pending minibuffer. Any future capture-style mode added to `process_key` should sit *above* the ESC state machine, alongside describe-key.
+- **Phase 6l-3 (true isearch) hook**: the `editor.highlight_term` / `editor.highlight_case_fold` fields still need to be added. The isearch minibuffer's **patched `process_key`** (handling C-g / Escape → restore point) is still the cancellation hook for `keyboard-escape-quit` — the new command delegates to `mb.process_key("C-g")`, which fires the patched handler. Phase 6l-3 must preserve this delegation (don't bypass the patched process_key or isearch cancellation will stop restoring point).
+- **Phase 6l-4 (query-replace) hook**: the new `query-replace` capture mode should be handled analogously to describe-key in `process_key` — consume all keys *before* the ESC state machine, so ESC inside query-replace behaves as an in-session key (skip, exit, whatever query-replace maps it to) rather than triggering Meta-prefix rewrite. `_reset_transient_state()` should grow to clear the new query-replace state fields at the same time (keyboard-escape-quit must cancel query-replace cleanly).
+- **`_do_describe_key` / `_do_describe_key_briefly` special-case handling for named non-keymap keys**: the pattern added for `"Escape"` (check for the key name and show a curated help message before falling through to keymap lookup) is a useful template for future pseudo-keys (e.g., documenting `"Prefix arg"`, `"C-u"`). Not worth generalising yet, but worth knowing it exists.
+
+**Test coverage** — `tests/unit/editor/test_escape_meta.py` classes:
+
+- `TestEscAsMeta` (8): basic `ESC <key>` → `M-<key>` rewrite for printable, named, and C- keys; symbol keys; already-meta passthrough; state-cleared-after-dispatch
+- `TestEscapeQuitNormalMode` (4): three ESCs at top level; clears region / prefix-arg / pending prefix keymap
+- `TestEscapeQuitMinibuffer` (5): three ESCs dismiss M-x / C-x C-f / typed input; single ESC + non-matching key leaves minibuffer open; unit-level `Minibuffer` class contract preserved
+- `TestEscapeQuitHelpBuffer` (2): three ESCs switch away from *Help*; *Help* stays on buffer list; switches to original non-Help buffer
+- `TestKeyboardEscapeQuitDirect` (4): direct invocation via `execute_command`; dismisses minibuffer; switches from *Help*; command registered
+- `TestEscapeDescribeKey` (2): `C-h k Escape` / `C-h c Escape` show ESC-as-Meta explanation
+- `TestEscapeInIsearch` (1): three ESCs in isearch dismiss and restore original point via the patched-process_key delegation
+- `TestEscStateMachine` (6): `ESC ESC f` still rewrites to `M-f` (collapse to single-Meta); C-g during meta-pending/escape-quit-pending cancels; `_reset_transient_state` clears flags; ESC in mid-prefix keymap allows `M-<key>` lookup within that keymap
+- `TestRewriteAsMeta` (6): unit tests for the static helper's rewrite rules
 
 #### 6l-3. True incremental search (`isearch-forward` / `isearch-backward`)
 The current C-s / C-r implementation (`default_commands.py:424-512`) advances point as the user types and moves to the next occurrence on repeat, but **does not highlight all occurrences** and **does not wrap around**. It behaves closer to Emacs's non-interactive `search-forward` than `isearch-forward`.
@@ -422,6 +435,7 @@ Items **explicitly deferred again** (document but do not implement here). This l
 - **TD-003: TUI framework timer / auto-refresh** — `on_tick()` so `sysmon` updates without keypresses. Belongs to a small TUI-framework phase rather than editor polish.
 - **TD-004: Mark tracking identity vs `Mark.__eq__` value-equality footgun** — `Buffer.track_mark()` uses identity, but `Mark.__eq__` compares by position. Latent risk if any future code uses `in` / `==` against `_tracked_marks`. Current decision is "document the invariant"; revisit only if the footgun actually bites.
 - **TD-001: `pydantic.v1` warning on Python 3.14+** — intentional workaround until `langchain-core` drops the `pydantic.v1` import or `pydantic ≥ 2.13` ships stable. Not an action item; just tracked.
+- **TD-006: Filesystem name uniqueness + editor save_callback multi-buffer bug** (user bug report 2026-04-05) — `AppService.create_file` / `create_directory` / `update_file` rename / `copy_file` / `move_file` never check for sibling name collisions, AND `shell/programs/edit.py`'s `save_callback` shares a single `file_id` closure across every buffer. Together these produce duplicate filenames and silent data corruption in multi-buffer editing sessions. Scheduled for Phase 7c-5. **16 xfail regression tests** already in the repo (`tests/unit/test_filesystem_name_uniqueness.py` + `tests/unit/shell/test_edit_save_callback.py`) — remove the xfail markers as part of the fix.
 
 #### 6l-6. Files likely to be modified
 
@@ -675,13 +689,109 @@ No new tests unless the filter is removed — in that case, add a test that impo
 - WebSocket client sends `resize` on connect and on host-terminal SIGWINCH; the server dispatches to the running TUI.
 - Tests cover both POSIX and Windows paths with mocked signal/polling.
 
-##### 7c-5. Acceptance criteria
+##### 7c-5. TD-006 — filesystem name uniqueness + editor save_callback multi-buffer bug
+
+**Problem**: A user report during Phase 6l-2 (2026-04-05) surfaced two
+tightly related bugs that together produce duplicate filenames and
+silent data corruption during multi-buffer edit sessions. Full
+analysis lives in `docs/TECH_DEBT.md` (TD-006). Short version:
+
+- **Bug 1 — Filesystem allows duplicate `(parent_id, name)` pairs**.
+  `AppService.create_file`, `create_directory`, `update_file` (rename),
+  `copy_file`, and `move_file` never check for name collisions in the
+  target parent. `resolve_path` returns the first match so later
+  duplicates become invisible to most commands but remain in the node
+  list and leak through `list_directory` / `ls`.
+- **Bug 2 — Editor `save_callback` closes over a single shared
+  `file_id`**. `shell/programs/edit.py` declares one `file_id` captured
+  via `nonlocal`. Buffers opened later via `find-file` never update
+  the closure, so saving a non-initial buffer either creates a
+  duplicate node (if `file_id` was `None`) or writes into the wrong
+  filesystem node (if `file_id` was already set by the initial `edit
+  <path>`).
+
+**Regression tests** (already in the repo as of Phase 6l-2, currently
+`@pytest.mark.xfail(strict=True)`):
+- `backend/tests/unit/test_filesystem_name_uniqueness.py` — 13 tests
+  covering every mutating filesystem call.
+- `backend/tests/unit/shell/test_edit_save_callback.py` — 4 tests
+  covering the multi-buffer save paths, including the exact
+  user-reported scenario.
+
+The xfail markers document the expected behaviour and will turn into
+passing tests the moment the fix lands. Removing the markers is part
+of the fix commit.
+
+**Fix plan**:
+
+1. **Filesystem layer** (`services/app_service.py`):
+   - New private helper `_find_child_by_name(parent_id, name) ->
+     FileNode | None` using the existing `_children_index` for O(1)
+     lookup.
+   - `create_file` / `create_directory` raise `ValueError` (or a
+     dedicated `FileExistsError`) if a child with the same name
+     already exists. No-op rename to the same name must still succeed.
+   - `update_file`'s rename path raises on collision.
+   - `copy_file` / `move_file` raise on target-parent collision. Add
+     an `overwrite: bool = False` flag for future `cp -f` / `mv -f`
+     semantics (not wired into the shell in this phase — just the API).
+   - `save_filesystem_to_disk` / `load_filesystem_from_disk`: verify
+     the invariant on load and either reject corrupt saves or
+     auto-rename duplicates to `<name>-<short-uuid>` with a log
+     warning. Decision: reject on load, surface a clear error — never
+     silently mutate user data.
+
+2. **Editor layer** (`shell/programs/edit.py`):
+   - Replace the single `file_id` closure with a `dict[int, str]`
+     keyed by `id(buffer)` mapping buffer identity to filesystem node
+     ID.
+   - `open_callback` registers `id(buf) → file_id` as soon as it
+     loads existing file content (requires changing `open_callback`
+     to return the node alongside content, or having `find-file`
+     call a richer hook).
+   - `save_callback` looks up `id(buf)` in the dict: hit → update;
+     miss → create and register. `write-file` to a new path creates
+     a new entry and leaves any stale entry alone (or, better,
+     removes the old mapping for that buffer).
+   - On `remove_buffer`, drop the mapping.
+   - This is effectively a small "buffer-to-node" tracker. Consider
+     hoisting it into the `Editor` class as `Editor.buffer_filepaths:
+     dict[int, str]` once the rest of Phase 7 touches the save path
+     (it becomes load-bearing for Phase 7d syntax highlighting and
+     Phase 7e game-state bridge).
+
+3. **Test file cleanup**: delete the `@pytest.mark.xfail` markers
+   from both regression test files (16 xfail tests in total across
+   the two files). Every test should pass without further changes.
+
+**Tests (additional)**:
+- Extensions to `test_app_service.py` for the new uniqueness error
+  paths, `overwrite=True` flag behaviour, and rename no-op.
+- Extensions to `test_edit_save_callback.py` (or a new file) for
+  `write-file` to a renamed path, `kill-buffer` cleanup, and save
+  after a sequence of buffer switches that exercises the mapping
+  dictionary across multiple state transitions.
+
+**Acceptance criteria for 7c-5**:
+- `touch foo.txt; touch foo.txt` fails the second call with a clear
+  error; the first file is untouched.
+- Multi-buffer editing via `edit` + `find-file` + save, across any
+  combination of existing and new files, correctly creates / updates
+  exactly the intended filesystem nodes.
+- All 16 xfail regression tests pass with the xfail markers removed.
+- `save_all_to_disk` / `load_all_from_disk` round-trip rejects a
+  maliciously-hand-edited JSON save file that contains duplicate
+  `(parent_id, name)` pairs.
+- TD-006 closed out in `TECH_DEBT.md`.
+
+##### 7c-6. Acceptance criteria (whole 7c)
 - `sysmon` auto-refreshes every second without keypresses.
 - TUI apps fill the whole terminal and reflow on resize (both CLI and WebSocket paths).
 - TD-004 closed out with `_MarkSet` wrapper.
 - TD-001 either closed out or re-confirmed with a dated note.
 - TD-005 closed out.
-- ~30 new tests (15 for tick/mark-set/pydantic + 15 for resize).
+- TD-006 closed out — 16 xfail regression tests turned green.
+- ~50 new tests (15 for tick/mark-set/pydantic + 15 for resize + ~20 for TD-006 fix tests on top of the existing xfail set).
 
 ---
 
@@ -842,8 +952,13 @@ Listed per sub-phase so each commit stays focused.
 - `main.py` — route `resize` WS message type
 - `editor/buffer.py` — `_MarkSet` wrapper
 - `recursive_neon/__init__.py` — maybe remove the pydantic.v1 filter
-- `docs/TECH_DEBT.md` — close out TD-003, TD-004, TD-005; re-audit TD-001
-- Extensions to `test_tui_runner.py`, `test_sysmon.py`, `test_terminal.py`; new `test_mark_set.py`, `test_tui_resize.py`
+- **TD-006 (7c-5)**:
+  - `services/app_service.py` — `_find_child_by_name` helper, name-uniqueness checks in `create_file` / `create_directory` / `update_file` rename / `copy_file` / `move_file`; optional `overwrite=True` flag on copy/move
+  - `shell/programs/edit.py` — replace `file_id` closure with a `dict[id(buffer), str]` mapping; update `open_callback` / `save_callback` / remove-buffer path
+  - `tests/unit/test_filesystem_name_uniqueness.py` — remove `@pytest.mark.xfail` markers
+  - `tests/unit/shell/test_edit_save_callback.py` — remove `@pytest.mark.xfail` markers
+- `docs/TECH_DEBT.md` — close out TD-003, TD-004, TD-005, TD-006; re-audit TD-001
+- Extensions to `test_tui_runner.py`, `test_sysmon.py`, `test_terminal.py`, `test_app_service.py`; new `test_mark_set.py`, `test_tui_resize.py`
 
 **7d** — editor extensibility:
 - `editor/config_loader.py` *(new)* — `~/.neon-edit.py` loader + sandbox
