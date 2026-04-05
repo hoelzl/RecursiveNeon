@@ -14,6 +14,32 @@ from typing import Protocol
 
 
 @dataclass
+class StyleSpan:
+    """A styled region to overlay on a ``ScreenBuffer`` after compositing.
+
+    Used by the editor's post-compose styling pass for inline highlights
+    (isearch, query-replace, future syntax highlighting).  Spans are
+    applied *after* plain-text rendering is complete, so they never
+    interfere with ``set_region`` width math.
+
+    Overlapping spans on the same cell resolve by priority: higher
+    ``priority`` wins.  Reserved priority ranges (higher wins per cell):
+
+    - 10 — syntax highlighting (future)
+    - 20 — isearch / query-replace, non-current match
+    - 25 — isearch / query-replace, current match (emphasised)
+    - 30 — region / active mark (future)
+    - 40 — cursor line highlight (future)
+    """
+
+    row: int
+    col: int
+    width: int
+    style: str
+    priority: int = 0
+
+
+@dataclass
 class ScreenBuffer:
     """A 2D text grid representing the terminal screen.
 

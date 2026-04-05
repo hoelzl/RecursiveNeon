@@ -994,11 +994,20 @@ class Buffer:
     # ------------------------------------------------------------------
 
     def find_forward(
-        self, text: str, from_line: int = -1, from_col: int = -1
+        self,
+        text: str,
+        from_line: int = -1,
+        from_col: int = -1,
+        *,
+        case_fold: bool = False,
     ) -> tuple[int, int] | None:
         """Find *text* forward from the given position (default: point).
 
-        Returns ``(line, col)`` of the first match, or ``None``.
+        *text* may contain ``\\n`` to match across line boundaries.  When
+        ``case_fold`` is true, matching is case-insensitive; returned
+        positions refer to the original (un-lowercased) text.
+
+        Returns ``(line, col)`` of the match's start, or ``None``.
         """
         if not text:
             return None
@@ -1006,21 +1015,69 @@ class Buffer:
             from_line = self.point.line
         if from_col < 0:
             from_col = self.point.col
-        # Search from from_col on from_line, then subsequent lines
-        for ln in range(from_line, len(self.lines)):
+
+        needle = text.lower() if case_fold else text
+
+        if "\n" not in needle:
+            # Fast path: single-line scan
+            for ln in range(from_line, len(self.lines)):
+                line = self.lines[ln]
+                haystack = line.lower() if case_fold else line
+                start = from_col if ln == from_line else 0
+                idx = haystack.find(needle, start)
+                if idx >= 0:
+                    return (ln, idx)
+            return None
+
+        # Multi-line path: split needle on newlines.  The first part
+        # must match a suffix of the starting line (so the implicit
+        # line-break aligns with the needle's first ``\n``); middle
+        # parts must match whole intervening lines exactly; the last
+        # part must match a prefix of the final line.
+        parts = needle.split("\n")
+        n = len(parts)
+        first_part = parts[0]
+        last_part = parts[-1]
+        for ln in range(from_line, len(self.lines) - (n - 1)):
+            line = self.lines[ln]
+            haystack = line.lower() if case_fold else line
             start = from_col if ln == from_line else 0
-            idx = self.lines[ln].find(text, start)
-            if idx >= 0:
-                return (ln, idx)
+            if not haystack.endswith(first_part):
+                continue
+            col = len(haystack) - len(first_part)
+            if col < start:
+                continue
+            ok = True
+            for i in range(1, n - 1):
+                mid_line = self.lines[ln + i]
+                mid_hay = mid_line.lower() if case_fold else mid_line
+                if mid_hay != parts[i]:
+                    ok = False
+                    break
+            if not ok:
+                continue
+            last_line = self.lines[ln + n - 1]
+            last_hay = last_line.lower() if case_fold else last_line
+            if not last_hay.startswith(last_part):
+                continue
+            return (ln, col)
         return None
 
     def find_backward(
-        self, text: str, from_line: int = -1, from_col: int = -1
+        self,
+        text: str,
+        from_line: int = -1,
+        from_col: int = -1,
+        *,
+        case_fold: bool = False,
     ) -> tuple[int, int] | None:
         """Find *text* backward from the given position (default: point).
 
-        Finds the rightmost match that *starts* before ``from_col``.
-        Returns ``(line, col)`` of the match, or ``None``.
+        Finds the rightmost match that *starts* before ``from_col`` on
+        ``from_line`` (or earlier).  *text* may contain ``\\n``; when
+        ``case_fold`` is true, matching is case-insensitive.
+
+        Returns ``(line, col)`` of the match's start, or ``None``.
         """
         if not text:
             return None
@@ -1028,23 +1085,59 @@ class Buffer:
             from_line = self.point.line
         if from_col < 0:
             from_col = self.point.col
+
+        needle = text.lower() if case_fold else text
+
+        if "\n" not in needle:
+            # Fast path: single-line scan
+            for ln in range(from_line, -1, -1):
+                line = self.lines[ln]
+                haystack = line.lower() if case_fold else line
+                limit = from_col if ln == from_line else len(line)
+                # Find rightmost match whose start < limit.
+                best = -1
+                pos = 0
+                while True:
+                    idx = haystack.find(needle, pos)
+                    if idx < 0 or idx >= limit:
+                        break
+                    best = idx
+                    pos = idx + 1
+                if best >= 0:
+                    return (ln, best)
+            return None
+
+        # Multi-line path.  The match starts at (ln, col) where
+        # first_part is a suffix of lines[ln]; col is determined
+        # uniquely per line.
+        parts = needle.split("\n")
+        n = len(parts)
+        first_part = parts[0]
+        last_part = parts[-1]
         for ln in range(from_line, -1, -1):
+            if ln + n - 1 >= len(self.lines):
+                continue
             line = self.lines[ln]
-            limit = from_col if ln == from_line else len(line)
-            # Find rightmost match starting before limit.
-            # Can't use rfind(text, 0, limit) because that requires the
-            # match to be entirely within [0, limit), but we only need
-            # the match to START before limit.
-            best = -1
-            pos = 0
-            while True:
-                idx = line.find(text, pos)
-                if idx < 0 or idx >= limit:
+            haystack = line.lower() if case_fold else line
+            if not haystack.endswith(first_part):
+                continue
+            col = len(haystack) - len(first_part)
+            if ln == from_line and col >= from_col:
+                continue
+            ok = True
+            for i in range(1, n - 1):
+                mid_line = self.lines[ln + i]
+                mid_hay = mid_line.lower() if case_fold else mid_line
+                if mid_hay != parts[i]:
+                    ok = False
                     break
-                best = idx
-                pos = idx + 1
-            if best >= 0:
-                return (ln, best)
+            if not ok:
+                continue
+            last_line = self.lines[ln + n - 1]
+            last_hay = last_line.lower() if case_fold else last_line
+            if not last_hay.startswith(last_part):
+                continue
+            return (ln, col)
         return None
 
     # ------------------------------------------------------------------

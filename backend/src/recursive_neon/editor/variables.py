@@ -97,3 +97,12 @@ defvar(
     "If True, automatically break lines at fill-column during typing.",
     var_type=bool,
 )
+defvar(
+    "case-fold-search",
+    True,
+    "If True, search commands fold case by default (isearch, query-replace). "
+    "Isearch applies smart-case on top: folding stays active only while the "
+    "search string is all lowercase; typing an uppercase character disables "
+    "folding for that session.",
+    var_type=bool,
+)

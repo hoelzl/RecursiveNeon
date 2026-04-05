@@ -2,6 +2,62 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6l-3 — True Incremental Search (2026-04-05)
+
+### Added
+- **`StyleSpan` + post-compose styling pass** — new `StyleSpan(row, col, width, style, priority)` dataclass in `shell/tui/__init__.py`. `EditorView._style_text_rows` walks the composed plain-text screen after `_render_window` finishes and wraps character ranges in ANSI codes. Parallel to the existing `_style_modeline_rows`. Overlap resolution per cell by priority (strict `>`, stable by emission). Reserved priorities: 10 syntax (future), 20 isearch non-current match, 25 isearch current match, 30 region (future), 40 cursor line (future). **This is the canonical extension point for syntax highlighting** and any future layered-text-overlay feature.
+- **True `isearch-forward` / `isearch-backward`** on C-s / C-r (`default_commands.py`):
+  - Match highlighting: all occurrences of the search term in the visible region are rendered with a yellow-background style; the current match uses a distinct bold+red-background style (`view.py:_compute_highlight_spans`).
+  - Wrap-around: when the forward search fails at EOB, the prompt shows `Failing I-search:`. The next C-s wraps to BOB and shows `Wrapped I-search:`. Symmetric for backward (BOB → EOB).
+  - State-stack backspace: each successful operation pushes a 6-tuple state (`_IsearchState(text, line, col, direction, wrapped, failing)`). Backspace pops one state, restoring text, point, and wrap flag. Backspace across a wrap correctly returns to the failing state that preceded the wrap.
+  - **Smart case-fold** + `M-c` toggle: when the search string is all lowercase, folding is active (Emacs smart-case). Typing an uppercase character disables folding for the session. `M-c` explicitly toggles the override; prompt shows `(case)` / `(fold)` when overridden.
+  - **Multi-line search** via `M-Enter` (not C-j — see Deviations). Inserts a literal `\n` into the search term; `Buffer.find_forward`/`find_backward` match across line boundaries.
+- **`editor.highlight_term` / `editor.highlight_case_fold` fields** — lifecycle owned by the active interactive command. Set on isearch entry, updated on every keystroke that changes the term, cleared on exit / cancel / exit-and-replay. `Editor._reset_transient_state()` also clears them, so `keyboard-escape-quit` and future blanket-reset callers cover them for free. `query-replace` in 6l-4 will inherit the same contract.
+- **`search-forward` / `search-backward`** — the legacy (pre-6l-3) incremental-search behaviour, retained as M-x-only commands. No highlighting, no wrap-around. Use C-s / C-r for the full experience.
+- **`Buffer.find_forward` / `find_backward`** now handle `\n` in the needle and accept a `case_fold: bool = False` kwarg. Multi-line scan walks line-by-line without allocating a joined string. Returned positions refer to the un-lowercased buffer even when case-fold is active.
+- **`defvar("case-fold-search", True)`** in `variables.py` — global default for case-fold behaviour, overridable per-buffer via the existing cascade.
+- **58 new tests** — 21 Buffer search tests (`TestFindForwardMultiLine`, `TestFindBackwardMultiLine`, `TestFindForwardCaseFold`, `TestFindBackwardCaseFold` in `test_isearch.py`); 9 `TestStyleTextRows` tests in `test_view.py`; 28 behaviour tests in the new `test_isearch_v2.py` (highlighting, wrap progression, state-stack, case-fold smart + toggle, M-Enter multi-line, exit-and-replay with highlight, rename routing). 1551 tests total.
+
+### Changed
+- **C-s / C-r** now route to the new isearch implementation. Command names are unchanged (`isearch-forward` / `isearch-backward`), so existing keymap lookups and M-x invocations continue to work. The old behaviour's 19 minibuffer-contract tests in `test_isearch.py` still pass unchanged.
+- **`EditorView._render_window`** signature gains a `text_spans: list[StyleSpan]` out-parameter that each window contributes to; `EditorView._render` aggregates and passes to `_style_text_rows` before modeline styling.
+
+### Deviations (documented inline)
+- **`M-Enter` instead of `C-j`** for inserting a literal newline into the isearch search term. Rationale: `shell/keys.py:45-46` maps both `\r` and `\n` to `"Enter"`, making C-j indistinguishable from Enter in our key encoding. M-Enter is unambiguous on every platform. Registered via `ed.minibuffer.key_handlers["M-Enter"]` from the isearch setup code. See the comment block at the top of the isearch section in `default_commands.py`. This is a sanctioned deviation under the project's Emacs-fidelity rule (faithful behaviour would require redesigning key encoding for one binding).
+- **`minibuffer.py` was not modified.** The original addendum plan anticipated a C-j self-insert branch and an M-c handler hook inside the minibuffer core. Both turned out to be achievable via the existing `minibuffer.key_handlers[...]` extension mechanism from the isearch setup code. Net scope shrink.
+
+### Architecture notes
+Phase 6l-3's rendering architecture (span-list + post-compose, chosen as "Option A" from four candidates evaluated in `V2_HANDOVER.md:6l-3 addendum`) locks in a clean migration path: future syntax highlighting produces additional spans at priority 10, with no changes needed to `StyleSpan` or the post-pass. If per-cell merging ever becomes expensive enough to warrant a character-attribute grid (Option D), the span *producers* (isearch, query-replace, syntax highlighter) won't need to change — only the internal storage of `ScreenBuffer`.
+
+## Phase 6l-2 — `keyboard-escape-quit` + ESC-as-Meta (2026-04-05)
+
+### Added
+- **`keyboard-escape-quit` command** — ESC ESC ESC cancels all transient state and dismisses the minibuffer / `*Help*` buffer. Delegates minibuffer cancellation to `mb.process_key("C-g")` so isearch's patched-process cancel (with point restore) still fires. Dismisses `*Help*` by switching to the most recent non-Help buffer; the buffer stays on the list so the user can C-x b back to it.
+- **ESC-as-Meta state machine** in `Editor.process_key` — bare Escape sets `_meta_pending`; the next non-ESC key is rewritten as `M-<key>` (ESC f → M-f, ESC x → M-x, ESC C-f → C-M-f). A second bare Escape transitions to `_escape_quit_pending`; a third runs `keyboard-escape-quit`. C-g during meta-pending always cancels (not C-M-g) to preserve the universal-quit semantics.
+- **`_rewrite_as_meta` static helper** — rewrite rules for the ESC state machine: printable → `M-x`, named → `M-Enter`, `C-f` → `C-M-f`, already-`M-` / `C-M-` leave unchanged.
+- **Describe-key handles Escape specially** — `C-h k Escape` now describes Escape as the Meta prefix (with a curated help message) instead of reporting "not bound". Describe-key runs *before* the ESC state machine in `process_key` so capture works cleanly.
+- **38 new tests** in `test_escape_meta.py` across 9 classes: `TestEscAsMeta` (8), `TestEscapeQuitNormalMode` (4), `TestEscapeQuitMinibuffer` (5), `TestEscapeQuitHelpBuffer` (2), `TestKeyboardEscapeQuitDirect` (4), `TestEscapeDescribeKey` (2), `TestEscapeInIsearch` (1), `TestEscStateMachine` (6), `TestRewriteAsMeta` (6). 1493 tests total.
+- **TD-006 recorded** — user bug report during Phase 6l-2 surfaced two tightly related bugs: (1) `AppService` mutating calls (`create_file`, `create_directory`, `update_file` rename, `copy_file`, `move_file`) never check for `(parent_id, name)` collisions; (2) `shell/programs/edit.py`'s `save_callback` closes over a single shared `file_id`, so buffers opened later via `find-file` write into the wrong filesystem node. Together they produce duplicate filenames and silent data corruption during multi-buffer editing. **16 xfail regression tests** (13 xfail + 3 passing control tests) added: `tests/unit/test_filesystem_name_uniqueness.py` (12) + `tests/unit/shell/test_edit_save_callback.py` (4). Scheduled for Phase 7c-5; full fix plan in `docs/TECH_DEBT.md` and `V2_HANDOVER.md`.
+
+### Changed
+- **Describe-key capture now runs *before* minibuffer routing** in `process_key`. Necessary so the ESC state machine (which sits between describe-key and minibuffer routing) doesn't steal ESCs intended for `C-h k` / `C-h c` capture. Any future capture-style mode should sit alongside describe-key, above the ESC state machine.
+- **Three-ESCs-in-minibuffer** intentionally deviates from Emacs prose. The prose said "three ESCs dismiss" AND "bare ESC in minibuffer still cancels cleanly" — contradictory in a synchronous keystroke model. Implementation prefers the state-machine-clean interpretation: a single ESC in the minibuffer sets `_meta_pending` but does not cancel; three ESCs run `keyboard-escape-quit` which dismisses via `mb.process_key("C-g")`. The unit-level `Minibuffer.process_key("Escape")` contract is preserved for direct callers.
+
+### Fixed
+- **Describe-key `C-g` / `Escape` not cancelled** — `C-h k C-g` now describes the `keyboard-quit` binding (Emacs behaviour) instead of cancelling the capture. `C-h k Escape` describes the Meta prefix.
+- **Minibuffer cancel preserves the mark** — `C-SPC C-x b C-g` leaves the mark active (Emacs behaviour). The original prose said "clears the transient region/mark in all cases" which was a bug.
+
+## Phase 6l-1 — `keyboard-quit` Audit and Hardening (2026-04-05)
+
+### Added
+- **`Editor._reset_transient_state()` helper** — shared foundation for `keyboard-quit` (C-g) and the upcoming `keyboard-escape-quit` (6l-2). Clears region / mark, pending prefix keymap, `_prefix_keys`, prefix argument state, describe-key capture (both full and briefly), and any other transient interactive flags.
+- **Top-level C-g intercept in `Editor.process_key`** — mirrors Emacs's `quit` signal. C-g short-circuits any pending prefix keymap (mid-`C-x`) instead of falling through as "C-x C-g is undefined".
+- **Promoted describe-key state to explicit `__init__` fields** — `_describing_key_prefix`, `_describing_key_map`, `_dkb_prefix`, `_dkb_map` are now initialised in `Editor.__init__` instead of being dynamic attributes set on demand. Makes the reset helper robust.
+- **19 new tests** in `test_keyboard_quit.py` covering every cancellation path: mid-prefix-keymap C-g, C-u prefix-arg cancel, minibuffer cancel preserving mark, M-x mid-type cancel, describe-key capture (C-g is NOT cancelled; it describes the `keyboard-quit` binding — Emacs behaviour), isearch cancel with point restore, region clear at top level. 1452 tests total.
+
+### Introduced
+- **Emacs-fidelity design principle** in `V2_HANDOVER.md`: *"Emacs is the ground truth."* For every neon-edit feature, the goal is to match real GNU Emacs exactly. If a design doc contradicts Emacs, the prose is almost certainly wrong — treat it as a bug and match Emacs instead. Sanctioned deviations require documenting next to the diverging code.
+
 ## Phase 6k — Tutorial Verification + Polish (2026-04-04)
 
 ### Added

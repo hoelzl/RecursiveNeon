@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete (CLI shell with filesystem, notes, tasks, NPC chat, persistence, WebSocket terminal protocol, TUI framework with raw mode, CodeBreaker minigame, context-sensitive completion, glob expansion, pipes and output redirection, Emacs-inspired text editor with window splitting, shell-in-editor, tutorial verification + `describe-bindings`). Phase 8 (browser terminal + desktop GUI) is next.
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete plus Phase 6l-1 (C-g keyboard-quit hardening), 6l-2 (keyboard-escape-quit + ESC-as-Meta), and 6l-3 (true incremental search with match highlighting, wrap-around, state-stack backspace, smart case-fold + M-c toggle, multi-line search). 1551 passing tests + 13 xfail (TD-006 regressions). Phase 6l-4 (query-replace) is next, followed by 6l-5 (deferred items), Phase 7 (deferred-items cleanup incl. TD-006 fix in 7c-5), and Phase 8 (browser terminal + desktop GUI).
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1433 tests
+../.venv/Scripts/pytest              # All 1551 tests (13 xfail for TD-006)
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -130,6 +130,17 @@ neon-edit is an Emacs-inspired TUI editor with:
 - **Window system** (Phase 6i): `Window` class with tracked point + scroll state, `WindowTree` binary split tree, 7 window commands (C-x 2/3/o/0/1, C-M-v, C-x 4 C-f)
 - EditorView renders the window tree with per-window modelines and vertical dividers
 
+## Editor polish (Phase 6l)
+
+- **`keyboard-quit` / C-g hardening** (6l-1): `Editor._reset_transient_state()` helper clears every transient interactive flag (prefix keymap, prefix arg, describe-key capture, region, ESC state). Top-level C-g intercept in `process_key` dispatches `keyboard-quit` from any context.
+- **`keyboard-escape-quit` + ESC-as-Meta** (6l-2): bare Escape sets `_meta_pending`; the next non-ESC key is rewritten as `M-<key>` (ESC f → M-f). Three consecutive Escapes run `keyboard-escape-quit`, which dismisses the minibuffer via `mb.process_key("C-g")` (preserving isearch's point-restore), switches away from `*Help*`, and calls `_reset_transient_state()`. State machine runs at the top of `process_key`, *above* minibuffer routing but *below* describe-key capture.
+- **True incremental search** (6l-3): `isearch-forward` / `isearch-backward` (C-s / C-r) with match highlighting, wrap-around, state-stack backspace, smart case-fold + M-c toggle, M-Enter newline insertion for multi-line search. The old minibuffer-driven behaviour was renamed to `search-forward` / `search-backward` (M-x only).
+  - **Styling architecture**: new `StyleSpan(row, col, width, style, priority)` dataclass in `shell/tui/__init__.py`. `EditorView._style_text_rows` post-compose pass (parallel to `_style_modeline_rows`) walks the composed plain-text screen and wraps character ranges in ANSI codes. Priority resolution per cell: strict `>`, stable by emission. Reserved priorities: 10 syntax (future), 20 non-current match, 25 current match, 30 region (future), 40 cursor line (future). This is the canonical extension point for syntax highlighting.
+  - **`editor.highlight_term` / `highlight_case_fold`** — owned by whichever interactive command sets them (isearch, query-replace in 6l-4); cleared on exit/cancel/replay and also by `_reset_transient_state()` so keyboard-escape-quit covers them for free.
+  - **`Buffer.find_forward` / `find_backward`** accept `\n` in the needle and a `case_fold=False` kwarg. Multi-line matching walks line-by-line without allocating a joined view. Available to all callers, not just isearch.
+  - **`case-fold-search` defvar** — global default True; smart session rule: fold only while search text is all lowercase (Emacs behaviour). M-c explicitly toggles and shows `(case)` / `(fold)` in the prompt.
+  - **Deviation from Emacs**: Emacs uses C-j for newline insertion in isearch, but `shell/keys.py:45-46` maps both `\r` and `\n` to `"Enter"`. M-Enter is used instead — unambiguous on every platform. Documented inline at the top of the isearch section in `default_commands.py`.
+
 ## Shell-in-Editor (Phase 6j)
 
 Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mode:
@@ -146,8 +157,11 @@ Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mo
 - **Window-tree gotcha for tests**: `EditorView.on_key` calls `_ensure_editor_on_buffer(active_window.buffer)` at the start of every keystroke. If a test uses `editor.create_buffer()` to make a new buffer current and then sends a key, the active window silently reverts the editor's current buffer to whatever the window shows. To test commands on a specific buffer, route through `C-x b switch-to-buffer` key events (the proper flow updates the window too).
 - **Variable-registry leakage**: `M-x set-variable` and `C-x f` mutate `VARIABLES[name].default` (module-level global). Tests that touch `fill-column` or similar must save/restore defaults — see the `_restore_global_variables` autouse fixture in `test_tutorial_walkthrough.py` for the pattern.
 
-## What's Next (Phase 8)
+## What's Next (Phase 6l-4, then Phase 7, then Phase 8)
 
-Phase 8 is browser terminal + desktop GUI: xterm.js over `/ws/terminal`, raw/cooked rendering, desktop chrome (window manager, taskbar), cyberpunk CSS restore.
+- **Phase 6l-4** — `query-replace` (M-%). Reuses the Phase 6l-3 highlight mechanism (`editor.highlight_term`). New editor capture mode analogous to `_describing_key`, handled *above* the ESC state machine in `process_key` so Escape inside query-replace is in-session, not Meta-prefix. `_reset_transient_state()` must grow to clear query-replace state.
+- **Phase 6l-5** — pulled-forward deferred items plus the undo-granularity bug noted in 6k. Multi-line search is already done (6l-3 pulled it in as a prerequisite).
+- **Phase 7** — deferred-items cleanup (7a-7f): shell buffer completions, `on_tick` / auto-refresh, extensibility API, game-world hooks, future TUI apps, **TD-006** (filesystem name uniqueness + editor `save_callback` multi-buffer bug, 7c-5).
+- **Phase 8** — browser terminal + desktop GUI: xterm.js over `/ws/terminal`, raw/cooked rendering, desktop chrome, cyberpunk CSS restore.
 
-See `docs/V2_HANDOVER.md` Section 6 for the full plan.
+See `docs/V2_HANDOVER.md` for the full plan.

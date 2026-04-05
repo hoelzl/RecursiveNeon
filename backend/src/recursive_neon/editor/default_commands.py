@@ -7,6 +7,7 @@ global keymap.  Import this module to populate the command table.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -472,27 +473,51 @@ def find_file(ed: Editor, prefix: int | None) -> None:
 
 # ═══════════════════════════════════════════════════════════════════════
 # Incremental search
+#
+# Two commands live in this section:
+#
+# - ``search-forward`` / ``search-backward`` (M-x only): the legacy
+#   incremental-search behaviour — no highlighting, no wrap-around.
+#   Useful as a simpler non-interactive alternative.
+# - ``isearch-forward`` / ``isearch-backward`` (C-s / C-r): the full
+#   incremental search with match highlighting, wrap-around, state-stack
+#   backspace, M-c case-fold toggle, and M-Enter for inserting a
+#   literal newline into the search string (used for multi-line search).
+#
+# Deviation from Emacs: Emacs uses C-j for newline insertion in isearch.
+# Our key input layer (``shell/keys.py``) maps both CR and LF to
+# ``"Enter"``, so C-j and Enter are indistinguishable.  We use M-Enter
+# (Alt+Enter) instead — unambiguous on every platform.
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@defcommand("isearch-forward", "Incremental search forward (C-s).")
-def isearch_forward(ed: Editor, prefix: int | None) -> None:
-    _start_isearch(ed, forward=True)
+@defcommand(
+    "search-forward",
+    "Non-interactive forward search (legacy behaviour, via M-x).",
+)
+def search_forward(ed: Editor, prefix: int | None) -> None:
+    _start_legacy_search(ed, forward=True)
 
 
-@defcommand("isearch-backward", "Incremental search backward (C-r).")
-def isearch_backward(ed: Editor, prefix: int | None) -> None:
-    _start_isearch(ed, forward=False)
+@defcommand(
+    "search-backward",
+    "Non-interactive backward search (legacy behaviour, via M-x).",
+)
+def search_backward(ed: Editor, prefix: int | None) -> None:
+    _start_legacy_search(ed, forward=False)
 
 
-def _start_isearch(ed: Editor, *, forward: bool) -> None:
-    """Set up an incremental search session via the minibuffer."""
+def _start_legacy_search(ed: Editor, *, forward: bool) -> None:
+    """Legacy incremental-search behaviour (pre-Phase 6l-3).
+
+    Retained for ``M-x search-forward`` / ``search-backward`` — no
+    highlighting, no wrap-around.  For the full isearch experience,
+    use ``C-s`` / ``C-r`` (``isearch-forward`` / ``isearch-backward``).
+    """
     buf = ed.buffer
     start_line = buf.point.line
     start_col = buf.point.col
-    # Stack of (line, col) positions for backspace-undo
-    positions: list[tuple[int, int]] = [(start_line, start_col)]
-    direction = [forward]  # mutable so closures can update
+    direction = [forward]
 
     def on_change(text: str) -> None:
         if not text:
@@ -503,25 +528,21 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
 
     def _do_search(text: str, *, from_current: bool) -> None:
         if direction[0]:
-            # Search forward: skip past current match when repeating
             from_col = buf.point.col + (1 if from_current else 0)
             pos = buf.find_forward(text, buf.point.line, from_col)
         else:
-            # Search backward: include current col for fresh search,
-            # exclude it when repeating (to find the previous match)
             from_col = buf.point.col if from_current else buf.point.col + 1
             pos = buf.find_backward(text, buf.point.line, from_col)
         if pos is not None:
-            positions.append(pos)
             buf.point.move_to(pos[0], pos[1])
-            prefix = "I-search" if direction[0] else "I-search backward"
+            label = "Search" if direction[0] else "Search backward"
             ed.message = ""
             if ed.minibuffer:
-                ed.minibuffer.prompt = f"{prefix}: "
+                ed.minibuffer.prompt = f"{label}: "
         else:
-            prefix = "Failing I-search" if direction[0] else "Failing I-search backward"
+            label = "Failing Search" if direction[0] else "Failing Search backward"
             if ed.minibuffer:
-                ed.minibuffer.prompt = f"{prefix}: "
+                ed.minibuffer.prompt = f"{label}: "
 
     def on_confirm(text: str) -> None:
         pass  # Leave point at the match
@@ -539,12 +560,7 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
         if ed.minibuffer and ed.minibuffer.text:
             _do_search(ed.minibuffer.text, from_current=True)
 
-    prompt_prefix = "I-search" if forward else "I-search backward"
-
-    # Use a wrapper for on_cancel since Minibuffer callback takes no args
-    def cancel_wrapper(text: str) -> None:
-        pass  # Not used — cancel is handled separately
-
+    prompt_prefix = "Search" if forward else "Search backward"
     ed.start_minibuffer(
         f"{prompt_prefix}: ",
         on_confirm,
@@ -553,7 +569,6 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
     if ed.minibuffer:
         ed.minibuffer.key_handlers["C-s"] = repeat_forward
         ed.minibuffer.key_handlers["C-r"] = repeat_backward
-        # Override C-g to restore position
         original_process = ed.minibuffer.process_key
 
         def patched_process(key: str) -> bool:
@@ -561,6 +576,335 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
                 on_cancel()
                 ed.minibuffer._cancelled = True  # type: ignore[union-attr]
                 return False
+            return original_process(key)
+
+        ed.minibuffer.process_key = patched_process  # type: ignore[method-assign]
+
+
+@dataclass
+class _IsearchState:
+    """One snapshot of the isearch session, pushed on every successful op.
+
+    Backspace pops one state.  Stack is initialised with the entry state
+    (text="", at the original point) so backspace at an empty search
+    still has somewhere to go.
+    """
+
+    text: str
+    line: int
+    col: int
+    direction: bool  # True = forward
+    wrapped: bool = False
+    failing: bool = False
+
+
+@defcommand("isearch-forward", "Incremental search forward (C-s).")
+def isearch_forward(ed: Editor, prefix: int | None) -> None:
+    _start_isearch(ed, forward=True)
+
+
+@defcommand("isearch-backward", "Incremental search backward (C-r).")
+def isearch_backward(ed: Editor, prefix: int | None) -> None:
+    _start_isearch(ed, forward=False)
+
+
+def _start_isearch(ed: Editor, *, forward: bool) -> None:
+    """True incremental search with highlighting, wrap, M-c, M-Enter.
+
+    Session state:
+      - ``state_stack``: list of ``_IsearchState`` snapshots.  Every
+        successful keystroke (character add, repeat, wrap) pushes one
+        state.  Backspace pops.
+      - ``explicit_case_fold``: user override via M-c.  ``None`` means
+        smart-case (fold iff the search text is all lowercase AND
+        ``case-fold-search`` is true).
+    """
+    buf = ed.buffer
+    start_line = buf.point.line
+    start_col = buf.point.col
+
+    state_stack: list[_IsearchState] = [
+        _IsearchState(
+            text="",
+            line=start_line,
+            col=start_col,
+            direction=forward,
+            wrapped=False,
+            failing=False,
+        )
+    ]
+    explicit_case_fold: list[bool | None] = [None]
+
+    def _effective_case_fold(text: str) -> bool:
+        """Resolve smart-case / explicit override to a single bool."""
+        if explicit_case_fold[0] is not None:
+            return explicit_case_fold[0]
+        # Smart default: fold only when text is all lowercase AND the
+        # global ``case-fold-search`` variable is True.
+        global_fold = bool(ed.get_variable("case-fold-search"))
+        return global_fold and text.islower()
+
+    def _current() -> _IsearchState:
+        return state_stack[-1]
+
+    def _update_prompt() -> None:
+        if ed.minibuffer is None:
+            return
+        s = _current()
+        parts: list[str] = []
+        if s.wrapped:
+            parts.append("Wrapped ")
+        elif s.failing:
+            parts.append("Failing ")
+        parts.append("I-search" if s.direction else "I-search backward")
+        # Case-fold indicator: only shown when the user overrode via M-c,
+        # to avoid noise in the common (smart-default) case.
+        if explicit_case_fold[0] is False:
+            parts.append(" (case)")
+        elif explicit_case_fold[0] is True:
+            parts.append(" (fold)")
+        ed.minibuffer.prompt = "".join(parts) + ": "
+
+    def _update_highlight() -> None:
+        """Sync ed.highlight_term / highlight_case_fold with current state."""
+        s = _current()
+        if s.text:
+            ed.highlight_term = s.text
+            ed.highlight_case_fold = _effective_case_fold(s.text)
+        else:
+            ed.highlight_term = None
+            ed.highlight_case_fold = False
+
+    def on_change(text: str) -> None:
+        """Called on every self-insert (and would-be Backspace notify).
+
+        Searches from the *previous* match position (the current top of
+        the stack), extending the search string by one character.
+        """
+        if not text:
+            # Empty: restore to origin, collapse stack to just the root.
+            buf.point.move_to(start_line, start_col)
+            state_stack.clear()
+            state_stack.append(
+                _IsearchState(
+                    text="",
+                    line=start_line,
+                    col=start_col,
+                    direction=forward,
+                    wrapped=False,
+                    failing=False,
+                )
+            )
+            _update_highlight()
+            _update_prompt()
+            return
+
+        prev = _current()
+        case_fold = _effective_case_fold(text)
+        direction = prev.direction
+
+        # Incremental extension: search from the start of the previous
+        # match (prev.line, prev.col).  This lets the point "stay in
+        # place" while the match just grows by one character.
+        if prev.failing:
+            # Previous state was failing — search from the origin (or
+            # from prev's position, same thing for a failed match).
+            from_line, from_col = prev.line, prev.col
+        else:
+            from_line, from_col = prev.line, prev.col
+
+        if direction:
+            pos = buf.find_forward(text, from_line, from_col, case_fold=case_fold)
+        else:
+            # Backward: include prev.col as a valid start position.
+            pos = buf.find_backward(text, from_line, from_col + 1, case_fold=case_fold)
+
+        if pos is not None:
+            buf.point.move_to(pos[0], pos[1])
+            state_stack.append(
+                _IsearchState(
+                    text=text,
+                    line=pos[0],
+                    col=pos[1],
+                    direction=direction,
+                    wrapped=False,
+                    failing=False,
+                )
+            )
+        else:
+            # Stay where we are, mark failing.
+            state_stack.append(
+                _IsearchState(
+                    text=text,
+                    line=prev.line,
+                    col=prev.col,
+                    direction=direction,
+                    wrapped=False,
+                    failing=True,
+                )
+            )
+        _update_highlight()
+        _update_prompt()
+
+    def _repeat(direction: bool) -> None:
+        if ed.minibuffer is None:
+            return
+        text = ed.minibuffer.text
+        if not text:
+            return
+        prev = _current()
+        case_fold = _effective_case_fold(text)
+
+        if prev.failing and prev.direction == direction:
+            # Wrap: start over from the opposite end of the buffer.
+            if direction:
+                pos = buf.find_forward(text, 0, 0, case_fold=case_fold)
+            else:
+                last_line = buf.line_count - 1
+                last_col = len(buf.lines[last_line]) + 1
+                pos = buf.find_backward(text, last_line, last_col, case_fold=case_fold)
+            if pos is not None:
+                buf.point.move_to(pos[0], pos[1])
+                state_stack.append(
+                    _IsearchState(
+                        text=text,
+                        line=pos[0],
+                        col=pos[1],
+                        direction=direction,
+                        wrapped=True,
+                        failing=False,
+                    )
+                )
+            else:
+                state_stack.append(
+                    _IsearchState(
+                        text=text,
+                        line=prev.line,
+                        col=prev.col,
+                        direction=direction,
+                        wrapped=True,
+                        failing=True,
+                    )
+                )
+        else:
+            # Normal repeat: advance past the current match.
+            if direction:
+                from_col = prev.col + 1
+                pos = buf.find_forward(text, prev.line, from_col, case_fold=case_fold)
+            else:
+                pos = buf.find_backward(text, prev.line, prev.col, case_fold=case_fold)
+            if pos is not None:
+                buf.point.move_to(pos[0], pos[1])
+                state_stack.append(
+                    _IsearchState(
+                        text=text,
+                        line=pos[0],
+                        col=pos[1],
+                        direction=direction,
+                        wrapped=False,
+                        failing=False,
+                    )
+                )
+            else:
+                state_stack.append(
+                    _IsearchState(
+                        text=text,
+                        line=prev.line,
+                        col=prev.col,
+                        direction=direction,
+                        wrapped=False,
+                        failing=True,
+                    )
+                )
+        _update_highlight()
+        _update_prompt()
+
+    def repeat_forward() -> None:
+        _repeat(True)
+
+    def repeat_backward() -> None:
+        _repeat(False)
+
+    def toggle_case_fold() -> None:
+        """M-c: flip the case-fold flag for this session."""
+        current = _effective_case_fold(_current().text)
+        explicit_case_fold[0] = not current
+        _update_highlight()
+        _update_prompt()
+
+    def insert_newline() -> None:
+        """M-Enter: insert a literal newline into the search string.
+
+        Triggers the minibuffer's on_change hook to re-run the search
+        with the new multi-line term.  C-j would be the Emacs binding,
+        but keys.py maps both \\r and \\n to "Enter", so we use M-Enter
+        (unambiguous) instead.
+        """
+        if ed.minibuffer is None:
+            return
+        mb = ed.minibuffer
+        mb.text = mb.text[: mb.cursor] + "\n" + mb.text[mb.cursor :]
+        mb.cursor += 1
+        mb._notify_change()
+
+    def on_confirm(text: str) -> None:
+        # Exiting normally — clear highlight, leave point at the match.
+        ed.highlight_term = None
+        ed.highlight_case_fold = False
+
+    def on_cancel() -> None:
+        # C-g / Escape: restore original point, clear highlight.
+        buf.point.move_to(start_line, start_col)
+        ed.highlight_term = None
+        ed.highlight_case_fold = False
+
+    def on_backspace() -> None:
+        """Pop one state off the stack, restore text + position."""
+        if len(state_stack) <= 1:
+            # At the origin — clear search text and reset to origin.
+            if ed.minibuffer is not None:
+                ed.minibuffer.text = ""
+                ed.minibuffer.cursor = 0
+            buf.point.move_to(start_line, start_col)
+            ed.highlight_term = None
+            ed.highlight_case_fold = False
+            _update_prompt()
+            return
+        state_stack.pop()
+        s = _current()
+        buf.point.move_to(s.line, s.col)
+        if ed.minibuffer is not None:
+            ed.minibuffer.text = s.text
+            ed.minibuffer.cursor = len(s.text)
+        _update_highlight()
+        _update_prompt()
+
+    prompt_prefix = "I-search" if forward else "I-search backward"
+    ed.start_minibuffer(
+        f"{prompt_prefix}: ",
+        on_confirm,
+        on_change=on_change,
+    )
+    if ed.minibuffer is not None:
+        ed.minibuffer.key_handlers["C-s"] = repeat_forward
+        ed.minibuffer.key_handlers["C-r"] = repeat_backward
+        ed.minibuffer.key_handlers["M-c"] = toggle_case_fold
+        ed.minibuffer.key_handlers["M-Enter"] = insert_newline
+
+        # Patched process_key: intercept C-g/Escape (cancel with point
+        # restore) and Backspace (state-stack pop).  Everything else
+        # falls through to the minibuffer's default handling, preserving
+        # self-insert on_change and unknown-key exit-and-replay.
+        original_process = ed.minibuffer.process_key
+
+        def patched_process(key: str) -> bool:
+            if key == "C-g" or key == "Escape":
+                on_cancel()
+                ed.minibuffer._cancelled = True  # type: ignore[union-attr]
+                return False
+            if key == "Backspace":
+                on_backspace()
+                return True
             return original_process(key)
 
         ed.minibuffer.process_key = patched_process  # type: ignore[method-assign]

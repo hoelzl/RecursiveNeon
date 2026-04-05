@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-05)
-> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 complete. 1490 passing tests + 13 xfail (TD-006 regressions). **Phase 6l-3 (true incremental search) is next**, followed by Phase 6l-4 (query-replace), 6l-5 (deferred items), Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt **incl. TD-006**, extensibility, game hooks, TUI apps), and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 + 6l-3 complete. 1551 passing tests + 13 xfail (TD-006 regressions). **Phase 6l-4 (query-replace) is next**, followed by 6l-5 (deferred items), Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt **incl. TD-006**, extensibility, game hooks, TUI apps), and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -359,7 +359,31 @@ Landed the `keyboard-escape-quit` command and the ESC-as-Meta state machine that
 - `TestEscStateMachine` (6): `ESC ESC f` still rewrites to `M-f` (collapse to single-Meta); C-g during meta-pending/escape-quit-pending cancels; `_reset_transient_state` clears flags; ESC in mid-prefix keymap allows `M-<key>` lookup within that keymap
 - `TestRewriteAsMeta` (6): unit tests for the static helper's rewrite rules
 
-#### 6l-3. True incremental search (`isearch-forward` / `isearch-backward`)
+#### 6l-3. True incremental search (`isearch-forward` / `isearch-backward`) — **DONE** (1551 tests; +58 from 6l-2's 1493)
+
+Landed true isearch with match highlighting, wrap-around, state-stack backspace, smart case-fold + `M-c` toggle, and multi-line search.  The old minibuffer-driven behaviour was renamed to `search-forward` / `search-backward` (M-x only); the new implementation replaces the C-s / C-r bindings.  New `StyleSpan` dataclass in `shell/tui/__init__.py` plus `EditorView._style_text_rows` post-compose pass (Option A per the addendum below); new `_compute_highlight_spans` walks the visible region and emits priority-ordered spans.  `Buffer.find_forward` / `find_backward` grew a `case_fold` kwarg and support `\n` in the needle.  `editor.highlight_term` / `highlight_case_fold` fields on `Editor`, cleared by `_reset_transient_state()`.  `defvar("case-fold-search", True)` drives the smart default.
+
+**Deviations from the addendum, documented inline**:
+
+- **Newline insertion uses `M-Enter`, not `C-j`** — `shell/keys.py:45-46` maps both `\r` and `\n` to `"Enter"`, so C-j is indistinguishable from Enter in our key encoding.  `M-Enter` (Alt+Enter) is unambiguous on every platform.  See the comment at the top of the isearch section in `default_commands.py`.
+- **`minibuffer.py` was not modified** — the addendum anticipated a `C-j` self-insert branch and an `M-c` handler hook inside the minibuffer core, but both turned out to be expressible via the existing `minibuffer.key_handlers[...]` extension mechanism from the isearch setup code.  Net scope shrink.
+
+**Test coverage** — 58 new tests spread across:
+
+- `tests/unit/editor/test_isearch.py` (+21): `TestFindForwardMultiLine` (10), `TestFindBackwardMultiLine` (4), `TestFindForwardCaseFold` (5), `TestFindBackwardCaseFold` (2) — Buffer search API.
+- `tests/unit/editor/test_view.py` (+9): `TestStyleTextRows` — post-compose pass with synthetic spans (empty, single, multi-span, overlap by priority, clipping, zero-width, off-screen, multi-row, tie-break).
+- `tests/unit/editor/test_isearch_v2.py` (+28, new file): `TestIsearchHighlighting` (7), `TestIsearchWrap` (4), `TestIsearchCaseFold` (5), `TestIsearchStateStack` (4), `TestIsearchMultiLine` (2), `TestIsearchExitReplayClearsHighlight` (1), `TestSearchForwardRename` (5).
+
+**Discoveries affecting future phases**:
+
+- **`StyleSpan` + `_style_text_rows` is the designated styling hook for syntax highlighting.** Future syntax highlighters produce spans at priority 10 (below isearch); the post-pass composes cleanly without further infrastructure changes.  The migration path to a cell-attribute grid (Option D from the addendum) is still open if per-cell merging ever becomes too expensive, but the span *producers* won't need to change.
+- **Multi-line search (`\n` in needle)** is now available via the Buffer API for all callers, not just isearch.  Query-replace in 6l-4 gets multi-line replacement for free.
+- **Smart-case logic** (`_effective_case_fold`) is in `default_commands.py` as a closure over the isearch session, but the pattern — "ignore uppercase detection in text; honour `case-fold-search` defvar" — is reusable for `query-replace` in 6l-4.
+
+The original plan and architectural addendum that drove the implementation are preserved below (they are the ground truth for understanding *why* the code is shaped the way it is).
+
+---
+
 The current C-s / C-r implementation (`default_commands.py:424-512`) advances point as the user types and moves to the next occurrence on repeat, but **does not highlight all occurrences** and **does not wrap around**. It behaves closer to Emacs's non-interactive `search-forward` than `isearch-forward`.
 
 Plan:
@@ -371,6 +395,248 @@ Plan:
    - **Wrap-around**: when `find_forward` fails at EOB, show `Failing I-search: <term>` in the prompt. On the next `C-s`, wrap to BOB and show `Wrapped I-search: <term>`. Symmetric for backward with BOB → EOB. The "Wrapped" message is a small UX nicety we should replicate.
    - **Keep existing UX**: C-g cancels and restores position; C-s / C-r repeats; Enter confirms; Backspace pops the position stack; printable chars extend the search; unknown keys exit-and-replay.
 3. **Tests** (extend `test_isearch.py` or add `test_isearch_v2.py`): highlighting visible via harness screen accessors; wrap EOB → BOB with message progression "Failing" → "Wrapped"; multi-match highlighting on one line; rename behaviour (`search-forward` still reachable via M-x, not via C-s).
+
+##### 6l-3 design addendum — pre-implementation decisions (2026-04-05)
+
+Resolves open architectural questions before implementation starts. The
+large one is **how styled text gets into `ScreenBuffer`**: this is the
+first editor feature that needs inline highlights inside text rows (not
+just the modeline), so the decision locks in the path for future syntax
+highlighting, region highlighting, and diff overlays.
+
+###### Rendering architecture: span-list + post-compose pass (Option A)
+
+Four candidates evaluated against both the 6l-3 needs and future
+syntax-highlighting / region-highlighting / diff overlays.
+
+**Option A — span-list + post-compose, analogous to modeline styling.**
+`EditorView` emits a list of `StyleSpan(row, col, width, style, priority)`
+entries during `_render_window`; a new `_style_text_rows` post-pass
+(parallel to the existing `_style_modeline_rows` at `view.py:294`) walks
+the spans and wraps the corresponding character ranges in the composed
+plain-text lines with ANSI codes. `ScreenBuffer.lines` stays plain text
+until the final render step.
+
+- Pros: matches the modeline precedent, so we have one conceptual model
+  for all styled output. Zero changes to `set_region` / `set_line`
+  semantics — width math is always correct because lines are plain text
+  when they flow through those helpers. Test harness can still inspect
+  `ScreenBuffer.lines` as plain text (what existing tests already do).
+  Layering multiple span sources (syntax + isearch + region) composes
+  cleanly by sorting on `(row, col, priority)` and letting higher
+  priority win per cell.
+- Cons: introduces a new data structure (`StyleSpan`) and a new post-pass.
+  Overlap resolution is O(spans × overlap) but spans-per-line are tens,
+  not thousands.
+- Forward compat: syntax highlighting becomes "produce a list of spans
+  with priority 10"; isearch is priority 20/25; region is 30. Clean.
+
+**Option B — `set_styled_region` with a screen-buffer-owned span list.**
+Add a `set_region` variant that takes a style and records the span in a
+`ScreenBuffer`-owned list; `render_ansi` applies styles at render time.
+
+- Pros: caller still thinks in terms of "write text".
+- Cons: architecturally identical to Option A — the span list just lives
+  in a different place. Couples `ScreenBuffer` to a styling concern the
+  view can own more cleanly. Doesn't solve anything A doesn't already
+  solve.
+- **Verdict: rejected** as "Option A with worse separation of concerns".
+
+**Option C — build ANSI-bearing lines directly, with a new `set_ansi_line`.**
+The view constructs each styled line as a single string with embedded
+ANSI escapes.
+
+- Pros: simpler data model (row = one possibly-styled string).
+- Cons: breaks split-window rendering the moment a styled line flows
+  through `set_region` for the neighbouring window — exactly the trap
+  Phase 6k walked into with modelines (commit `ea564db`, "modeline ANSI
+  codes broke set_region width in vertical splits"). Layering becomes
+  "reparse the string" instead of "sort spans". Test harness must
+  parse ANSI to inspect what was highlighted where. Cursor column math
+  breaks unless stored-length and visible-length are tracked separately.
+- **Verdict: rejected** — same class of problem we already solved for
+  modelines.
+
+**Option D — character-attribute grid (cell = char + attribute).**
+`ScreenBuffer` stores `width × height` cells of `(char, attr)` instead of
+`list[str]`; every write specifies an attribute; `render_ansi` walks
+cells and emits run-length-encoded ANSI.
+
+- Pros: architecturally the "correct" answer — this is how real terminal
+  emulators work. Overlap resolution is trivial (last write wins per
+  cell). Syntax + isearch + region + diff + hypothetical mouse hover all
+  compose naturally. Cursor math is always correct.
+- Cons: substantial refactor of `ScreenBuffer` plus every test that
+  inspects `screen.lines[row]`. Turns 6l-3 into "refactor the screen
+  buffer and then implement isearch" — roughly 2-3× the implementation
+  cost of Option A.
+- **Verdict: correct target, wrong timing.** Deferred.
+
+**Decision: Option A**, with a priority field on `StyleSpan` from day
+one. It matches the modeline precedent, scales to syntax highlighting
+via priority-ordered layering, and — crucially — keeps a clean migration
+path to Option D if we ever need the extra expressiveness. Under Option
+A the view emits spans; under a hypothetical future Option D the same
+view would write styled cells directly; the span *producers* (isearch,
+query-replace, future syntax highlighter) do not need to change across
+that migration.
+
+Data model:
+
+```python
+@dataclass
+class StyleSpan:
+    row: int        # screen row (0-indexed)
+    col: int        # screen column (0-indexed, within that row's line)
+    width: int      # number of characters covered
+    style: str      # ANSI SGR prefix, e.g. "\033[7m" (reverse video)
+    priority: int   # higher wins on overlap; see table below
+```
+
+Reserved priority values (higher wins per cell):
+
+| Priority | Source                                        |
+| -------- | --------------------------------------------- |
+| 10       | syntax highlighting (future, not in 6l-3)     |
+| 20       | isearch / query-replace — non-current match   |
+| 25       | isearch / query-replace — current match       |
+| 30       | region / active mark (future)                 |
+| 40       | cursor line highlight (future, if ever)       |
+
+`EditorView` grows a per-render `_style_spans: list[StyleSpan]` accumulator;
+each `_render_window` call contributes to it; `_style_text_rows(screen,
+spans)` resolves overlaps and rewrites the affected screen rows.
+
+###### Case-fold control: smart default via defvar + `M-c` toggle
+
+Implement the full Emacs-style behaviour — the effort is small and we
+already have the defvar infrastructure.
+
+- `defvar("case-fold-search", True, ..., var_type=bool)` in
+  `variables.py` sets the global default.
+- **Smart default (matching Emacs)**: when the search string is all
+  lowercase, folding is active; the moment the user types an uppercase
+  character, folding becomes inactive *for that session only*. Captures
+  the 99% case without requiring an explicit toggle.
+- **`M-c` toggles** the session flag explicitly, overriding the smart
+  default. Prompt shows `I-search: ` vs `I-search (case): ` to make the
+  state visible.
+- `Buffer.find_forward` / `find_backward` grow an optional
+  `case_fold: bool = False` parameter. When true, both needle and
+  haystack are lowercased for the scan, but returned positions refer to
+  the original (un-lowercased) string.
+
+###### Multi-line search: pulled forward from 6l-5 as a prerequisite
+
+6l-5 originally carried "multi-line search" as a pulled-forward item.
+Both 6l-3 and 6l-4 benefit, and retrofitting line-only isearch later
+would waste the 6l-3 tests. Promote it to **step 0 of 6l-3**.
+
+Scope:
+- `Buffer.find_forward(text, ...)` / `find_backward(...)` accept `text`
+  containing `\n`. Implementation scans line-by-line and matches
+  patterns that cross boundaries, avoiding allocation of the full joined
+  string on every search.
+- **`M-Enter`** in the isearch minibuffer inserts a literal newline into
+  the search term.  *Addendum update (post-implementation)*: the plan
+  originally called for `C-j` here (Emacs convention), but
+  `shell/keys.py:45-46` maps both `\r` and `\n` to `"Enter"`, making
+  C-j indistinguishable from Enter in our key encoding — a design
+  constraint that forces the deviation.  `M-Enter` (Alt+Enter) is
+  unambiguous on every platform.  Registered via
+  `ed.minibuffer.key_handlers["M-Enter"]` from the isearch setup code;
+  no `minibuffer.py` change was needed.
+- Highlight rendering: a span that crosses a line boundary becomes one
+  sub-span per line.
+
+###### Highlight lifecycle: owned by isearch, cleared by `_reset_transient_state`
+
+Explicit ownership rules so 6l-4 inherits the same contract:
+
+- isearch entry sets `ed.highlight_term` and `ed.highlight_case_fold`;
+  every keystroke that changes the search term updates them.
+- isearch exit (Enter confirm, C-g cancel, Escape, exit-and-replay)
+  clears them.
+- `Editor._reset_transient_state()` clears them too, so
+  `keyboard-escape-quit` and future blanket-reset callers handle them
+  for free (analogue of the 6l-2 ESC flags clearing).
+- `query-replace` in 6l-4 obeys the same contract: set on entry, clear
+  on exit / cancel.
+
+###### Exit-and-replay: already works — no implementation change
+
+Earlier assessment flagged this as a gap; on closer reading the
+mechanism already exists end-to-end:
+
+- `minibuffer.py:130-134` — unknown keys in on-change mode set
+  `replay_key = key` and deactivate the minibuffer.
+- `editor.py:252-265` — re-dispatches the replayed key after the
+  minibuffer closes.
+- `test_isearch.py:116` (`test_exit_and_replay`) already verifies the
+  flow end-to-end.
+
+**Action for 6l-3**: no implementation change. Add one new test in
+`test_isearch_v2.py` that exercises exit-and-replay *with an active
+highlight* to confirm `highlight_term` is cleared on the replay path.
+
+###### Backspace: minimal state stack, not full Emacs state machine
+
+Real Emacs isearch maintains a state stack of `(search_string,
+match_position, wrapped?, failing?)` tuples; every successful keystroke
+pushes, Backspace pops. That's ~60 lines of state management, not
+counting the extras (C-w copy-word, M-e edit, M-r toggle regexp).
+
+Our current isearch tracks only `positions` (`default_commands.py:494`)
+and relies on `on_change` to re-search from origin when the search
+string shortens. This is organically correct for the common case but
+wrong across a wrap: Backspace after a wrap jumps back to origin and
+loses the wrap state.
+
+**Decision: minimal state tuple, not the full Emacs machine.** Each
+successful `_do_search` pushes `(text, line, col, direction, wrapped,
+failing)` onto a stack; Backspace pops and restores all six fields
+plus the prompt. Roughly 30-40 lines — small enough that "close to
+Emacs" is cheap. The Emacs extras (C-w, M-e, M-r) are explicitly not
+in 6l-3 scope.
+
+###### Revised 6l-3 implementation order
+
+0. **Multi-line search in `Buffer`** — extend `find_forward` /
+   `find_backward` to handle `\n`; add `case_fold` parameter. Tests
+   first.
+1. **`StyleSpan` + post-compose pass in `EditorView`** — new dataclass,
+   `_style_text_rows`, priority-ordered overlap resolution. Unit-test
+   with synthetic spans before any isearch integration.
+2. **Rename existing isearch → `search-forward` / `search-backward`**;
+   unbind from C-s / C-r; keep M-x access.
+3. **Reimplement `isearch-forward` / `isearch-backward`** on the new
+   architecture: `editor.highlight_term`, state-stack backspace,
+   wrap-around with "Failing" → "Wrapped" progression, `M-c` case-fold
+   toggle, `M-Enter` newline insertion (see the note in the multi-line
+   search section above for why M-Enter instead of C-j).
+4. **Lifecycle wiring** — `_reset_transient_state()` clears highlight
+   fields; entry / exit set and clear them.
+5. **Tests** — new `test_isearch_v2.py` covering highlighting (via
+   post-render `ScreenBuffer.lines`), wrap progression, multi-line
+   search, case-fold smart default + `M-c` toggle, state-stack
+   backspace across a wrap, exit-and-replay with active highlight,
+   rename routing. Extend `test_isearch.py` only for the rename
+   verification.
+
+Files modified (revised from the original 6l file list):
+
+- `editor/buffer.py` — multi-line + `case_fold` in `find_forward` /
+  `find_backward`
+- `editor/editor.py` — `highlight_term` / `highlight_case_fold` fields;
+  `_reset_transient_state` extension
+- `editor/view.py` — `StyleSpan`, `_style_text_rows` post-pass, render
+  integration
+- `editor/default_commands.py` — rename, reimplement isearch, state
+  stack, case-fold handling
+- `editor/minibuffer.py` — `C-j` self-insert branch, `M-c` handler hook
+- `editor/variables.py` — `defvar("case-fold-search", ...)`
+- `tests/unit/editor/test_isearch_v2.py` — new test module
+- `tests/unit/editor/test_isearch.py` — rename-verification updates
 
 #### 6l-4. `query-replace` (M-%)
 New command `query-replace` bound to `M-%`. Two sequential minibuffer prompts: "Query replace: " for the search string, then "Query replace <from> with: " for the replacement. After both prompts, enter query-replace mode:

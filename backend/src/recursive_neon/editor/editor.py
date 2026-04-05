@@ -90,6 +90,15 @@ class Editor:
         self._meta_pending: bool = False
         self._escape_quit_pending: bool = False
 
+        # Highlight overlay for isearch / query-replace.  When
+        # ``highlight_term`` is non-None, ``EditorView`` scans visible
+        # text for matches and emits StyleSpans via the post-compose
+        # styling pass.  Ownership: whichever interactive command sets
+        # the term is responsible for clearing it on exit; blanket
+        # callers like ``_reset_transient_state`` clear it too.
+        self.highlight_term: str | None = None
+        self.highlight_case_fold: bool = False
+
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
         self._last_command_name: str = ""
@@ -677,3 +686,6 @@ class Editor:
         # Clear ESC-as-Meta state machine
         self._meta_pending = False
         self._escape_quit_pending = False
+        # Clear highlight overlay (isearch / query-replace)
+        self.highlight_term = None
+        self.highlight_case_fold = False

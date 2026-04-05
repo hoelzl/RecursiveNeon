@@ -30,13 +30,19 @@ from recursive_neon.editor.window import (
     WindowSplit,
     WindowTree,
 )
-from recursive_neon.shell.tui import ScreenBuffer
+from recursive_neon.shell.tui import ScreenBuffer, StyleSpan
 
 # ANSI styling
 _MODELINE_ACTIVE = "\033[7m"  # reverse video
 _MODELINE_INACTIVE = "\033[2;7m"  # dim + reverse
 _RESET = "\033[0m"
 _DIVIDER_CHAR = "\u2502"  # │
+
+# Highlight styles for isearch / query-replace matches
+_HIGHLIGHT_MATCH = "\033[43;30m"  # yellow background, black foreground
+_HIGHLIGHT_CURRENT = "\033[1;41;97m"  # bold + red background + bright white
+_HIGHLIGHT_PRIORITY = 20  # non-current match
+_HIGHLIGHT_PRIORITY_CURRENT = 25  # the match the point is on
 
 
 class EditorView:
@@ -164,9 +170,10 @@ class EditorView:
 
         # Render each window (modelines as plain text)
         modeline_regions: list[tuple[int, int, int, str]] = []
+        text_spans: list[StyleSpan] = []
         for win in self._tree.windows():
             is_active = win is self._tree.active
-            self._render_window(win, screen, is_active)
+            self._render_window(win, screen, is_active, text_spans)
             modeline_row = win._top + win.text_height
             if modeline_row < self._height:
                 style = _MODELINE_ACTIVE if is_active else _MODELINE_INACTIVE
@@ -174,6 +181,10 @@ class EditorView:
 
         # Draw vertical split dividers
         self._render_dividers(self._tree.root, screen)
+
+        # Apply text-row styling (isearch / query-replace highlights) before
+        # modeline styling so the two passes work on disjoint rows.
+        self._style_text_rows(screen, text_spans)
 
         # Apply ANSI styling to modeline rows after all plain-text compositing
         self._style_modeline_rows(screen, modeline_regions)
@@ -208,9 +219,17 @@ class EditorView:
                 )
 
     def _render_window(
-        self, win: Window, screen: ScreenBuffer, is_active: bool
+        self,
+        win: Window,
+        screen: ScreenBuffer,
+        is_active: bool,
+        text_spans: list[StyleSpan],
     ) -> None:
-        """Render a single window's text and modeline into the screen."""
+        """Render a single window's text and modeline into the screen.
+
+        Highlight spans (isearch / query-replace matches) are appended to
+        *text_spans* for the post-compose styling pass.
+        """
         buf = win.buffer
         text_h = win.text_height
 
@@ -234,6 +253,9 @@ class EditorView:
             else:
                 screen.set_region(screen_row, win._left, win._width, text)
 
+        # Compute highlight spans for this window (isearch term etc.)
+        self._compute_highlight_spans(win, text_spans)
+
         # Modeline (plain text — ANSI styling applied by _style_modeline_rows)
         modeline_row = win._top + text_h
         if modeline_row < self._height:
@@ -242,6 +264,121 @@ class EditorView:
                 screen.set_line(modeline_row, ml)
             else:
                 screen.set_region(modeline_row, win._left, win._width, ml)
+
+    def _compute_highlight_spans(
+        self, win: Window, text_spans: list[StyleSpan]
+    ) -> None:
+        """Append isearch / query-replace highlight spans for *win*.
+
+        Scans the visible portion of ``win.buffer`` for occurrences of
+        ``editor.highlight_term`` (using ``editor.highlight_case_fold``)
+        and appends a ``StyleSpan`` for each match.  The current match
+        (the one at ``buf.point``) is emitted at a higher priority so
+        it renders with the emphasised style.
+
+        Only single-line match segments are emitted per visible row —
+        multi-line needles are walked via ``Buffer.find_forward`` but
+        their rendered highlights are broken into per-line sub-spans.
+        """
+        term = self.editor.highlight_term
+        if not term:
+            return
+        buf = win.buffer
+        case_fold = self.editor.highlight_case_fold
+        text_h = win.text_height
+        first_visible = win.scroll_top
+        last_visible = first_visible + text_h - 1
+
+        # Find all matches by iterating Buffer.find_forward from the
+        # buffer start.  Stop once we pass the last visible line.
+        cursor_line = 0
+        cursor_col = 0
+        point_line = buf.point.line
+        point_col = buf.point.col
+
+        while True:
+            if cursor_line >= buf.line_count:
+                break
+            match = buf.find_forward(term, cursor_line, cursor_col, case_fold=case_fold)
+            if match is None:
+                break
+            m_line, m_col = match
+            # Compute match end (may cross lines for multi-line needles)
+            end_line, end_col = self._match_end(term, m_line, m_col, buf)
+
+            # Advance search cursor past this match for the next iteration.
+            # Use +1 to avoid infinite loop on empty-match edge cases.
+            if end_line == m_line and end_col == m_col:
+                cursor_line, cursor_col = m_line, m_col + 1
+            else:
+                cursor_line, cursor_col = end_line, end_col
+
+            # Bail out once we're past the visible region.
+            if m_line > last_visible:
+                break
+
+            # Is this the current match (the one point is on)?
+            is_current = m_line == point_line and m_col == point_col
+
+            # Emit per-line sub-spans for the match.
+            if m_line == end_line:
+                line_ranges = [(m_line, m_col, end_col)]
+            else:
+                line_ranges = []
+                # First line: from m_col to end of line
+                if 0 <= m_line < buf.line_count:
+                    line_ranges.append((m_line, m_col, len(buf.lines[m_line])))
+                # Middle lines: whole line
+                for ln in range(m_line + 1, end_line):
+                    if 0 <= ln < buf.line_count:
+                        line_ranges.append((ln, 0, len(buf.lines[ln])))
+                # Last line: from 0 to end_col
+                line_ranges.append((end_line, 0, end_col))
+
+            for ln, c_start, c_end in line_ranges:
+                if ln < first_visible or ln > last_visible:
+                    continue
+                screen_row = win._top + (ln - first_visible)
+                screen_col = win._left + c_start
+                width = c_end - c_start
+                if width <= 0:
+                    continue
+                # Clip to window width
+                win_right = win._left + win._width
+                if screen_col >= win_right:
+                    continue
+                if screen_col + width > win_right:
+                    width = win_right - screen_col
+                style = _HIGHLIGHT_CURRENT if is_current else _HIGHLIGHT_MATCH
+                priority = (
+                    _HIGHLIGHT_PRIORITY_CURRENT if is_current else _HIGHLIGHT_PRIORITY
+                )
+                text_spans.append(
+                    StyleSpan(
+                        row=screen_row,
+                        col=screen_col,
+                        width=width,
+                        style=style,
+                        priority=priority,
+                    )
+                )
+
+    @staticmethod
+    def _match_end(term: str, m_line: int, m_col: int, buf: Buffer) -> tuple[int, int]:
+        """Compute the (line, col) *just past* the end of a match.
+
+        Handles multi-line needles (needle contains ``\\n``) by walking
+        part-by-part from the starting position.
+        """
+        if "\n" not in term:
+            return (m_line, m_col + len(term))
+        parts = term.split("\n")
+        # First part occupies from m_col to end of m_line
+        # Middle parts occupy whole lines
+        # Last part occupies 0..len(parts[-1]) on the final line
+        end_line = m_line + len(parts) - 1
+        end_col = len(parts[-1])
+        return (end_line, end_col)
 
     def _render_modeline(self, win: Window) -> str:
         """Render the Emacs-style modeline for a window (plain text, no ANSI).
@@ -290,6 +427,62 @@ class EditorView:
                         screen.set_region(row, div_col, 1, _DIVIDER_CHAR)
             self._render_dividers(node.first, screen)
             self._render_dividers(node.second, screen)
+
+    def _style_text_rows(
+        self,
+        screen: ScreenBuffer,
+        spans: list[StyleSpan],
+    ) -> None:
+        """Apply ``StyleSpan`` entries to the composed screen.
+
+        Overlapping spans on the same cell resolve by priority (higher
+        wins; ties break by emission order, which is stable because we
+        iterate the list in order).  Each affected row is rewritten by
+        walking runs of constant effective style and wrapping them in
+        ``style + text + reset``.
+
+        Spans that reference rows outside the screen are ignored, as
+        are zero-width spans.
+        """
+        if not spans:
+            return
+
+        by_row: dict[int, list[StyleSpan]] = {}
+        for span in spans:
+            if span.width <= 0:
+                continue
+            if 0 <= span.row < screen.height:
+                by_row.setdefault(span.row, []).append(span)
+
+        for row, row_spans in by_row.items():
+            line = screen.lines[row]
+            if not line:
+                continue
+            n = len(line)
+            # Per-cell winning (priority, style) or None for unstyled.
+            cell_styles: list[tuple[int, str] | None] = [None] * n
+            for span in row_spans:
+                lo = max(0, span.col)
+                hi = min(n, span.col + span.width)
+                for c in range(lo, hi):
+                    cur = cell_styles[c]
+                    if cur is None or span.priority > cur[0]:
+                        cell_styles[c] = (span.priority, span.style)
+
+            # Walk the line, emitting runs of constant effective style.
+            parts: list[str] = []
+            i = 0
+            while i < n:
+                cur = cell_styles[i]
+                j = i
+                while j < n and cell_styles[j] == cur:
+                    j += 1
+                if cur is None:
+                    parts.append(line[i:j])
+                else:
+                    parts.append(f"{cur[1]}{line[i:j]}{_RESET}")
+                i = j
+            screen.lines[row] = "".join(parts)
 
     def _style_modeline_rows(
         self,

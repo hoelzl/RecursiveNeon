@@ -51,6 +51,123 @@ class TestFindBackward:
         assert b.find_backward("xyz", 0, 5) is None
 
 
+class TestFindForwardMultiLine:
+    def test_two_line_needle(self):
+        b = Buffer.from_text("xa\nby")
+        # "a\nb" matches starting at (0, 1): 'a' at end of line 0, 'b' at start of line 1
+        assert b.find_forward("a\nb", 0, 0) == (0, 1)
+
+    def test_three_line_needle(self):
+        b = Buffer.from_text("prefix\nmiddle\nsuffix")
+        # "x\nmiddle\ns" — 'x' suffix of line 0, 'middle' == line 1, 's' prefix of line 2
+        assert b.find_forward("x\nmiddle\ns", 0, 0) == (0, 5)
+
+    def test_first_part_must_be_suffix(self):
+        b = Buffer.from_text("ab\ncd")
+        # "a\nc" — 'a' is NOT a suffix of "ab" (would need 'b'), so no match
+        assert b.find_forward("a\nc", 0, 0) is None
+        # "b\nc" — 'b' IS a suffix of "ab", 'c' is prefix of "cd"
+        assert b.find_forward("b\nc", 0, 0) == (0, 1)
+
+    def test_last_part_must_be_prefix(self):
+        b = Buffer.from_text("ab\ncd")
+        # "b\nd" — 'd' is NOT a prefix of "cd" (would need 'c'), so no match
+        assert b.find_forward("b\nd", 0, 0) is None
+
+    def test_middle_part_must_match_whole_line(self):
+        b = Buffer.from_text("a\nmid\nz")
+        # "a\nmid\nz" — middle line must match exactly
+        assert b.find_forward("a\nmid\nz", 0, 0) == (0, 0)
+        # "a\nmi\nz" — "mi" != "mid" (whole-line requirement), no match
+        assert b.find_forward("a\nmi\nz", 0, 0) is None
+
+    def test_empty_first_part(self):
+        b = Buffer.from_text("xx\nab")
+        # "\na" — first part is empty, matches at end of any line
+        assert b.find_forward("\na", 0, 0) == (0, 2)
+
+    def test_empty_last_part(self):
+        b = Buffer.from_text("ab\ncd")
+        # "ab\n" — first part 'ab' is suffix of line 0, last part '' matches any prefix
+        assert b.find_forward("ab\n", 0, 0) == (0, 0)
+
+    def test_bare_newline(self):
+        b = Buffer.from_text("abc\ndef")
+        # "\n" — matches at end of any line with a following line
+        assert b.find_forward("\n", 0, 0) == (0, 3)
+
+    def test_from_col_respected(self):
+        b = Buffer.from_text("ab\nab\ncd")
+        # First match is at (0, 1), second at (1, 1)
+        assert b.find_forward("b\n", 0, 0) == (0, 1)
+        assert b.find_forward("b\n", 0, 2) == (1, 1)
+
+    def test_no_match_returns_none(self):
+        b = Buffer.from_text("abc\ndef")
+        assert b.find_forward("x\ny", 0, 0) is None
+
+
+class TestFindBackwardMultiLine:
+    def test_two_line_needle(self):
+        b = Buffer.from_text("xa\nby")
+        # Search backward from end
+        assert b.find_backward("a\nb", 1, 2) == (0, 1)
+
+    def test_rightmost_match(self):
+        b = Buffer.from_text("ab\ncd\nab\ncd")
+        # Two candidate matches at (0, 0) and (2, 0); backward from (3, 2) picks (2, 0)
+        assert b.find_backward("ab\ncd", 3, 2) == (2, 0)
+
+    def test_start_before_from_col(self):
+        b = Buffer.from_text("ab\ncd")
+        # Match starts at col 1, so from_col must exceed 1 on the start line
+        assert b.find_backward("b\nc", 0, 1) is None
+        # On a later line, any from_col counts
+        assert b.find_backward("b\nc", 1, 0) == (0, 1)
+
+    def test_no_match(self):
+        b = Buffer.from_text("abc\ndef")
+        assert b.find_backward("x\ny", 1, 3) is None
+
+
+class TestFindForwardCaseFold:
+    def test_case_fold_matches_uppercase_needle(self):
+        b = Buffer.from_text("hello world")
+        assert b.find_forward("HELLO", 0, 0, case_fold=True) == (0, 0)
+
+    def test_case_fold_matches_mixed_haystack(self):
+        b = Buffer.from_text("Hello World")
+        assert b.find_forward("hello", 0, 0, case_fold=True) == (0, 0)
+        assert b.find_forward("world", 0, 0, case_fold=True) == (0, 6)
+
+    def test_case_sensitive_by_default(self):
+        b = Buffer.from_text("hello world")
+        assert b.find_forward("HELLO", 0, 0) is None
+
+    def test_case_fold_multi_line(self):
+        b = Buffer.from_text("Foo\nBAR")
+        assert b.find_forward("foo\nbar", 0, 0, case_fold=True) == (0, 0)
+
+    def test_returned_position_refers_to_original(self):
+        # Even though case_fold lowercases internally, the returned
+        # (line, col) refers to the un-lowercased buffer.
+        b = Buffer.from_text("XYZHelloXYZ")
+        pos = b.find_forward("HELLO", 0, 0, case_fold=True)
+        assert pos == (0, 3)
+        assert b.lines[0][3:8] == "Hello"  # original case preserved
+
+
+class TestFindBackwardCaseFold:
+    def test_case_fold_backward(self):
+        b = Buffer.from_text("hello World hello")
+        assert b.find_backward("WORLD", 0, 17, case_fold=True) == (0, 6)
+
+    def test_case_fold_backward_multi_line(self):
+        b = Buffer.from_text("FOO\nbaz\nfoo\nbaz")
+        # Two candidates: (0, 0) and (2, 0); backward picks the later one
+        assert b.find_backward("foo\nbaz", 3, 3, case_fold=True) == (2, 0)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Isearch via Editor
 # ═══════════════════════════════════════════════════════════════════════

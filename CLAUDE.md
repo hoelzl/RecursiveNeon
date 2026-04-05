@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6k complete + Phase 6l-1 (C-g hardening) + Phase 6l-2 (keyboard-escape-quit + ESC-as-Meta) done (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish). 1490 passing tests + 13 xfail (TD-006 regressions). Phase 6l-3 (true incremental search) next; Phase 8 (browser terminal + desktop GUI) after Phase 7.
+**Status**: V2 reboot. Phases 0-6k complete + Phase 6l-1 (C-g hardening) + Phase 6l-2 (keyboard-escape-quit + ESC-as-Meta) + Phase 6l-3 (true isearch: match highlighting via StyleSpan post-compose pass, wrap-around, state-stack backspace, smart case-fold + M-c toggle, multi-line search + M-Enter newline insertion) done (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish). 1551 passing tests + 13 xfail (TD-006 regressions). Phase 6l-4 (query-replace) next; Phase 8 (browser terminal + desktop GUI) after Phase 7.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction

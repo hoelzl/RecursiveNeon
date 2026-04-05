@@ -243,3 +243,153 @@ class TestSaveCallback:
         view.on_key("C-x")
         view.on_key("C-s")
         assert "failed" in view.editor.message.lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Post-compose styling (StyleSpan + _style_text_rows)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestStyleTextRows:
+    """Unit tests for the post-compose styling pass.
+
+    Exercises ``EditorView._style_text_rows`` directly with synthetic
+    ``StyleSpan`` inputs, so the algorithm is verified independently of
+    isearch / query-replace wiring.
+    """
+
+    def _view(self) -> EditorView:
+        return make_view("", width=20, height=5)
+
+    def _screen_with_line(self, text: str, width: int = 20):
+        from recursive_neon.shell.tui import ScreenBuffer
+
+        screen = ScreenBuffer(width=width, height=1)
+        screen.set_line(0, text.ljust(width))
+        return screen
+
+    def test_empty_span_list_is_noop(self):
+        view = self._view()
+        screen = self._screen_with_line("hello world")
+        original = screen.lines[0]
+        view._style_text_rows(screen, [])
+        assert screen.lines[0] == original
+
+    def test_single_span_wraps_range(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("hello world")
+        spans = [StyleSpan(row=0, col=6, width=5, style="\033[7m", priority=20)]
+        view._style_text_rows(screen, spans)
+        # Line should still start with "hello " unstyled, then styled "world"
+        line = screen.lines[0]
+        assert line.startswith("hello ")
+        assert "\033[7mworld\033[0m" in line
+
+    def test_multiple_non_overlapping_spans_on_same_row(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("foo bar baz")
+        spans = [
+            StyleSpan(row=0, col=0, width=3, style="\033[31m", priority=20),
+            StyleSpan(row=0, col=8, width=3, style="\033[32m", priority=20),
+        ]
+        view._style_text_rows(screen, spans)
+        line = screen.lines[0]
+        assert "\033[31mfoo\033[0m" in line
+        assert "\033[32mbaz\033[0m" in line
+        # Middle "bar" stays unstyled
+        assert " bar " in line
+
+    def test_overlapping_spans_resolved_by_priority(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("abcdefghij")
+        # Lower priority covers cells 0..7; higher priority covers 3..5.
+        spans = [
+            StyleSpan(row=0, col=0, width=8, style="\033[31m", priority=10),
+            StyleSpan(row=0, col=3, width=3, style="\033[1;33m", priority=25),
+        ]
+        view._style_text_rows(screen, spans)
+        line = screen.lines[0]
+        # Expect: "abc" styled red, "def" styled bold yellow, "gh" styled red,
+        # the rest unstyled.
+        assert "\033[31mabc\033[0m" in line
+        assert "\033[1;33mdef\033[0m" in line
+        assert "\033[31mgh\033[0m" in line
+
+    def test_span_exceeding_line_length_is_clipped(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("abc", width=5)
+        # Span extends past the 5-char line; should clip without error.
+        spans = [StyleSpan(row=0, col=2, width=100, style="\033[7m", priority=20)]
+        view._style_text_rows(screen, spans)
+        line = screen.lines[0]
+        assert line.startswith("ab")  # unstyled prefix
+        assert "\033[7m" in line  # styling started
+        assert line.endswith("\033[0m")  # properly closed
+
+    def test_zero_width_span_ignored(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("hello")
+        original = screen.lines[0]
+        view._style_text_rows(
+            screen, [StyleSpan(row=0, col=2, width=0, style="\033[7m", priority=20)]
+        )
+        assert screen.lines[0] == original
+
+    def test_span_outside_screen_ignored(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("hello")
+        original = screen.lines[0]
+        view._style_text_rows(
+            screen,
+            [
+                StyleSpan(row=99, col=0, width=5, style="\033[7m", priority=20),
+                StyleSpan(row=-1, col=0, width=5, style="\033[7m", priority=20),
+            ],
+        )
+        assert screen.lines[0] == original
+
+    def test_spans_on_different_rows_applied_independently(self):
+        from recursive_neon.shell.tui import ScreenBuffer, StyleSpan
+
+        view = self._view()
+        screen = ScreenBuffer(width=10, height=3)
+        screen.set_line(0, "aaaaaaaaaa")
+        screen.set_line(1, "bbbbbbbbbb")
+        screen.set_line(2, "cccccccccc")
+        spans = [
+            StyleSpan(row=0, col=0, width=3, style="\033[31m", priority=20),
+            StyleSpan(row=2, col=5, width=4, style="\033[32m", priority=20),
+        ]
+        view._style_text_rows(screen, spans)
+        assert screen.lines[0].startswith("\033[31maaa\033[0m")
+        assert screen.lines[1] == "bbbbbbbbbb"  # unchanged
+        assert "\033[32mcccc\033[0m" in screen.lines[2]
+
+    def test_tie_breaks_by_emission_order(self):
+        from recursive_neon.shell.tui import StyleSpan
+
+        view = self._view()
+        screen = self._screen_with_line("xxxxx")
+        # Both priority 20, overlapping; later-emitted wins because the
+        # comparison is strict > priority (not >=).
+        spans = [
+            StyleSpan(row=0, col=0, width=5, style="\033[31m", priority=20),
+            StyleSpan(row=0, col=0, width=5, style="\033[32m", priority=20),
+        ]
+        view._style_text_rows(screen, spans)
+        # Strict > means the FIRST span wins for equal priority.
+        line = screen.lines[0]
+        assert "\033[31mxxxxx\033[0m" in line
+        assert "\033[32m" not in line
