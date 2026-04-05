@@ -271,13 +271,14 @@ class TestDescribeKeyCG:
         ed = make_editor()
         ed.process_key("C-h")
         ed.process_key("k")
-        assert ed._describing_key is True
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.brief is False
 
         ed.process_key("C-g")
 
         # Describe-key capture consumed C-g and produced a describe-key
         # result; the capture mode is cleared.
-        assert ed._describing_key is False
+        assert ed._describe_key_session is None
         # The Help buffer was shown with the keyboard-quit binding
         help_buf = next((b for b in ed.buffers if b.name == "*Help*"), None)
         assert help_buf is not None
@@ -288,11 +289,12 @@ class TestDescribeKeyCG:
         ed = make_editor()
         ed.process_key("C-h")
         ed.process_key("c")
-        assert ed._describing_key_briefly is True
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.brief is True
 
         ed.process_key("C-g")
 
-        assert ed._describing_key_briefly is False
+        assert ed._describe_key_session is None
         assert "keyboard-quit" in ed.message
 
 
@@ -318,19 +320,15 @@ class TestQuitCommandDirect:
 
     def test_reset_transient_state_clears_describe_key(self):
         """_reset_transient_state clears describe-key state too (used
-        by future keyboard-escape-quit).
+        by keyboard-escape-quit).
         """
+        from recursive_neon.editor.editor import _DescribeKeySession
+
         ed = make_editor()
-        ed._describing_key = True
-        ed._describing_key_briefly = True
-        ed._describing_key_prefix = "C-x"
-        ed._dkb_prefix = "C-x"
+        ed._describe_key_session = _DescribeKeySession(
+            brief=False, prefix="C-x", prefix_map=ed.global_keymap
+        )
 
         ed._reset_transient_state()
 
-        assert ed._describing_key is False
-        assert ed._describing_key_briefly is False
-        assert ed._describing_key_prefix == ""
-        assert ed._describing_key_map is None
-        assert ed._dkb_prefix == ""
-        assert ed._dkb_map is None
+        assert ed._describe_key_session is None

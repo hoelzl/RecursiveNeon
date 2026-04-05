@@ -2,6 +2,41 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6l-4 — Query-Replace (M-%) (2026-04-05)
+
+### Added
+- **`query-replace` command** bound to `M-%`. Emacs-style interactive find-and-replace:
+  - Two sequential minibuffer prompts collect the search and replacement strings (`Query replace: `, `Query replace <from> with: `). Both prompts accept `M-Enter` to insert a literal newline, enabling multi-line search/replace (the Buffer-level multi-line support from 6l-3).
+  - Match highlighting via the 6l-3 `editor.highlight_term` mechanism — all occurrences in the visible region show the non-current highlight; the match point is on shows the current-match highlight (point-driven, no new field needed).
+  - Ten in-session keys: `y` / `SPC` replace-and-advance; `n` / `DEL` / `Backspace` / `Delete` skip-and-advance; `q` / `Enter` exit; `.` replace-and-exit; `!` replace-all-remaining; `u` undo-last; `U` undo-all-and-exit; `e` edit replacement in a nested minibuffer; `C-g` cancel-and-restore-point; `?` show a one-line help legend.
+  - **Per-session undo stack** for `u`/`U` — each replacement is recorded in `_QueryReplaceSession.replacements` as a `_Replacement(line, col, from_text, to_text)` tuple. `u` pops LIFO and issues reverse `buf.delete_region` + `buf.insert_string` ops to revert the last replacement; session stays active and re-installs the reverted match. `U` pops the whole stack, reverts everything, exits, and restores point to the session start.
+  - **Single undo group on exit** — replacements and reverts during the session go through raw buffer ops without intervening boundaries, so the entire session compacts into one `Buffer.undo_list` group. A single post-session `C-/` reverts every replacement at once.
+  - Smart-case default: session case-fold is computed once at entry using the same rule as isearch (`case-fold-search` defvar AND `from_text.islower()`). No per-session `M-c` toggle (not in the 6l-4 spec).
+  - `e` (edit replacement) opens a nested minibuffer pre-filled with the current `to_text`. A `paused_for_edit` flag on the session suppresses the top-level query-replace routing so the minibuffer handles keystrokes normally. The minibuffer's `process_key` is patched so the session resumes on both submit (new text applied) and cancel (old text preserved).
+  - `C-g` cancels cleanly: point is restored to the session start, committed replacements stay, highlight is cleared, message shows "Quit".
+  - Zero-match on entry: `"No matches for <from>"` message, session never installed.
+  - Report message on natural exit: `"Replaced N occurrence(s)"`; on `U`: `"Undid all N replacement(s)"`; on `C-g`: `"Quit"`.
+- **`_QueryReplaceSession` + `_Replacement` dataclasses** in `editor/default_commands.py`. Session holds from/to text, case-fold flag, start point, replacement stack, `paused_for_edit`, and `replaced_count`. Cleared by `Editor._reset_transient_state()` so `keyboard-escape-quit` and other blanket resets cover it for free.
+- **Query-replace routing hook in `Editor.process_key`** — new branch between describe-key and the ESC state machine (per the 6l-2 discovery). Runs only when the session is active and NOT paused for edit, so the nested `e` minibuffer gets keys via the normal minibuffer routing step.
+- **62 new tests** in `test_query_replace.py` across 13 classes: registration/keymap binding (2), entry flow (7), basic keys y/SPC/n/Backspace/Delete/q/Enter/./highlight cleanup (12), replace-all `!` (3), undo stack u/U with single-undo-group verification (8), C-g cancel (4), `e` edit replacement with submit *and* cancel resume (4), `?` help and invalid-key handling (3), multi-line search/replacement via M-Enter (4), highlighting + case-fold (5+2), reset/routing/session-dataclass invariants (3+3+2). **1613 passing tests total** (+62 from 6l-3's 1551).
+
+### Changed
+- **Describe-key state refactored to a `_DescribeKeySession` dataclass** in `editor/editor.py` — collapses six previously-scattered fields (`_describing_key`, `_describing_key_briefly`, `_describing_key_prefix`, `_describing_key_map`, `_dkb_prefix`, `_dkb_map`) into a single `self._describe_key_session: _DescribeKeySession | None`. Establishes the "capture-mode session object" pattern that query-replace reuses; future capture modes should follow suit and clear their session in `_reset_transient_state()`. 14 existing test-level assertions migrated; all 896 pre-existing editor tests still pass.
+- **`Editor.process_key` routing order**: describe-key → **query-replace (NEW)** → ESC state machine → meta-pending rewrites → minibuffer → C-g intercept → normal keymap. The query-replace branch sits *above* the ESC state machine so a bare ESC inside a session is handled as an in-session invalid key (the spec has no ESC action); blanket cancellation goes through `C-g` or `keyboard-escape-quit` which calls `_reset_transient_state()`.
+
+### Fixed
+- **Test isolation bug in `test_isearch_v2.py`** (pre-existing, only surfaced when test_query_replace landed alphabetically after it): `test_case_fold_search_variable_false_disables_smart_fold` mutated the module-level `VARIABLES["case-fold-search"].default` via `ed.set_variable(...)` without restoring it, leaking state into subsequent tests. Wrapped in try/finally.
+
+### Deviations (documented inline in `default_commands.py`)
+- **`?` help is a one-line message area legend** instead of Emacs's pop-up window. Real Emacs shows query-replace help in a split window that doesn't disturb the session; our `_show_help_buffer` would switch the active buffer and lose the current match. A faithful implementation is disproportionately complex under our synchronous TUI model. The compact legend fits on ~95 columns and clips gracefully on narrower screens.
+- **`case-replace` (preserve input case in replacement) is NOT implemented.** Literal replacement only. Deferred.
+- **`M-c` mid-session case-fold toggle is NOT implemented** — isearch has it (6l-3), but the 6l-4 spec doesn't. Case-fold is decided once at session entry via the smart-case rule.
+
+### Architecture notes
+- **Session-object pattern is now the convention** for long-running capture modes. Describe-key and query-replace both use `dataclass-on-Editor + routing-check-early-in-process_key + clear-in-_reset_transient_state`. Any future capture mode (a plausible candidate: `query-replace-regexp` in a follow-up) should follow suit.
+- **Undo model: no-internal-boundary invariant drives the single-session-group guarantee.** Query-replace keystrokes bypass `_execute_command_by_name` (they're captured directly), so no `add_undo_boundary()` calls fire during the session. Raw `delete_region` + `insert_string` operations pile into one contiguous run between boundaries; a post-session `C-/` walks the whole run LIFO and reverts everything. The session's own `replacements` stack handles `u`/`U` at a higher level without touching `Buffer.undo()`. **Alternate design considered and recorded in `V2_HANDOVER.md` 6l-4 addendum** (per-replacement boundaries with exit-collapse) in case the compound-reverts model ever produces confusing interactions with future features.
+- **Multi-line match end helper**: `_qr_match_end` in `default_commands.py` duplicates the 5-line logic of `view._match_end`. Both compute "position just past a multi-line match start". Could be factored to a shared module if a third caller emerges.
+
 ## Phase 6l-3 — True Incremental Search (2026-04-05)
 
 ### Added

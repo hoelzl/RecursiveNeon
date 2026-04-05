@@ -18,7 +18,8 @@ class TestDescribeKey:
         ed.process_key("C-h")
         ed.process_key("k")
         # Now in describe-key mode
-        assert ed._describing_key
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.brief is False
         ed.process_key("C-f")
         # Should have opened *Help* with forward-char info
         assert ed.buffer.name == "*Help*"
@@ -29,7 +30,8 @@ class TestDescribeKey:
         ed.process_key("C-h")
         ed.process_key("k")
         ed.process_key("C-x")  # prefix key — wait for second key
-        assert ed._describing_key
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.prefix == "C-x"
         ed.process_key("C-s")
         assert ed.buffer.name == "*Help*"
         assert "save-buffer" in ed.buffer.text

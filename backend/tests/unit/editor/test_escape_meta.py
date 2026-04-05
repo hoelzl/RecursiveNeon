@@ -338,9 +338,10 @@ class TestEscapeDescribeKey:
         ed = make_editor()
         ed.process_key("C-h")
         ed.process_key("k")
-        assert ed._describing_key is True
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.brief is False
         ed.process_key("Escape")  # describe-key captures ESC
-        assert ed._describing_key is False
+        assert ed._describe_key_session is None
         # State machine was NOT entered
         assert ed._meta_pending is False
         # *Help* buffer shows the ESC-as-Meta explanation
@@ -354,9 +355,10 @@ class TestEscapeDescribeKey:
         ed = make_editor()
         ed.process_key("C-h")
         ed.process_key("c")
-        assert ed._describing_key_briefly is True
+        assert ed._describe_key_session is not None
+        assert ed._describe_key_session.brief is True
         ed.process_key("Escape")
-        assert ed._describing_key_briefly is False
+        assert ed._describe_key_session is None
         assert ed._meta_pending is False
         assert "Meta" in ed.message
 

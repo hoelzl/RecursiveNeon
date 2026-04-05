@@ -11,6 +11,7 @@ Undo boundaries are inserted automatically between commands.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from recursive_neon.editor.buffer import Buffer
@@ -22,8 +23,31 @@ from recursive_neon.editor.modes import MODES
 from recursive_neon.editor.variables import VARIABLES
 
 if TYPE_CHECKING:
+    from recursive_neon.editor.default_commands import _QueryReplaceSession
     from recursive_neon.editor.viewport import Viewport
     from recursive_neon.editor.window import WindowTree
+
+
+@dataclass
+class _DescribeKeySession:
+    """Capture-mode state for ``describe-key`` / ``describe-key-briefly``.
+
+    The session is installed by the ``describe-key`` / ``describe-key-briefly``
+    commands and consumed by :meth:`Editor.process_key` — the next keystroke
+    (or key *pair*, for prefix keys) is looked up and described instead of
+    being dispatched normally.  Re-armed by ``_do_describe_key`` when the
+    first key is a prefix keymap (e.g. ``C-x``), so the two-key sequence
+    ``C-x C-s`` is captured as one describe-key unit.
+    """
+
+    brief: bool = False
+    """False = C-h k (show in *Help*), True = C-h c (show in message area)."""
+
+    prefix: str = ""
+    """Display string mid-two-key (e.g. ``"C-x"``).  Empty on entry."""
+
+    prefix_map: Keymap | None = None
+    """Keymap mid-two-key, used to resolve the follow-up keystroke."""
 
 
 class Editor:
@@ -72,15 +96,21 @@ class Editor:
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 
-        # Describe-key mode: when True, next keystroke is described.
-        # The *_prefix / *_map fields hold state mid-two-key lookup
-        # (e.g., after "C-h k C-x", waiting for the second C-x key).
-        self._describing_key: bool = False
-        self._describing_key_briefly: bool = False
-        self._describing_key_prefix: str = ""
-        self._describing_key_map: Keymap | None = None
-        self._dkb_prefix: str = ""
-        self._dkb_map: Keymap | None = None
+        # Describe-key capture session.  When non-None, the next
+        # keystroke is consumed and described instead of being
+        # dispatched.  Holds brief/full flag plus any mid-two-key
+        # prefix state (e.g., after "C-h k C-x", waiting for the
+        # second key in the C-x keymap).  Cleared by
+        # ``_reset_transient_state``.
+        self._describe_key_session: _DescribeKeySession | None = None
+
+        # Query-replace capture session.  When non-None (and not
+        # ``paused_for_edit``), single keystrokes drive the query-replace
+        # flow (y/n/q/./!/u/U/e/C-g/?).  Installed by the ``query-replace``
+        # command after both entry prompts submit; cleared on session
+        # exit or by ``_reset_transient_state``.  The type is forward-
+        # referenced to avoid a circular import with ``default_commands``.
+        self._query_replace_session: _QueryReplaceSession | None = None
 
         # ESC-as-Meta state machine.  A bare Escape keystroke sets
         # ``_meta_pending``; the next non-ESC key is then rewritten as
@@ -204,14 +234,32 @@ class Editor:
         # Describe-key capture runs first: it consumes *any* key,
         # including Escape, so that C-h k ESC describes Escape rather
         # than triggering the ESC-as-Meta state machine.  Matches the
-        # C-g handling convention from Phase 6l-1.
-        if self._describing_key:
-            self._describing_key = False
-            self._do_describe_key(key)
+        # C-g handling convention from Phase 6l-1.  The session is
+        # cleared before dispatching; ``_do_describe_key`` re-arms it
+        # by constructing a fresh session when the first key is a
+        # prefix keymap (so "C-h k C-x C-s" is captured as one unit).
+        if self._describe_key_session is not None:
+            session = self._describe_key_session
+            self._describe_key_session = None
+            if session.brief:
+                self._do_describe_key_briefly(key, session)
+            else:
+                self._do_describe_key(key, session)
             return
-        if self._describing_key_briefly:
-            self._describing_key_briefly = False
-            self._do_describe_key_briefly(key)
+
+        # Query-replace capture (6l-4): runs BEFORE the ESC state
+        # machine so ESC inside a session triggers keyboard-escape-quit
+        # (which cancels via _reset_transient_state) rather than being
+        # rewritten as a Meta prefix.  The ``paused_for_edit`` guard
+        # lets the nested ``e`` sub-phase minibuffer handle keys via
+        # the minibuffer routing step below.
+        if (
+            self._query_replace_session is not None
+            and not self._query_replace_session.paused_for_edit
+        ):
+            from recursive_neon.editor.default_commands import _qr_handle_key
+
+            _qr_handle_key(self, key)
             return
 
         # ESC-as-Meta state machine.  Runs before minibuffer routing so
@@ -460,12 +508,18 @@ class Editor:
             on_change=on_change,
         )
 
-    def _do_describe_key(self, key: str) -> None:
-        """Look up what a key is bound to and show in *Help*."""
+    def _do_describe_key(self, key: str, session: _DescribeKeySession) -> None:
+        """Look up what a key is bound to and show in *Help*.
+
+        ``session`` carries any mid-two-key prefix state.  When the
+        looked-up key is itself a prefix keymap, a fresh session is
+        installed on ``self`` so the next keystroke completes the
+        two-key lookup.
+        """
         # Special case: bare Escape is the ESC-as-Meta prefix, not a
         # keymap binding.  Describe its role explicitly rather than
         # falling through to "Escape is not bound".
-        if key == "Escape" and not self._describing_key_prefix:
+        if key == "Escape" and not session.prefix:
             from recursive_neon.editor.default_commands import _show_help_buffer
 
             lines = [
@@ -481,22 +535,21 @@ class Editor:
         target = keymap.lookup(key)
 
         if isinstance(target, Keymap):
-            # It's a prefix key — wait for the next key to describe the full sequence
-            self._describing_key_prefix = key
-            self._describing_key_map = target
-            self._describing_key = True  # re-enter describe-key mode
+            # It's a prefix key — re-arm the session so the next key
+            # completes the two-key sequence.
+            self._describe_key_session = _DescribeKeySession(
+                brief=False,
+                prefix=key,
+                prefix_map=target,
+            )
             self.message = f"Describe key: {key}-"
             return
 
         # Check if we're completing a prefix sequence
-        if self._describing_key_prefix:
-            key_str = f"{self._describing_key_prefix} {key}"
-            prefix_map = self._describing_key_map
-            self._describing_key_prefix = ""
-            self._describing_key_map = None
-            # Look up in the stored prefix map
-            if prefix_map is not None:
-                target = prefix_map.lookup(key)
+        if session.prefix:
+            key_str = f"{session.prefix} {key}"
+            if session.prefix_map is not None:
+                target = session.prefix_map.lookup(key)
         else:
             key_str = key
 
@@ -516,10 +569,10 @@ class Editor:
         else:
             self.message = f"{key_str} is not bound"
 
-    def _do_describe_key_briefly(self, key: str) -> None:
+    def _do_describe_key_briefly(self, key: str, session: _DescribeKeySession) -> None:
         """Look up what a key is bound to and show in the message area."""
         # Special case: bare Escape is the ESC-as-Meta prefix.
-        if key == "Escape" and not self._dkb_prefix:
+        if key == "Escape" and not session.prefix:
             self.message = "Escape is the Meta prefix (ESC-as-Meta); "
             self.message += "ESC ESC ESC runs keyboard-escape-quit"
             return
@@ -528,21 +581,20 @@ class Editor:
         target = keymap.lookup(key)
 
         if isinstance(target, Keymap):
-            # Prefix key — wait for next key
-            self._dkb_prefix = key
-            self._dkb_map = target
-            self._describing_key_briefly = True
+            # Prefix key — re-arm the session for the follow-up key.
+            self._describe_key_session = _DescribeKeySession(
+                brief=True,
+                prefix=key,
+                prefix_map=target,
+            )
             self.message = f"Describe key briefly: {key}-"
             return
 
         # Check if completing a prefix sequence
-        if self._dkb_prefix:
-            key_str = f"{self._dkb_prefix} {key}"
-            prefix_map = self._dkb_map
-            self._dkb_prefix = ""
-            self._dkb_map = None
-            if prefix_map is not None:
-                target = prefix_map.lookup(key)
+        if session.prefix:
+            key_str = f"{session.prefix} {key}"
+            if session.prefix_map is not None:
+                target = session.prefix_map.lookup(key)
         else:
             key_str = key
 
@@ -676,13 +728,10 @@ class Editor:
         self._prefix_arg = None
         self._building_prefix = False
         self._prefix_has_digits = False
-        # Clear describe-key capture modes (both styles)
-        self._describing_key = False
-        self._describing_key_briefly = False
-        self._describing_key_prefix = ""
-        self._describing_key_map = None
-        self._dkb_prefix = ""
-        self._dkb_map = None
+        # Clear describe-key capture session (covers both C-h k and C-h c)
+        self._describe_key_session = None
+        # Clear query-replace capture session (6l-4)
+        self._query_replace_session = None
         # Clear ESC-as-Meta state machine
         self._meta_pending = False
         self._escape_quit_pending = False

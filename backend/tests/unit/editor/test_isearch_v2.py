@@ -230,13 +230,21 @@ class TestIsearchCaseFold:
 
     def test_case_fold_search_variable_false_disables_smart_fold(self):
         ed = make_editor("Foo and foo")
-        ed.set_variable("case-fold-search", False)
-        ed.process_key("C-s")
-        ed.process_key("f")
-        ed.process_key("o")
-        ed.process_key("o")
-        # Global var disables smart fold even for lowercase term
-        assert ed.highlight_case_fold is False
+        # ``set_variable`` mutates the module-level VARIABLES registry,
+        # so we save and restore around the assertion to keep the
+        # default for subsequent tests (notably test_query_replace,
+        # which relies on the default True).
+        original = ed.get_variable("case-fold-search")
+        try:
+            ed.set_variable("case-fold-search", False)
+            ed.process_key("C-s")
+            ed.process_key("f")
+            ed.process_key("o")
+            ed.process_key("o")
+            # Global var disables smart fold even for lowercase term
+            assert ed.highlight_case_fold is False
+        finally:
+            ed.set_variable("case-fold-search", original)
 
 
 # ═══════════════════════════════════════════════════════════════════════
