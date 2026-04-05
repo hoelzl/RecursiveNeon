@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete plus Phase 6l-1 (C-g keyboard-quit hardening), 6l-2 (keyboard-escape-quit + ESC-as-Meta), 6l-3 (true incremental search with match highlighting, wrap-around, state-stack backspace, smart case-fold + M-c toggle, multi-line search), and 6l-4 (query-replace M-% with per-session undo stack, single post-session undo group, and the capture-mode session-object pattern that describe-key was retrofitted to). 1613 passing tests + 13 xfail (TD-006 regressions). Phase 6l-5 (deferred items incl. undo-granularity bug) is next, followed by Phase 7 (deferred-items cleanup incl. TD-006 fix in 7c-5) and Phase 8 (browser terminal + desktop GUI).
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete plus Phase 6l-1 (C-g keyboard-quit hardening), 6l-2 (keyboard-escape-quit + ESC-as-Meta), 6l-3 (true incremental search with match highlighting, wrap-around, state-stack backspace, smart case-fold + M-c toggle, multi-line search), 6l-4 (query-replace M-% with per-session undo stack, single post-session undo group, and the capture-mode session-object pattern that describe-key was retrofitted to), and 6l-5 (undo-chain granularity bug — two consecutive C-/ now walk distinct groups back through history). 1620 passing tests + 13 xfail (TD-006 regressions). **Phase 6l is now complete.** Phase 7 (deferred-items cleanup incl. TD-006 fix in 7c-5 and new 7c-6 aggressive undo coalescing) is next, followed by Phase 8 (browser terminal + desktop GUI).
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1613 tests (13 xfail for TD-006)
+../.venv/Scripts/pytest              # All 1620 tests (13 xfail for TD-006)
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -145,6 +145,7 @@ neon-edit is an Emacs-inspired TUI editor with:
   - **Single-undo-group on exit**: query-replace keystrokes bypass `_execute_command_by_name`, so no `add_undo_boundary()` calls fire during the session. Raw `buf.delete_region` + `buf.insert_string` ops for replacements *and* for `u`/`U` reverts pile into one contiguous run in `Buffer.undo_list`. A post-session `C-/` walks the whole run LIFO and reverts everything at once. The session's own `_Replacement` stack handles `u`/`U` at a higher level. Alternate design (per-replacement boundaries + exit-collapse) is recorded in `V2_HANDOVER.md` 6l-4 addendum in case the compound-reverts model produces problems with future features.
   - **`e` (edit replacement) sub-phase**: nested minibuffer pre-filled with current `to_text`; a `paused_for_edit` flag on the session suppresses the top-level query-replace routing so the minibuffer handles keys normally. The minibuffer's `process_key` is patched (isearch precedent) so resume works on both submit and cancel.
   - **Deviation from Emacs**: `?` help is a one-line message-area legend instead of Emacs's pop-up window — faithful behaviour would require real window-splitting with auto-restore (disproportionately complex). `case-replace` and `M-c` mid-session toggle are explicitly NOT implemented (not in spec; deferred).
+- **Undo-chain granularity fix (6l-5)**: two consecutive `C-/` presses now walk two distinct undo groups back through history instead of flipping into redo on the second press. Two-layered fix: (1) `Editor._execute_command_by_name` / `execute_command` skip the pre-command `add_undo_boundary()` call when dispatching `undo`, because `add_undo_boundary`'s chain-break side effect (clears `last_command_type == "undo"`, resets `_undo_cursor`) defeats `Buffer.undo()`'s consecutive-undo tracking. (2) `Buffer.undo()` now inserts an `UndoBoundary` before extending its reverse entries onto the undo list — without this, a later chain-break followed by another undo walks both the reverse group and the source group in a single pass, collapsing two user-visible states into one keystroke. `add_undo_boundary()` grew an optional `break_undo_chain: bool = True` kwarg so `undo()` can append a boundary without breaking its own chain. See `tests/unit/editor/test_undo_chain.py` for the regression surface and the rationale docstring.
 
 ## Shell-in-Editor (Phase 6j)
 
@@ -162,10 +163,11 @@ Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mo
 - **Window-tree gotcha for tests**: `EditorView.on_key` calls `_ensure_editor_on_buffer(active_window.buffer)` at the start of every keystroke. If a test uses `editor.create_buffer()` to make a new buffer current and then sends a key, the active window silently reverts the editor's current buffer to whatever the window shows. To test commands on a specific buffer, route through `C-x b switch-to-buffer` key events (the proper flow updates the window too).
 - **Variable-registry leakage**: `M-x set-variable` and `C-x f` mutate `VARIABLES[name].default` (module-level global). Tests that touch `fill-column` or similar must save/restore defaults — see the `_restore_global_variables` autouse fixture in `test_tutorial_walkthrough.py` for the pattern.
 
-## What's Next (Phase 6l-5, then Phase 7, then Phase 8)
+## What's Next (Phase 7, then Phase 8)
 
-- **Phase 6l-5** — pulled-forward deferred items plus the undo-granularity bug noted in 6k (a second C-/ after Backspace appears to redo rather than continue undoing). Multi-line search is already done (6l-3 pulled it in as a prerequisite).
-- **Phase 7** — deferred-items cleanup (7a-7f): shell buffer completions, `on_tick` / auto-refresh, extensibility API, game-world hooks, future TUI apps, **TD-006** (filesystem name uniqueness + editor `save_callback` multi-buffer bug, 7c-5).
+**Phase 6l is complete** — the editor polish pass landed everything scheduled plus the undo-granularity fix.
+
+- **Phase 7** — deferred-items cleanup (7a-7f): shell buffer completions, `on_tick` / auto-refresh, extensibility API, game-world hooks, future TUI apps, **TD-006** (filesystem name uniqueness + editor `save_callback` multi-buffer bug, 7c-5), and the newly-added **7c-6 aggressive undo-group coalescing** (runs of Backspace / C-d / kill / yank merge into a single undo group, discovered during 6l-5 — scheduled before Phase 8 so every future frontend inherits the improved granularity).
 - **Phase 8** — browser terminal + desktop GUI: xterm.js over `/ws/terminal`, raw/cooked rendering, desktop chrome, cyberpunk CSS restore.
 
 See `docs/V2_HANDOVER.md` for the full plan.

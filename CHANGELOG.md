@@ -2,6 +2,23 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 6l-5 — Deferred Items: Undo Granularity Bug (2026-04-06)
+
+### Fixed
+- **Undo-after-Backspace bug** (observed during the Phase 6k tutorial walk-through): a second `C-/` after a `Backspace` used to behave like redo instead of continuing to walk back through history. Two-layered root cause, both fixed:
+  1. `Editor._execute_command_by_name` / `Editor.execute_command` unconditionally called `buf.add_undo_boundary()` before every command — including `undo` itself. `add_undo_boundary()` has a chain-break side effect (it clears `last_command_type == "undo"` and resets `_undo_cursor`) that defeated `Buffer.undo()`'s consecutive-undo chain tracking. **Fix**: skip the boundary in the dispatcher when the command is `undo`. Inlined rationale references the chain-break side effect.
+  2. `Buffer.undo()` extended reverse entries onto the undo list without inserting a boundary between the source group and the reverse group. A later chain-break followed by another undo would then walk both groups in a single pass, collapsing two user-visible states into one keystroke. **Fix**: `Buffer.undo()` now appends an `UndoBoundary` before extending reverse entries (no-op if the previous entry is already a boundary).
+
+### Changed
+- **`Buffer.add_undo_boundary()` signature** — now takes an optional `break_undo_chain: bool = True` keyword argument. Default behaviour is unchanged (break the chain, for fresh command dispatch). `Buffer.undo()` passes `break_undo_chain=False` when inserting the mid-chain boundary before its reverse entries, so the undo chain state survives. The alternative — inlining the boundary-append in `undo()` — was rejected as a footgun: future code touching the undo path would be easy to miss. A single, documented flag on the public API is cleaner.
+
+### Added
+- **`tests/unit/editor/test_undo_chain.py`** (new, 7 tests) covering both the editor-level flow (the exact tutorial walk-through scenario — `type "abc" → Backspace → C-/ → C-/` must end at `""`, not `"ab"`) and the buffer-level invariants (boundary-before-reverses, no duplicate boundary when the source group is already bounded, consecutive `Buffer.undo()` calls walk multiple groups back). **1620 passing tests total** (+7 from 6l-4's 1613).
+
+### Architecture notes
+- **Two last-command trackers, at two layers**: `Editor._last_command_name: str` (dispatcher-level, used for self-insert-command coalescing) and `Buffer.last_command_type: str` (buffer-level, used for kill-ring merging and the undo chain). The chain-break machinery in `add_undo_boundary` is wired through the *buffer-level* `last_command_type == "undo"` check. Regular edit primitives (`insert_char`, `delete_char_*`, `delete_region`, ...) do NOT touch `last_command_type` at all — only `undo`, the kill family, and the yank family do. This is why the 6l-5 fix targets the dispatch path (where `undo` is named) rather than the primitive path (where the chain-break would need a new signal wired through every edit primitive).
+- **Discovery recorded in `V2_HANDOVER.md` 7c-6** (new sub-phase): the existing command-run coalescing is too conservative — only `self-insert-command` runs merge into a single undo group. Real Emacs coalesces runs of Backspace, C-d, C-k, yank, etc. Scheduled for Phase 7c before the browser work so every future frontend inherits the improved granularity. The design adds a new `Command.coalesce_key: str | None` attribute and an `Editor._last_coalesce_key` field — explicitly separate from `Buffer.last_command_type` (which stays focused on kill-ring merging + undo chain, orthogonal concerns).
+
 ## Phase 6l-4 — Query-Replace (M-%) (2026-04-05)
 
 ### Added

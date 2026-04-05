@@ -455,9 +455,21 @@ class Editor:
             self._prefix_arg = None
             return
 
-        # Insert undo boundary between distinct commands
+        # Insert undo boundary between distinct commands.
+        #
+        # Exception: ``undo`` is a chaining command.  ``Buffer.undo()``
+        # tracks a consecutive-undo chain via ``last_command_type`` and
+        # ``_undo_cursor``; calling ``add_undo_boundary`` between two
+        # ``undo`` dispatches would break that chain (it clears both
+        # fields as a side effect — see ``buffer.py::add_undo_boundary``)
+        # and turn the second C-/ into a redo of the first.  Skipping
+        # the boundary preserves the chain.  The boundary that
+        # separates the previous command's entries from the undo's
+        # reverse entries is added inside ``Buffer.undo()`` itself.
         buf = self.buffer
-        if self._last_command_name != name or name != "self-insert-command":
+        if name != "undo" and (
+            self._last_command_name != name or name != "self-insert-command"
+        ):
             buf.add_undo_boundary()
 
         # Stash the key for self-insert-command
@@ -485,7 +497,10 @@ class Editor:
         cmd = COMMANDS.get(name)
         if cmd is None:
             return False
-        self.buffer.add_undo_boundary()
+        # Same ``undo``-is-chaining exception as _execute_command_by_name;
+        # see that method for rationale.
+        if name != "undo":
+            self.buffer.add_undo_boundary()
         cmd.function(self, prefix)
         self._last_command_name = name
         return True

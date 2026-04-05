@@ -571,21 +571,29 @@ class Buffer:
     # Undo
     # ------------------------------------------------------------------
 
-    def add_undo_boundary(self) -> None:
+    def add_undo_boundary(self, *, break_undo_chain: bool = True) -> None:
         """Insert an undo boundary.
 
         Call this between commands so that one ``undo()`` invocation
         reverses exactly one command's worth of changes.  Consecutive
-        boundaries are collapsed.  Also breaks any active undo chain
-        so the next ``undo()`` starts scanning from the end.
+        boundaries are collapsed.
+
+        By default this also breaks any active undo chain so the next
+        ``undo()`` starts scanning from the end — the correct behaviour
+        for dispatching a fresh command on top of a recent undo.  Pass
+        ``break_undo_chain=False`` when you need a boundary inside an
+        ongoing undo (see ``Buffer.undo``'s use): the boundary
+        partitions the entries, but ``last_command_type`` and
+        ``_undo_cursor`` are left alone so the chain survives.
         """
         if self.undo_list and isinstance(self.undo_list[-1], UndoBoundary):
             return
         self.undo_list.append(UndoBoundary())
-        # Break undo chain — next undo() scans from the new end
-        self._undo_cursor = -1
-        if self.last_command_type == "undo":
-            self.last_command_type = ""
+        if break_undo_chain:
+            # Break undo chain — next undo() scans from the new end
+            self._undo_cursor = -1
+            if self.last_command_type == "undo":
+                self.last_command_type = ""
 
     def undo(self) -> bool:
         """Undo one command group.
@@ -654,6 +662,16 @@ class Buffer:
 
         # Append reverse entries to the tail so "undo the undo" works
         # once the cursor resets (i.e., after a non-undo command).
+        #
+        # Insert a boundary first so the reverse entries form their own
+        # group.  Without this, a later chain-break followed by another
+        # undo would walk the reverse entries AND the original source
+        # group in a single pass, collapsing two user-visible states
+        # into one keystroke (Phase 6l-5 regression — see
+        # ``test_undo_chain.py``).  Pass ``break_undo_chain=False`` so
+        # we don't clobber our own chain state mid-undo.
+        if reverse:
+            self.add_undo_boundary(break_undo_chain=False)
         self.undo_list.extend(reverse)
         self.last_command_type = "undo"
         return True

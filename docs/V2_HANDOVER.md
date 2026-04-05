@@ -1,7 +1,7 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-04-05)
-> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 + 6l-3 + 6l-4 complete. 1613 passing tests + 13 xfail (TD-006 regressions). **Phase 6l-5 (deferred items incl. undo-granularity bug) is next**, followed by Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt **incl. TD-006**, extensibility, game hooks, TUI apps), and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Date**: 2025-03-23 (updated 2026-04-06)
+> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 + 6l-3 + 6l-4 + 6l-5 complete. **Phase 6l is now done.** 1620 passing tests + 13 xfail (TD-006 regressions). **Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt incl. TD-006 and new 7c-6 aggressive undo coalescing, extensibility, game hooks, TUI apps) is next**, followed by Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -923,12 +923,39 @@ starts firing again on the next keystroke and the session continues.
 6. Tests in `test_query_replace.py`.
 7. Full suite, ruff, mypy.
 
-#### 6l-5. Deferred items pulled forward
+#### 6l-5. Deferred items pulled forward — **DONE** (1620 tests; +7 from 6l-4's 1613)
+
+The only actionable item in the 6l-5 scope was the undo-granularity bug. Multi-line search had already landed in 6l-3 as a prerequisite. Everything in the "explicitly deferred again" list below remains deferred, with one addition: aggressive undo-group coalescing was discovered while tracing the bug and scheduled as a new **7c-6** (see Phase 7c below).
+
+**Undo-chain granularity fix**. The bug observed during the Phase 6k walk-through — "a second `C-/` after `Backspace` appears to redo rather than continue undoing" — traced to a two-layered cause:
+
+1. `Editor._execute_command_by_name` / `Editor.execute_command` unconditionally called `buf.add_undo_boundary()` before every command, *including* `undo` itself. `add_undo_boundary` has a chain-break side effect (it clears `last_command_type == "undo"` and resets `_undo_cursor`) that defeated `Buffer.undo()`'s consecutive-undo chain tracking. The second C-/ would see `last_command_type != "undo"`, reset the cursor to the end of the undo list, and walk the reverse entries the first C-/ had just appended — redoing the Backspace.
+2. After fixing (1) a secondary bug surfaced: `Buffer.undo()` extended reverse entries onto the undo list without inserting a boundary between the source group and the reverse group. A later chain-break followed by another undo walked both groups in a single pass, collapsing two user-visible states into one keystroke.
+
+**Fix applied**:
+- **`Editor._execute_command_by_name` / `Editor.execute_command`** (`editor/editor.py`) skip the pre-command `add_undo_boundary()` call when the command name is `"undo"`. Inline rationale references the chain-break side effect.
+- **`Buffer.add_undo_boundary()`** (`editor/buffer.py`) grew an optional `break_undo_chain: bool = True` keyword argument. Default behaviour is unchanged. Passing `break_undo_chain=False` appends the boundary but leaves `last_command_type` and `_undo_cursor` alone.
+- **`Buffer.undo()`** now calls `self.add_undo_boundary(break_undo_chain=False)` before extending its reverse entries onto the undo list, so the reverse entries form their own group without tearing down the active chain.
+
+**Tests**. New `backend/tests/unit/editor/test_undo_chain.py` (7 tests) covering:
+- `TestConsecutiveUndoViaEditor` (4): two undos after Backspace walk distinct groups; third undo is a noop at history start; four distinct command groups reachable via four undos; linear-undo "redo" via chain-break + walk-reverse-group.
+- `TestUndoBoundaryBeforeReverseEntries` (2): reverse entries are preceded by a boundary; no duplicate boundary when the source group is already bounded.
+- `TestBufferLevelUndoChain` (1): consecutive `Buffer.undo()` calls walk multiple groups back without editor dispatch.
+
+**Discoveries affecting future phases** (recorded inline in `CHANGELOG.md` and in 7c-6 below):
+- **Two last-command trackers, at two layers**. `Editor._last_command_name` (dispatcher, self-insert coalescing) is distinct from `Buffer.last_command_type` (buffer, kill-ring merging + undo chain). Regular edit primitives don't touch `last_command_type`; only kill/yank/undo do. That's why the fix targets the dispatch path rather than primitive code.
+- **Undo-group coalescing is too conservative**. Only `self-insert-command` runs merge into a single undo group today. Runs of Backspace, C-d, kill-line, yank, etc. each emit a fresh boundary, so the user needs multiple C-/ presses to undo what feels like "one action". Scheduled as **7c-6** before the browser work so every future frontend inherits the improved granularity. Design adds a new `Command.coalesce_key: str | None` attribute and an `Editor._last_coalesce_key` field — explicitly separate from `Buffer.last_command_type` so kill-ring merging and undo coalescing stay orthogonal concerns.
+
+---
+
+The original 6l-5 plan is preserved below (pre-implementation spec).
+
+---
 
 Items carried from earlier phases, to be addressed **in this phase** where they support the core goals:
 
-- **Multi-line search** — `find_forward` / `find_backward` are currently line-based (`buffer.py:996-1048`), preventing search patterns that contain `\n`. `query-replace` and `isearch` both benefit from fixing this. Implement buffer-wide scanning (e.g., search across a joined view with newline offsets).
-- **Undo granularity bug** (6k deferred) — a second `C-/` after `Backspace` appears to redo rather than continue undoing. Root-cause and fix while we're in the editor.
+- **Multi-line search** — `find_forward` / `find_backward` are currently line-based (`buffer.py:996-1048`), preventing search patterns that contain `\n`. `query-replace` and `isearch` both benefit from fixing this. Implement buffer-wide scanning (e.g., search across a joined view with newline offsets). *(Already landed in 6l-3 as a prerequisite.)*
+- **Undo granularity bug** (6k deferred) — a second `C-/` after `Backspace` appears to redo rather than continue undoing. Root-cause and fix while we're in the editor. *(Fixed — see summary above.)*
 
 Items **explicitly deferred again** (document but do not implement here). This list is the consolidated backlog of known deferrals from every prior phase. It is intentionally exhaustive so nothing gets forgotten between handovers.
 
@@ -1310,14 +1337,83 @@ of the fix commit.
   `(parent_id, name)` pairs.
 - TD-006 closed out in `TECH_DEBT.md`.
 
-##### 7c-6. Acceptance criteria (whole 7c)
+##### 7c-6. Aggressive undo-group coalescing (discovered in 6l-5)
+
+**Problem**: Today the dispatcher only coalesces consecutive
+`self-insert-command` invocations into a single undo group
+(`editor.py::_execute_command_by_name`, checked via `_last_command_name`).
+Every other command — including runs of `delete-backward-char`,
+`delete-forward-char`, `kill-line`, `yank`, and the various movement
+commands — emits a fresh undo boundary on each keystroke.  Real Emacs
+coalesces more aggressively: a run of Backspaces is one undo group, a
+run of C-k kills is one group, and so on.  Our conservative behaviour
+means the user frequently needs several C-/ presses to undo what
+feels like "one action" (e.g., deleting a word character-by-character
+with Backspace).
+
+**Why it matters before the GUI**: the browser and desktop shells
+inherit the editor's undo model unchanged.  Fixing coalescing at the
+CLI layer means every future frontend gets the improved granularity
+for free, and the test coverage from Phase 6l-5 (`test_undo_chain.py`)
+already provides the regression surface to extend.  Doing it after
+Phase 8 would require re-validating every frontend path.
+
+**Fix sketch**:
+
+- Introduce a small per-command `coalesce_key: str | None` attribute
+  on `Command` (via the `@defcommand` decorator).  Commands that share
+  a non-`None` key coalesce with each other when dispatched
+  back-to-back.  Proposed initial keys:
+  - `"insert"` — `self-insert-command` (replaces the current hard-coded
+    `name != "self-insert-command"` check).
+  - `"delete-backward"` — `delete-backward-char`.
+  - `"delete-forward"` — `delete-forward-char`.
+  - `"kill"` — `kill-line`, `kill-word`, `backward-kill-word`,
+    `kill-region`, `kill-sentence`, `backward-kill-sentence`.
+  - `"yank"` — `yank`, `yank-pop`.
+- `Editor` grows a `_last_coalesce_key: str | None` field, cleared by
+  `_reset_transient_state()` and whenever a non-coalescing command
+  runs.  Both `_execute_command_by_name` and `execute_command` use it
+  for the boundary decision:
+  ```python
+  key = cmd.coalesce_key
+  same_run = key is not None and key == self._last_coalesce_key
+  if name != "undo" and not same_run:
+      buf.add_undo_boundary()
+  self._last_coalesce_key = key
+  ```
+  The `name != "undo"` exception from 6l-5 stays put.
+- Emacs caveat: a run is also broken by any *intervening* command
+  that mutates the buffer in a different coalesce group.  The check
+  above already handles that because `_last_coalesce_key` is cleared
+  (set to the new command's key, which may be `None`) on every
+  dispatch.
+- Kill-ring merging (which already uses `Buffer.last_command_type ==
+  "kill"`) stays separate — it's a different concern (kill ring
+  entries) from undo-group merging, and the two mechanisms should not
+  be conflated.
+
+**Tests**: extend `test_undo_chain.py` with scenarios that exercise
+runs of Backspace / C-d / C-k / yank.  Each run must collapse to a
+single undo group; mixing commands (e.g., Backspace then C-d) must
+break the run.  Verify the `undo`-chain exception from 6l-5 still
+holds (two `C-/` presses in a row walk two distinct groups back).
+
+**Files likely modified**:
+- `backend/src/recursive_neon/editor/commands.py` — `Command.coalesce_key`.
+- `backend/src/recursive_neon/editor/default_commands.py` — `coalesce_key=` on the relevant `@defcommand` decorators.
+- `backend/src/recursive_neon/editor/editor.py` — `_last_coalesce_key` + updated dispatcher logic in both `_execute_command_by_name` and `execute_command`.
+- `backend/tests/unit/editor/test_undo_chain.py` — coalescing regression tests.
+
+##### 7c-7. Acceptance criteria (whole 7c)
 - `sysmon` auto-refreshes every second without keypresses.
 - TUI apps fill the whole terminal and reflow on resize (both CLI and WebSocket paths).
 - TD-004 closed out with `_MarkSet` wrapper.
 - TD-001 either closed out or re-confirmed with a dated note.
 - TD-005 closed out.
 - TD-006 closed out — 16 xfail regression tests turned green.
-- ~50 new tests (15 for tick/mark-set/pydantic + 15 for resize + ~20 for TD-006 fix tests on top of the existing xfail set).
+- Undo-group coalescing covers Backspace / C-d / kill / yank runs (7c-6).
+- ~60 new tests (15 for tick/mark-set/pydantic + 15 for resize + ~20 for TD-006 fix tests on top of the existing xfail set + ~10 for coalescing).
 
 ---
 
@@ -1483,6 +1579,11 @@ Listed per sub-phase so each commit stays focused.
   - `shell/programs/edit.py` — replace `file_id` closure with a `dict[id(buffer), str]` mapping; update `open_callback` / `save_callback` / remove-buffer path
   - `tests/unit/test_filesystem_name_uniqueness.py` — remove `@pytest.mark.xfail` markers
   - `tests/unit/shell/test_edit_save_callback.py` — remove `@pytest.mark.xfail` markers
+- **7c-6 (undo-group coalescing)**:
+  - `editor/commands.py` — `Command.coalesce_key` field
+  - `editor/default_commands.py` — `coalesce_key=` on `delete-backward-char`, `delete-forward-char`, kill/yank commands
+  - `editor/editor.py` — `_last_coalesce_key`, updated dispatcher logic in `_execute_command_by_name` and `execute_command`, cleared in `_reset_transient_state`
+  - `tests/unit/editor/test_undo_chain.py` — extend with coalescing runs
 - `docs/TECH_DEBT.md` — close out TD-003, TD-004, TD-005, TD-006; re-audit TD-001
 - Extensions to `test_tui_runner.py`, `test_sysmon.py`, `test_terminal.py`, `test_app_service.py`; new `test_mark_set.py`, `test_tui_resize.py`
 
