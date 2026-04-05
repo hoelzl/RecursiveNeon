@@ -583,7 +583,7 @@ Tests (`test_wsclient_batch.py`): round-trip against a mock server; exit code pr
 
 #### 7c. Tech debt cleanup
 
-**Goal**: Resolve the three tracked tech debt items. Small, fast sub-phase that unblocks 7f.
+**Goal**: Resolve the four tracked tech debt items. Small, fast sub-phase that unblocks 7f.
 
 ##### 7c-1. TD-003 — TUI framework `on_tick`
 Add optional tick callbacks to the TUI framework:
@@ -617,11 +617,71 @@ If no `pydantic.v1` warning appears, delete `warnings.filterwarnings` from `recu
 
 No new tests unless the filter is removed — in that case, add a test that imports `recursive_neon` with `-W error` and does not raise.
 
-##### 7c-4. Acceptance criteria
+##### 7c-4. TD-005 — TUI terminal size detection and resize handling
+
+**Problem**: Every TUI app (neon-edit, `sysmon`, `codebreaker`) launches into a fixed 80×24 region in the top-left of the terminal, because `run_tui_app()` defaults `width=80, height=24` (see `shell/tui/runner.py:28-29`) and no caller passes the real dimensions. Resizing the terminal while an app is running never dispatches `TuiApp.on_resize` — the protocol method exists and every app already implements it (`editor/view.py:102`, `shell/programs/sysmon.py:99`, `shell/programs/codebreaker.py:125`), but the runner never calls it.
+
+**Fix plan**:
+
+1. **Measure on entry.**
+   - Add a small helper `shell/tui/runner.py::_measure_terminal() -> tuple[int, int]` that calls `shutil.get_terminal_size(fallback=(80, 24))`. If `sys.stdout.isatty()` is `False`, keep the fallback — piped/captured output should stay deterministic for tests.
+   - `shell.py::_make_run_tui` measures right before `run_tui_app(...)` and passes the result as `width=` / `height=`. Same for the WebSocket path in `terminal.py::_run_tui_factory`.
+   - The `run_tui_app` default stays 80×24 so existing tests continue to work without change.
+
+2. **Resize event channel — local (POSIX)**.
+   - In `LocalRawInput` (`shell/shell.py:653`), install a `signal.SIGWINCH` handler at `run_tui_app` entry and uninstall it on exit (use a try/finally around the handler swap — never leave it installed outside TUI mode).
+   - The handler writes a pending flag (`self._resize_pending = True`); it must not call async code directly.
+   - The runner loop checks the flag between keystrokes — before `get_key()` returns the next key, if `_resize_pending` is set, clear it, call `_measure_terminal()`, and dispatch `app.on_resize(w, h)`, deliver the screen, then continue to the key read.
+   - Races: if SIGWINCH fires *during* a keystroke read, the flag is set and handled on the next iteration — acceptable latency.
+
+3. **Resize event channel — local (Windows)**.
+   - `signal.SIGWINCH` does not exist on Windows. Two options:
+     a. **Poll on tick** — once 7c-1 (`on_tick`) lands, re-measure on each tick and dispatch `on_resize` if dimensions changed. Natural fit; costs one `get_terminal_size()` call per tick.
+     b. **Poll on keystroke** — re-measure on every `get_key()` return. Cheaper but no update while the user is idle.
+   - **Decision**: ship 7c-4 with option (b) for Windows (works without 7c-1), then upgrade to option (a) once 7c-1 is in place. Implement the check in `run_tui_app`, not in the raw input class, so the same code works for both `LocalRawInput` on Windows and anywhere else.
+
+4. **Resize event channel — WebSocket**.
+   - Extend the WS terminal protocol with a `{"type": "resize", "width": N, "height": M}` client → server message. See `terminal.py::handle_ws_message` (referenced in `main.py`) for the message-handling style.
+   - `TerminalSessionManager` stores the latest `(width, height)` and pushes a resize event into a new `resize_queue: asyncio.Queue[tuple[int, int]]` on the session.
+   - `WebSocketRawInput` exposes `drain_resize()` that returns the latest pending size (or `None`). The runner checks this between keystrokes, same as the local flag.
+   - The `wsclient` sends a `resize` message immediately after connecting (using `shutil.get_terminal_size()`) and again whenever it detects a local SIGWINCH.
+   - The browser terminal client (Phase 8) will follow the same contract: send `resize` on connect and on every `window.resize` event.
+
+5. **Runner integration.**
+   - `run_tui_app` becomes a single loop: each iteration first drains any resize event (local flag or WS queue), calling `on_resize` + delivering the screen, then reads the next keystroke. No duplication between paths.
+   - Errors in `on_resize` are logged but do not crash the app; the previous screen stays on-screen.
+
+6. **Tests** (`test_tui_runner.py` extensions):
+   - `run_tui_app` passes the measured size to `app.on_start`.
+   - A mock raw input that also delivers a resize event triggers `on_resize` with the new dimensions and the app gets a fresh screen.
+   - Resize before the first keystroke works (edge case: resize arrives immediately after `on_start`).
+   - POSIX SIGWINCH path uses a fake signal module to avoid flakiness.
+   - Windows polling path tests with a mocked `shutil.get_terminal_size`.
+   - WS resize message round-trip through `TerminalSessionManager`.
+
+**Files modified**:
+- `backend/src/recursive_neon/shell/tui/runner.py` — measurement, resize drain loop
+- `backend/src/recursive_neon/shell/shell.py` — measure and pass size in `_make_run_tui`
+- `backend/src/recursive_neon/terminal.py` — WS resize message handling, pass measured size
+- `backend/src/recursive_neon/shell/keys.py` or `shell.py` — SIGWINCH handler on POSIX
+- `backend/src/recursive_neon/wsclient/client.py` — send resize on connect and on SIGWINCH
+- `backend/src/recursive_neon/main.py` — route `resize` message type
+- `backend/tests/unit/shell/test_tui.py` or new `test_tui_runner.py` — test coverage
+- `docs/TECH_DEBT.md` — close out TD-005
+
+**Acceptance criteria for 7c-4**:
+- Launching `edit` / `sysmon` / `codebreaker` in a 120×40 terminal fills the whole terminal from the first frame.
+- Resizing the terminal while an app is running reflows the display within one keystroke (POSIX) or one tick/keypress (Windows).
+- WebSocket client sends `resize` on connect and on host-terminal SIGWINCH; the server dispatches to the running TUI.
+- Tests cover both POSIX and Windows paths with mocked signal/polling.
+
+##### 7c-5. Acceptance criteria
 - `sysmon` auto-refreshes every second without keypresses.
+- TUI apps fill the whole terminal and reflow on resize (both CLI and WebSocket paths).
 - TD-004 closed out with `_MarkSet` wrapper.
 - TD-001 either closed out or re-confirmed with a dated note.
-- ~15 new tests.
+- TD-005 closed out.
+- ~30 new tests (15 for tick/mark-set/pydantic + 15 for resize).
 
 ---
 
@@ -774,12 +834,16 @@ Listed per sub-phase so each commit stays focused.
 - Extensions to `test_glob.py`, `test_parser.py`, `test_redirection.py`, `test_builtins.py`; new `test_wsclient_batch.py`
 
 **7c** — tech debt:
-- `shell/tui/__init__.py`, `shell/tui/runner.py` — `on_tick`
+- `shell/tui/__init__.py`, `shell/tui/runner.py` — `on_tick`, terminal-size measurement, resize drain loop
+- `shell/shell.py` — measure size in `_make_run_tui`, SIGWINCH handler on POSIX (in `LocalRawInput`)
 - `shell/programs/sysmon.py` — use `on_tick`
+- `terminal.py` — WS `resize` message handling, pass measured size into `run_tui_app`
+- `wsclient/client.py` — send `resize` on connect and on host SIGWINCH
+- `main.py` — route `resize` WS message type
 - `editor/buffer.py` — `_MarkSet` wrapper
 - `recursive_neon/__init__.py` — maybe remove the pydantic.v1 filter
-- `docs/TECH_DEBT.md` — close out TD-003 and TD-004, re-audit TD-001
-- Extensions to `test_tui_runner.py`, `test_sysmon.py`; new `test_mark_set.py`
+- `docs/TECH_DEBT.md` — close out TD-003, TD-004, TD-005; re-audit TD-001
+- Extensions to `test_tui_runner.py`, `test_sysmon.py`, `test_terminal.py`; new `test_mark_set.py`, `test_tui_resize.py`
 
 **7d** — editor extensibility:
 - `editor/config_loader.py` *(new)* — `~/.neon-edit.py` loader + sandbox

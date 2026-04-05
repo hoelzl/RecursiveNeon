@@ -97,6 +97,62 @@ the only place that needs identity semantics, and they already use it.
 
 ---
 
+## TD-005: TUI apps ignore real terminal size and don't handle resize
+
+**Added**: 2026-04-05
+**Affected files**:
+- `backend/src/recursive_neon/shell/tui/runner.py` — `run_tui_app()` defaults to 80×24
+- `backend/src/recursive_neon/shell/shell.py` — `_make_run_tui` calls `run_tui_app` without width/height
+- `backend/src/recursive_neon/terminal.py` — WebSocket path same
+- `backend/src/recursive_neon/shell/keys.py` — local raw input has no resize signal hook
+- `backend/src/recursive_neon/wsclient/client.py` — WS client sends no resize messages
+
+**Problem**: When any TUI app (neon-edit, sysmon, codebreaker) launches in
+a large terminal window, it renders into a fixed 80×24 `ScreenBuffer` in
+the top-left corner instead of filling the terminal. `run_tui_app()`'s
+`width` and `height` parameters default to `80, 24` (see `runner.py:28-29`)
+and every caller omits them. Additionally, resizing the terminal while an
+app is running does not trigger a re-layout — the `TuiApp.on_resize` hook
+exists on the protocol but is never invoked by the runner.
+
+The editor already implements `EditorView.on_resize(width, height)`
+correctly (`editor/view.py:102`), as do `sysmon` and `codebreaker`. The
+bug is entirely in the framework glue: nobody measures the terminal or
+listens for resize events.
+
+**Fix sketch** (scheduled for Phase 7c-4):
+1. Measure the real terminal size at TUI entry via
+   `shutil.get_terminal_size(fallback=(80, 24))` and pass it to
+   `run_tui_app`. Both the local shell path (`shell.py` `_make_run_tui`)
+   and the WebSocket path (`terminal.py`) must be updated.
+2. Add a resize event channel:
+   - **Local (POSIX)**: install a `SIGWINCH` handler that enqueues a
+     resize sentinel into the raw-input key stream or a dedicated
+     resize queue read by `run_tui_app`.
+   - **Local (Windows)**: `signal.SIGWINCH` does not exist. Poll
+     `shutil.get_terminal_size()` on a short interval (reuse the
+     `on_tick` infrastructure from 7c-1 once it lands) and dispatch
+     `on_resize` when the dimensions change.
+   - **WebSocket**: extend the WS protocol with a `{"type": "resize",
+     "width": N, "height": M}` message. The browser terminal and the
+     `wsclient` both send it on connect and whenever the host terminal
+     resizes. `TerminalSessionManager` forwards it to the running TUI.
+3. `run_tui_app` drains the resize channel on each iteration and calls
+   `app.on_resize(new_w, new_h)` before the next keystroke, delivering
+   the fresh screen via `_deliver_screen`.
+4. `ScreenBuffer.create` default stays 80×24 for tests that don't care,
+   but real callers always pass measured dimensions.
+
+**Fallback on detection failure**: if `get_terminal_size()` returns the
+`fallback=(80, 24)` tuple because stdout is not a TTY, keep 80×24 — this
+is the correct behaviour for piped / redirected output.
+
+**Risk**: High user-visible impact (every TUI launch looks wrong in a
+modern terminal), low implementation risk (the protocol hooks already
+exist and the editor already calls `on_resize` correctly).
+
+---
+
 ## Resolved
 
 ### ~~TD-002: Unused LLM/AI dependencies~~ (resolved 2026-03-26)
