@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6k complete (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish). 1433 tests. Phase 8 (browser terminal + desktop GUI) next.
+**Status**: V2 reboot. Phases 0-6k complete + Phase 6l-1 done (keyboard-quit audit) (shell, persistence, WebSocket, TUI framework, completion/globs/pipes, editor, notes integration, system monitor, notes browser, test harness + scrolling + tutorial, sentence motion + help commands + save-some-buffers, variable system + mode infrastructure, replace string + text filling, window system, shell-in-editor, tutorial verification + polish, C-g hardening). 1452 tests. Phase 6l-2 (keyboard-escape-quit + ESC-as-Meta) next; Phase 8 (browser terminal + desktop GUI) after Phase 7.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -43,6 +43,7 @@ cd backend
 2. **Use dependency injection.** All services go through `ServiceContainer`/`ServiceFactory` in `dependencies.py`. Never instantiate services directly.
 3. **Don't add features beyond what's tested and working.** V1's mistake was breadth without depth.
 4. **Write tests** for all new functionality.
+5. **Editor: Emacs is the ground truth.** For neon-edit features, match real GNU Emacs exactly. If a design doc or spec contradicts Emacs, the doc is almost certainly wrong — treat as a bug and match Emacs. Only deviate when Emacs behaviour is disproportionately complex to implement in our synchronous TUI model, and document the deviation next to the diverging code. When in doubt, ask for clarification. See `docs/V2_HANDOVER.md` for details.
 
 ## Shell Commands
 

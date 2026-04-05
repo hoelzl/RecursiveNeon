@@ -1,8 +1,20 @@
 # V2 Handover Document
 
-> **Date**: 2025-03-23 (updated 2026-04-04)
-> **Status**: Phases 0-6k complete. 1433 tests. **Phase 6l (Emacs polish: keyboard-quit audit, keyboard-escape-quit + ESC-as-Meta, true incremental search, query-replace, and deferred items) is next**, followed by Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt, extensibility, game hooks, TUI apps) and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Date**: 2025-03-23 (updated 2026-04-05)
+> **Status**: Phases 0-6k complete, Phase 6l-1 complete. 1452 tests. **Phase 6l-2 (`keyboard-escape-quit` + ESC-as-Meta) is next**, followed by the rest of Phase 6l (true incremental search, query-replace, deferred items), Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt, extensibility, game hooks, TUI apps) and Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
+
+> **Editor design principle: Emacs is the ground truth.** For every
+> neon-edit feature, the goal is to match the behaviour of real GNU Emacs
+> exactly. If the prose in any design doc (this one, phase plans, comments)
+> contradicts real Emacs, the prose is almost certainly wrong — treat it as
+> a bug and match Emacs instead. The only sanctioned deviation is when
+> faithful Emacs behaviour would be disproportionately complex to implement
+> in our synchronous TUI model; in that case, document the deviation next
+> to the code that diverges. When uncertain whether a difference is a prose
+> bug or a complexity deviation, **ask for clarification** rather than
+> guessing. (Introduced after Phase 6l-1 — see that section for the
+> specific deviations that were resolved in favour of Emacs.)
 
 ---
 
@@ -284,20 +296,38 @@ Phases 6b through 6k extended neon-edit from a basic buffer/keymap into a near-c
 - **6j. Shell-in-editor** (1348 tests) — `M-x shell`, `BufferOutput`, `ShellState`, shell-mode keymap, `on_after_key` async bridge, direct-execution model.
 - **6k. Tutorial verification + polish** (1433 tests) — tutorial walk-through integration tests, `describe-bindings` (C-h b), TUTORIAL.txt cleanup.
 
-### Phase 6l: Emacs polish — **NEXT**
+### Phase 6l: Emacs polish — **IN PROGRESS**
 **Goal**: Make the editor genuinely *feel* like Emacs. Implement the cancellation, search, and replace workflows that are cornerstones of the Emacs experience, plus resolve a backlog of small deferred items carried forward from earlier phases. This is the final pre-browser polish pass on the editor.
 
-#### 6l-1. `keyboard-quit` audit and hardening (C-g)
-`keyboard-quit` already exists (`default_commands.py:282`), is bound to `C-g` in the global keymap (`default_commands.py:1210`), and the minibuffer handles `C-g` directly (`minibuffer.py:79`). Isearch installs its own `C-g` override (`default_commands.py:502-512`). The work here is to **audit, test, and harden**:
-- C-g cancels a pending prefix keymap (mid-`C-x` sequence) and clears `_prefix_arg` / `_building_prefix`
-- C-g cancels the minibuffer and restores pre-entry state (point, mark, buffer)
-- C-g cancels `execute-extended-command` mid-typing
-- C-g cancels `describe-key` / `describe-key-briefly` capture modes
-- C-g cancels the new `query-replace` (see 6l-4) cleanly
-- C-g clears the transient region/mark in all cases
-- C-g consistently shows `"Quit"` in the message area
+> **Editor design principle: Emacs is the ground truth.** For every editor
+> feature, the goal is to match the behaviour of real GNU Emacs exactly.
+> The prose in this handover is *trying* to describe Emacs; if the prose
+> and real Emacs disagree, the prose is wrong. Treat such disagreements
+> as bugs in the handover and match Emacs instead.
+>
+> The only sanctioned deviation is when faithful Emacs behaviour would be
+> disproportionately complex to implement in our synchronous TUI model.
+> In that case, document the deviation next to the code that diverges and
+> explain why. When in doubt whether a difference is a prose bug or a
+> complexity deviation, **ask for clarification** rather than guessing.
 
-Add explicit unit tests for each cancellation path, grouped in `test_keyboard_quit.py`.
+#### 6l-1. `keyboard-quit` audit and hardening (C-g) — **DONE** (1452 tests)
+Added `Editor._reset_transient_state()` as the shared foundation for C-g and (the upcoming) `keyboard-escape-quit`; promoted previously-dynamic describe-key state (`_describing_key_prefix`, `_describing_key_map`, `_dkb_prefix`, `_dkb_map`) to explicit `__init__` fields; added a top-level C-g intercept in `Editor.process_key` so C-g short-circuits any pending prefix keymap (mirroring Emacs's `quit` signal) rather than falling through as "C-x C-g is undefined". New `tests/unit/editor/test_keyboard_quit.py` with 19 tests covering every cancellation path.
+
+Deviations from the *original* 6l-1 prose, resolved to match Emacs:
+
+- **Describe-key C-g is not cancelled**: `C-h k C-g` describes the `keyboard-quit` binding instead of cancelling the capture (Emacs behaviour).
+- **Minibuffer cancel preserves the mark**: `C-SPC C-x b C-g` leaves the mark active (Emacs behaviour). The "clears the transient region/mark in all cases" wording in the original prose was a bug.
+
+Still handled as specified:
+- C-g cancels a pending prefix keymap (mid-`C-x`) and clears `_prefix_arg`, `_building_prefix`, `_prefix_has_digits`, `_prefix_keys`.
+- C-g cancels an in-progress `C-u` prefix argument.
+- C-g cancels the minibuffer and `execute-extended-command` mid-typing.
+- C-g cancels incremental search and restores pre-entry point (existing behaviour, verified by test).
+- C-g clears an active region at top level.
+- C-g consistently shows `"Quit"` in the message area.
+
+Query-replace cancellation is deferred to 6l-4 (the command doesn't exist yet).
 
 #### 6l-2. `keyboard-escape-quit` + ESC-as-Meta
 New command `keyboard-escape-quit` — the "do everything C-g does, plus dismiss temporary windows". In our editor it should:

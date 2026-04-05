@@ -72,9 +72,15 @@ class Editor:
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 
-        # Describe-key mode: when True, next keystroke is described
+        # Describe-key mode: when True, next keystroke is described.
+        # The *_prefix / *_map fields hold state mid-two-key lookup
+        # (e.g., after "C-h k C-x", waiting for the second C-x key).
         self._describing_key: bool = False
         self._describing_key_briefly: bool = False
+        self._describing_key_prefix: str = ""
+        self._describing_key_map: Keymap | None = None
+        self._dkb_prefix: str = ""
+        self._dkb_map: Keymap | None = None
 
         # Track whether the last command was issued by us so Buffer
         # can correlate consecutive operations (e.g., kill merging)
@@ -185,6 +191,11 @@ class Editor:
             if not still_active:
                 replay = old_mb.replay_key
                 if old_mb.cancelled:
+                    # Emacs behaviour: cancelling the minibuffer shows
+                    # "Quit" but does *not* deactivate the mark or
+                    # otherwise touch editor-global state.  The command
+                    # that opened the minibuffer already consumed any
+                    # prefix keymap / prefix-arg state.
                     self.message = "Quit"
                 # Only clear if the callback didn't start a new minibuffer
                 if self.minibuffer is old_mb:
@@ -194,16 +205,31 @@ class Editor:
                     self.process_key(replay)
             return
 
-        # Describe-key mode: capture the next key and show its binding
+        # Describe-key mode: capture the next key and show its binding.
+        # C-g is treated like any other key here — it describes the
+        # ``keyboard-quit`` command, matching Emacs behaviour.  To exit
+        # describe-key without describing, just describe any key you
+        # don't care about.
         if self._describing_key:
             self._describing_key = False
             self._do_describe_key(key)
             return
 
-        # Describe-key-briefly mode: show binding in message area only
+        # Describe-key-briefly mode: show binding in message area only.
+        # Same rule as above for C-g.
         if self._describing_key_briefly:
             self._describing_key_briefly = False
             self._do_describe_key_briefly(key)
+            return
+
+        # C-g is special: it interrupts any in-progress command,
+        # pending prefix keymap, or prefix argument and dispatches
+        # ``keyboard-quit``.  In Emacs this is handled by the ``quit``
+        # signal at the read-key-sequence level; here we intercept it
+        # directly.  Must come *after* minibuffer / describe-key
+        # handling so those contexts can consume C-g themselves.
+        if key == "C-g":
+            self._execute_command_by_name("keyboard-quit")
             return
 
         # Clear previous message (commands can set new ones)
@@ -375,13 +401,13 @@ class Editor:
             return
 
         # Check if we're completing a prefix sequence
-        prefix_str = getattr(self, "_describing_key_prefix", "")
-        if prefix_str:
-            key_str = f"{prefix_str} {key}"
+        if self._describing_key_prefix:
+            key_str = f"{self._describing_key_prefix} {key}"
+            prefix_map = self._describing_key_map
             self._describing_key_prefix = ""
+            self._describing_key_map = None
             # Look up in the stored prefix map
-            prefix_map = getattr(self, "_describing_key_map", None)
-            if prefix_map:
+            if prefix_map is not None:
                 target = prefix_map.lookup(key)
         else:
             key_str = key
@@ -416,12 +442,12 @@ class Editor:
             return
 
         # Check if completing a prefix sequence
-        prefix_str = getattr(self, "_dkb_prefix", "")
-        if prefix_str:
-            key_str = f"{prefix_str} {key}"
+        if self._dkb_prefix:
+            key_str = f"{self._dkb_prefix} {key}"
+            prefix_map = self._dkb_map
             self._dkb_prefix = ""
-            prefix_map = getattr(self, "_dkb_map", None)
-            if prefix_map:
+            self._dkb_map = None
+            if prefix_map is not None:
                 target = prefix_map.lookup(key)
         else:
             key_str = key
@@ -523,3 +549,43 @@ class Editor:
     def quit(self) -> None:
         """Signal the editor to stop."""
         self.running = False
+
+    # ------------------------------------------------------------------
+    # Transient state reset (shared by keyboard-quit and
+    # keyboard-escape-quit)
+    # ------------------------------------------------------------------
+
+    def _reset_transient_state(self) -> None:
+        """Clear all transient interactive state.
+
+        Called by ``keyboard-quit`` (C-g) and ``keyboard-escape-quit``
+        (ESC ESC ESC) to return the editor to a clean, idle state: no
+        pending prefix keymap, no prefix argument being built, no
+        describe-key capture in flight, no region.
+
+        Note that a C-g keystroke cannot reach this helper while
+        describe-key capture is active — in that case the key is
+        consumed by ``_do_describe_key`` (matching Emacs).  The
+        describe-key fields are cleared here for the sake of
+        ``keyboard-escape-quit`` and other future callers that want a
+        blanket reset.
+
+        Does *not* touch the minibuffer — callers handle it explicitly
+        because dismissal has a replay-key side effect.
+        """
+        # Clear the region / mark
+        self.buffer.clear_mark()
+        # Clear pending prefix keymap (mid C-x / C-h etc.)
+        self._pending_keymap = None
+        self._prefix_keys = ""
+        # Clear prefix argument (C-u)
+        self._prefix_arg = None
+        self._building_prefix = False
+        self._prefix_has_digits = False
+        # Clear describe-key capture modes (both styles)
+        self._describing_key = False
+        self._describing_key_briefly = False
+        self._describing_key_prefix = ""
+        self._describing_key_map = None
+        self._dkb_prefix = ""
+        self._dkb_map = None

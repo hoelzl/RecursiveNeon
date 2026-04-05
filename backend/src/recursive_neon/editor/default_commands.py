@@ -281,9 +281,16 @@ def set_mark_command(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("keyboard-quit", "Cancel the current operation.")
 def keyboard_quit(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.clear_mark()
-    ed._pending_keymap = None
-    ed._prefix_arg = None
+    """Cancel the current operation (C-g).
+
+    Clears every kind of transient state that an interactive command
+    might be mid-flight in: pending prefix keymap, prefix argument,
+    describe-key capture mode, and the region/mark.  The minibuffer is
+    cancelled separately by ``Minibuffer.process_key`` when it sees C-g,
+    which sets the minibuffer's cancelled flag; the editor then displays
+    ``"Quit"`` at the top of ``process_key``.
+    """
+    ed._reset_transient_state()
     ed.message = "Quit"
 
 
