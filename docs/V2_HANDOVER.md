@@ -133,7 +133,9 @@ backend/
       variables.py                    # EditorVariable, VARIABLES registry, defvar, built-in variables (Phase 6g)
       modes.py                        # Mode, MODES registry, defmode, fundamental-mode, text-mode (Phase 6g)
       window.py                       # Window, WindowSplit, WindowTree: Emacs-style window splitting (Phase 6i)
-      shell_mode.py                   # Shell-in-editor: BufferOutput, ShellState, comint commands, M-x shell (Phase 6j)
+      shell_mode.py                   # Shell-in-editor: BufferOutput, ShellState, ShellBufferInput, comint commands, M-x shell (Phase 6j + 7a)
+      text_attr.py                    # TextAttr: frozen SGR attribute type for per-character styling (Phase 7a-2)
+      ansi_parser.py                  # parse_ansi: ANSI text → (text, attr) runs (Phase 7a-2)
     shell/                            # CLI shell package (Phase 1-5)
       __init__.py                     # Exports InputSource, Shell
       __main__.py                     # Entry point: python -m recursive_neon.shell
@@ -223,6 +225,13 @@ backend/
     unit/editor/test_window_commands.py # Window commands: split, navigate, delete, scroll-other, find-file-other (22 tests, Phase 6i)
     unit/editor/test_shell_mode.py    # Shell-in-editor: setup, comint commands, history, completion, execution (66 tests, Phase 6j)
     unit/editor/test_tutorial_walkthrough.py  # Tutorial walk-through: every chapter exercised via EditorHarness (72 tests, Phase 6k)
+    unit/editor/test_read_only_regions.py    # Buffer read-only regions: API, enforcement, tracking, editor message (39 tests, Phase 7a-1)
+    unit/editor/test_async_bridge.py         # After-key queue, FIFO order, error isolation, render request (10 tests, Phase 7a-3)
+    unit/editor/test_text_attr.py            # TextAttr: basics, equality, frozen, to_sgr, caching (10 tests, Phase 7a-2)
+    unit/editor/test_ansi_parser.py          # ANSI parser: SGR codes, 256-colour, multiline, resets (19 tests, Phase 7a-2)
+    unit/editor/test_buffer_attrs.py         # Buffer attr layer: enable, insert, delete, join, undo round-trip (22 tests, Phase 7a-2)
+    unit/editor/test_shell_buffer_interactive.py  # Future-based get_line, cancel, flush, Task execution (6 tests, Phase 7a-4)
+    unit/editor/test_tui_passthrough.py      # Launcher injection, child app, shell-mode wiring (4 tests, Phase 7a-5)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -233,6 +242,7 @@ docs/
   QUICKSTART.md                       # Setup guide
   SHELL_DESIGN.md                     # CLI shell architecture and design
   TECH_DEBT.md                        # Tech debt tracker (workarounds, deferred fixes)
+  PHASE_7A_DESIGN.md                  # Phase 7a design: read-only regions, text attrs, async bridge, TUI passthrough
 
 frontend/
   .npmrc                              # npm config

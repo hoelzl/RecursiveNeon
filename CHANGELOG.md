@@ -2,6 +2,27 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 7a — Shell Buffer Completions (2026-04-06)
+
+### Added
+- **Read-only regions** (7a-1) — `ReadOnlyRegion` dataclass with tracked mark pairs on `Buffer`. New API: `add_read_only_region`, `remove_read_only_region`, `clear_read_only_regions`, `is_read_only_at`. Enforcement at all public mutation boundaries (`insert_char`, `insert_string`, `delete_char_forward/backward`, `delete_region`). Programmatic bypass when `_undo_recording=False` (for shell output insertion). Editor shows "Text is read-only" in message area. Shell mode applies a single region `[(0,0), input_start)` after each command.
+- **Text attributes** (7a-2) — `TextAttr` frozen dataclass (`fg`/`bg`/`bold`/`dim`/`italic`/`underline`/`reverse`, 256-colour). Lazy `Buffer._line_attrs` per-character attribute storage (zero cost for plain-text buffers). `Buffer.insert_string_attributed(runs)` for attributed text insertion. `AnsiParser.parse_ansi()` converts ANSI-encoded text to `(text, attr)` runs. All six mutation primitives maintain attrs behind `if self._line_attrs is not None` guards. `UndoDelete.attrs` field captures per-character attributes for undo round-trip. Rendering via existing `StyleSpan` pipeline at priority 10 (below isearch 20/25).
+- **General after-key async bridge** (7a-3) — `Editor._after_key_queue` replaces `_pending_async`. `Editor.after_key(cb)` enqueues callbacks; `EditorView.on_after_key()` drains in FIFO order with error isolation. `asyncio.sleep(0)` yields to event loop so background tasks can run before re-render. `Editor.request_render()` flag for background-task re-render signalling.
+- **Interactive programs in shell buffer** (7a-4) — `ShellBufferInput.get_line` creates an `asyncio.Future`, opens the editor minibuffer, and `await`s the result. Shell commands spawned as `asyncio.Task`s (not direct await) so interactive programs like `chat` can suspend at `get_line` without blocking the runner. Output flushed before each `get_line` call. C-g in minibuffer raises `EOFError` on the Future.
+- **TUI app passthrough** (7a-5) — `run_tui_app` injects a `launch_child` callback into apps via `set_tui_launcher`. `EditorView` stores and exposes to `Editor`. Shell mode sets `_run_tui_factory` on the shell to delegate to `editor.tui_launcher`, enabling `codebreaker`/`sysmon`/`edit` from the shell buffer.
+- **Design document** at `docs/PHASE_7A_DESIGN.md` covering all five sub-items.
+- **110 new tests** across 7 new test files: `test_read_only_regions.py` (39), `test_async_bridge.py` (10), `test_text_attr.py` (10), `test_ansi_parser.py` (19), `test_buffer_attrs.py` (22), `test_shell_buffer_interactive.py` (6), `test_tui_passthrough.py` (4). **1730 passing tests total** (+110 from 6l-5's 1620).
+
+### Changed
+- **`BufferOutput`** no longer strips ANSI at write time — raw text is preserved for later parsing by the attr layer. `execute_shell_command` parses ANSI into attributed runs when the buffer has attrs enabled, falls back to `strip_ansi` otherwise.
+- **`_pending_async`** replaced by `_after_key_queue` across `editor.py`, `view.py`, and `shell_mode.py`. Shell mode tests updated accordingly.
+- **`UndoDelete`** dataclass gains optional `attrs` field (default `None`, backward-compatible).
+
+### Architecture notes
+- **Buffer attrs are rendered through the existing StyleSpan pipeline** — `_compute_buffer_attr_spans` in `view.py` converts per-character attrs to `StyleSpan` entries at priority 10. Isearch highlights (priority 20/25) correctly override buffer colours. Zero changes to `ScreenBuffer`, `set_line`, `set_region`, or `render_ansi`.
+- **Interactive shell programs use cooperative async** — shell commands run as `asyncio.Task`s. `get_line` suspends via `asyncio.Future`; `asyncio.sleep(0)` in `on_after_key` yields to the event loop so the task can resume before re-rendering. This avoids deadlock: the runner can process minibuffer keystrokes while the interactive program is suspended.
+- **TUI passthrough uses nested `run_tui_app`** — the injected launcher calls `run_tui_app` recursively with the same `raw_input`/`output`. Only one reader is active at a time (child takes over during its lifetime), so no contention.
+
 ## Phase 6l-5 — Deferred Items: Undo Granularity Bug (2026-04-06)
 
 ### Fixed

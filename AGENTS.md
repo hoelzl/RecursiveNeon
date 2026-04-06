@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6k are complete plus Phase 6l-1 (C-g keyboard-quit hardening), 6l-2 (keyboard-escape-quit + ESC-as-Meta), 6l-3 (true incremental search with match highlighting, wrap-around, state-stack backspace, smart case-fold + M-c toggle, multi-line search), 6l-4 (query-replace M-% with per-session undo stack, single post-session undo group, and the capture-mode session-object pattern that describe-key was retrofitted to), and 6l-5 (undo-chain granularity bug — two consecutive C-/ now walk distinct groups back through history). 1620 passing tests + 13 xfail (TD-006 regressions). **Phase 6l is now complete.** Phase 7 (deferred-items cleanup incl. TD-006 fix in 7c-5 and new 7c-6 aggressive undo coalescing) is next, followed by Phase 8 (browser terminal + desktop GUI).
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6l complete. **Phase 7a (shell buffer completions) is done** — read-only regions, text attributes with ANSI colours, general after-key async bridge, Future-based interactive programs in the shell buffer, and TUI app passthrough. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c-7f, then Phase 8 (browser terminal + desktop GUI).
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1620 tests (13 xfail for TD-006)
+../.venv/Scripts/pytest              # All 1730 tests (13 xfail for TD-006)
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -82,6 +82,8 @@ All three must pass before committing.
 | TUI framework | `backend/src/recursive_neon/shell/tui/` |
 | Editor core | `backend/src/recursive_neon/editor/` |
 | Shell-in-editor | `backend/src/recursive_neon/editor/shell_mode.py` |
+| Text attributes | `backend/src/recursive_neon/editor/text_attr.py` |
+| ANSI parser | `backend/src/recursive_neon/editor/ansi_parser.py` |
 | Window system | `backend/src/recursive_neon/editor/window.py` |
 | CodeBreaker minigame | `backend/src/recursive_neon/shell/programs/codebreaker.py` |
 | Models | `backend/src/recursive_neon/models/` |

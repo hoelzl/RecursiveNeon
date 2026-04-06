@@ -1,7 +1,7 @@
 # Phase 7a Design: Shell Buffer Completions
 
 > **Date**: 2026-04-06
-> **Status**: Design (pre-implementation)
+> **Status**: Complete (implemented 2026-04-06)
 > **Depends on**: Phase 6l (complete), Phase 6j shell-in-editor
 > **Unlocks**: 7b (pipeline), 7c (tech debt), 7d (extensibility), 7e (game hooks)
 
