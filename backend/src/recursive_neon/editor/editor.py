@@ -146,10 +146,22 @@ class Editor:
         # instances for M-x shell.  Signature: () -> Shell.
         self.shell_factory: Callable[[], Any] | None = None
 
-        # Pending async work — set by commands that need async execution
-        # (e.g., shell command dispatch).  The TUI runner awaits this
-        # after each keystroke via ``EditorView.on_after_key()``.
-        self._pending_async: Callable[[], Awaitable[None]] | None = None
+        # After-key async callback queue — commands that need async
+        # execution (e.g., shell command dispatch) call ``after_key()``
+        # to enqueue a callback.  ``EditorView.on_after_key()`` drains
+        # the queue in FIFO order after each keystroke.
+        self._after_key_queue: list[Callable[[], Awaitable[None]]] = []
+
+        # Render request flag — set by background tasks (e.g., interactive
+        # shell programs) to signal that the display needs updating.
+        self._render_requested: bool = False
+
+        # Background tasks — tracked for cleanup on editor exit.
+        self._background_tasks: list[Any] = []  # list[asyncio.Task]
+
+        # TUI app launcher — set by run_tui_app via EditorView.
+        # Allows shell-mode to spawn nested TUI apps (e.g., codebreaker).
+        self.tui_launcher: Callable | None = None
 
     # ------------------------------------------------------------------
     # Buffer management
@@ -479,8 +491,13 @@ class Editor:
         prefix = self._prefix_arg
         self._prefix_arg = None
         self._prefix_has_digits = False
+        buf._read_only_error = False
 
         cmd.function(self, prefix)
+
+        if buf._read_only_error:
+            self.message = "Text is read-only"
+            buf._read_only_error = False
 
         # Update command tracking
         self._last_command_name = name
@@ -499,11 +516,36 @@ class Editor:
             return False
         # Same ``undo``-is-chaining exception as _execute_command_by_name;
         # see that method for rationale.
+        buf = self.buffer
         if name != "undo":
-            self.buffer.add_undo_boundary()
+            buf.add_undo_boundary()
+        buf._read_only_error = False
         cmd.function(self, prefix)
+        if buf._read_only_error:
+            self.message = "Text is read-only"
+            buf._read_only_error = False
         self._last_command_name = name
         return True
+
+    # ------------------------------------------------------------------
+    # Async bridge
+    # ------------------------------------------------------------------
+
+    def after_key(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Queue an async callback to run after the current keystroke.
+
+        Callbacks execute in FIFO order during ``EditorView.on_after_key()``.
+        Errors in callbacks are caught and shown in the message area.
+        """
+        self._after_key_queue.append(callback)
+
+    def request_render(self) -> None:
+        """Signal that the display needs updating.
+
+        Called from background tasks (e.g., interactive shell programs)
+        to request a re-render at the next opportunity.
+        """
+        self._render_requested = True
 
     def start_minibuffer(
         self,

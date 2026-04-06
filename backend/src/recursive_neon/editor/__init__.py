@@ -14,7 +14,8 @@ Architecture follows the Zwei → Hemlock → GNU Emacs lineage:
 - Kill ring with consecutive-kill merging (Emacs)
 """
 
-from recursive_neon.editor.buffer import Buffer
+from recursive_neon.editor.ansi_parser import parse_ansi
+from recursive_neon.editor.buffer import Buffer, ReadOnlyRegion
 from recursive_neon.editor.commands import COMMANDS, Command, defcommand, get_command
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
@@ -29,6 +30,7 @@ from recursive_neon.editor.shell_mode import (
     setup_shell_buffer,
     strip_ansi,
 )
+from recursive_neon.editor.text_attr import TextAttr
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -56,6 +58,9 @@ __all__ = [
     "KillRing",
     "MODES",
     "Mark",
+    "ReadOnlyRegion",
+    "TextAttr",
+    "parse_ansi",
     "Mode",
     "ShellBufferInput",
     "ShellState",

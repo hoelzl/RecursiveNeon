@@ -9,9 +9,9 @@ Architecture:
 - ``BufferOutput`` captures shell output as ANSI-stripped plain text.
 - ``ShellState`` tracks per-buffer shell state (input mark, history).
 - ``setup_shell_buffer()`` initialises a buffer for shell interaction.
-- Enter triggers ``_comint_send_input`` which stores a pending async
-  callback on ``editor._pending_async``.  The TUI runner's
-  ``on_after_key()`` awaits it, then re-renders.
+- Enter triggers ``_comint_send_input`` which queues an async callback
+  via ``editor.after_key()``.  The TUI runner's ``on_after_key()``
+  drains the queue, then re-renders.
 """
 
 from __future__ import annotations
@@ -53,8 +53,9 @@ def strip_ansi(text: str) -> str:
 class BufferOutput(Output):
     """Shell output that captures text for later insertion into a buffer.
 
-    ANSI escape codes are stripped at write time because the editor
-    buffer stores plain text only.
+    Raw ANSI text is preserved in the internal buffer so that
+    ``execute_shell_command`` can parse it into attributed text
+    for buffers with an enabled attribute layer.
     """
 
     def __init__(self) -> None:
@@ -63,16 +64,16 @@ class BufferOutput(Output):
         super().__init__(stream=dummy, err_stream=dummy, color=True)
 
     def write(self, text: str) -> None:
-        self._chunks.append(strip_ansi(text))
+        self._chunks.append(text)
 
     def writeln(self, text: str = "") -> None:
-        self._chunks.append(strip_ansi(text) + "\n")
+        self._chunks.append(text + "\n")
 
     def error(self, text: str) -> None:
-        self._chunks.append(strip_ansi(text) + "\n")
+        self._chunks.append(text + "\n")
 
     def drain(self) -> str:
-        """Return all captured text and clear the internal buffer."""
+        """Return all captured raw text and clear the internal buffer."""
         result = "".join(self._chunks)
         self._chunks.clear()
         return result
@@ -84,11 +85,19 @@ class BufferOutput(Output):
 
 
 class ShellBufferInput:
-    """Minimal ``InputSource`` stub for shell-in-editor.
+    """``InputSource`` for shell-in-editor using the editor minibuffer.
 
-    Interactive sub-prompts (``ctx.get_line``) are not supported in
-    this phase; programs that call it will receive ``EOFError``.
+    When a shell program calls ``get_line(prompt)``, this implementation:
+    1. Flushes any pending output into the buffer.
+    2. Opens the editor's minibuffer with the prompt.
+    3. Awaits an ``asyncio.Future`` which is resolved when the user
+       submits or cancels the minibuffer.
     """
+
+    def __init__(self) -> None:
+        self._editor: Any = None  # Set by setup_shell_buffer
+        self._buf: Buffer | None = None
+        self._state: ShellState | None = None
 
     async def get_line(
         self,
@@ -97,7 +106,64 @@ class ShellBufferInput:
         complete: bool = True,
         history_id: str | None = None,
     ) -> str:
-        raise EOFError("Interactive input not available in editor shell")
+        import asyncio
+
+        editor = self._editor
+        buf = self._buf
+        state = self._state
+        if editor is None or buf is None or state is None:
+            raise EOFError("Shell buffer input not initialised")
+
+        # Flush pending output before showing the prompt
+        self._flush_output()
+
+        # Create a Future for the result
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str] = loop.create_future()
+
+        def on_submit(result: str) -> None:
+            if not future.done():
+                future.set_result(result)
+
+        editor.start_minibuffer(prompt, on_submit)
+
+        # Wire C-g to raise KeyboardInterrupt.
+        # Minibuffer key_handlers are called with no arguments.
+        mb = editor.minibuffer
+        if mb is not None:
+            orig_cg = mb.key_handlers.get("C-g")
+
+            def cancel_handler() -> None:
+                if not future.done():
+                    future.set_exception(EOFError("Cancelled"))
+                if orig_cg:
+                    orig_cg()
+
+            mb.key_handlers["C-g"] = cancel_handler
+
+        return await future
+
+    def _flush_output(self) -> None:
+        """Drain BufferOutput and insert into the buffer."""
+        if self._state is None or self._buf is None:
+            return
+        raw = self._state.output.drain()
+        if not raw:
+            return
+        buf = self._buf
+        buf._undo_recording = False
+        try:
+            buf.end_of_buffer()
+            if buf._line_attrs is not None:
+                from recursive_neon.editor.ansi_parser import parse_ansi
+
+                runs = parse_ansi(raw)
+                buf.insert_string_attributed(runs)
+            else:
+                buf.insert_string(strip_ansi(raw))
+            self._state.input_start.move_to(buf.point.line, buf.point.col)
+        finally:
+            buf._undo_recording = True
 
 
 # ------------------------------------------------------------------
@@ -142,7 +208,10 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     # Configure shell for buffer-based I/O
     output = BufferOutput()
     shell.output = output
-    shell._input_source = ShellBufferInput()
+    input_source = ShellBufferInput()
+    input_source._editor = editor
+    input_source._buf = buf
+    shell._input_source = input_source
 
     # Create input_start mark — kind="left" so it stays put when the
     # user types text at its position.
@@ -152,6 +221,7 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     # Attach state
     state = ShellState(shell=shell, input_start=input_start, output=output)
     buf._shell_state = state  # type: ignore[attr-defined]
+    input_source._state = state
 
     # Set major mode
     editor.set_major_mode("shell-mode")
@@ -163,6 +233,9 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     km.bind("M-n", _comint_next_input)
     km.bind("Tab", _shell_complete)
     buf.keymap = km
+
+    # Enable text attributes for ANSI colour support
+    buf.enable_attrs()
 
     # Insert welcome banner + initial prompt (no undo recorded)
     from recursive_neon.shell.shell import WELCOME_BANNER
@@ -181,6 +254,24 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     input_start.move_to(buf.point.line, buf.point.col)
 
     buf.modified = False
+
+    # Protect the banner + prompt from accidental modification
+    buf.add_read_only_region(Mark(0, 0, kind="left"), input_start)
+
+    # Provide TUI passthrough for running TUI apps from the shell buffer.
+    # The shell's _run_tui_factory returns a run_tui function that delegates
+    # to editor.tui_launcher (injected by run_tui_app into EditorView).
+    def _shell_buffer_run_tui_factory():
+        async def _run_tui(app: Any) -> int:
+            launcher = editor.tui_launcher
+            if launcher is None:
+                raise RuntimeError("TUI apps not available in this context")
+            result: int = await launcher(app)
+            return result
+
+        return _run_tui
+
+    shell._run_tui_factory = _shell_buffer_run_tui_factory
 
 
 # ------------------------------------------------------------------
@@ -252,11 +343,28 @@ def _comint_send_input(editor: Any, prefix: Any) -> None:
     state.history_index = -1
     state.saved_input = ""
 
-    # Store async callback for the TUI runner
-    async def _execute() -> None:
-        await execute_shell_command(buf, state, input_text)
+    # Spawn the shell command as an asyncio.Task via after_key.
+    # Using a Task (not a direct await) allows interactive programs
+    # like `chat` to suspend at get_line() and resume when the user
+    # submits the minibuffer.
+    async def _spawn() -> None:
+        import asyncio
 
-    editor._pending_async = _execute
+        async def _run() -> None:
+            try:
+                await execute_shell_command(buf, state, input_text)
+            except Exception as e:
+                buf._undo_recording = False
+                buf.end_of_buffer()
+                buf.insert_string(f"\nError: {e}\n")
+                buf._undo_recording = True
+            finally:
+                editor.request_render()
+
+        task = asyncio.create_task(_run())
+        editor._background_tasks.append(task)
+
+    editor.after_key(_spawn)
 
 
 def _comint_previous_input(editor: Any, prefix: Any) -> None:
@@ -361,15 +469,21 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
     else:
         exit_code = 0
 
-    # Collect captured output
-    text = state.output.drain()
+    # Collect captured output (raw ANSI)
+    raw_text = state.output.drain()
 
     # Append output to buffer (no undo recording)
     buf._undo_recording = False
     try:
         buf.end_of_buffer()
-        if text:
-            buf.insert_string(text)
+        if raw_text:
+            if buf._line_attrs is not None:
+                from recursive_neon.editor.ansi_parser import parse_ansi
+
+                runs = parse_ansi(raw_text)
+                buf.insert_string_attributed(runs)
+            else:
+                buf.insert_string(strip_ansi(raw_text))
 
         if exit_code == -1:
             # Shell exited
@@ -377,7 +491,7 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
             state.finished = True
         else:
             shell.session.last_exit_code = exit_code
-            # Append new prompt
+            # Append new prompt (strip ANSI — prompt uses plain text)
             prompt = strip_ansi(shell._build_prompt())
             buf.insert_string(prompt)
             # Update input_start to current point (end of prompt)
@@ -385,6 +499,14 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
     finally:
         buf._undo_recording = True
         buf.modified = False
+
+    # Protect all historical output — everything before the current input
+    if not state.finished:
+        buf.clear_read_only_regions()
+        buf.add_read_only_region(
+            Mark(0, 0, kind="left"),
+            state.input_start,
+        )
 
 
 # ------------------------------------------------------------------

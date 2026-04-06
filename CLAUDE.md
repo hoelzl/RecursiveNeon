@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6k complete + Phase 6l-1 (C-g hardening) + 6l-2 (keyboard-escape-quit + ESC-as-Meta) + 6l-3 (true isearch) + 6l-4 (query-replace M-% with single-undo-group session + capture-mode session-object pattern, describe-key refactored to match) + 6l-5 (undo-chain granularity bug fixed — two consecutive C-/ now walk distinct groups back through history) done. 1620 passing tests + 13 xfail (TD-006 regressions). **Phase 6l is now complete.** Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt incl. TD-006 and new 7c-6 aggressive undo coalescing, extensibility, game hooks, TUI apps) next; Phase 8 (browser terminal + desktop GUI) after Phase 7.
+**Status**: V2 reboot. Phases 0-6l complete + Phase 7a (shell buffer completions: read-only regions, text attributes with ANSI colours, async bridge, interactive programs via Future-based get_line, TUI app passthrough) done. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c-7f, then Phase 8 (browser terminal + desktop GUI).
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction

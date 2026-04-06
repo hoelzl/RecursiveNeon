@@ -15,7 +15,7 @@ modeline; inactive windows are dimmed.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
@@ -43,6 +43,7 @@ _HIGHLIGHT_MATCH = "\033[43;30m"  # yellow background, black foreground
 _HIGHLIGHT_CURRENT = "\033[1;41;97m"  # bold + red background + bright white
 _HIGHLIGHT_PRIORITY = 20  # non-current match
 _HIGHLIGHT_PRIORITY_CURRENT = 25  # the match the point is on
+_BUFFER_ATTR_PRIORITY = 10  # buffer-level text attributes (lowest)
 
 
 class EditorView:
@@ -57,6 +58,7 @@ class EditorView:
         self.editor = editor or Editor(global_keymap=build_default_keymap())
         self._width: int = 80
         self._height: int = 24
+        self._tui_launcher: Callable | None = None
 
         # Create the initial window tree with a single root window
         if not self.editor.buffers:
@@ -65,6 +67,11 @@ class EditorView:
         self._tree = WindowTree(root_win)
         self.editor._window_tree = self._tree
         self.editor.viewport = root_win
+
+    def set_tui_launcher(self, launcher: Callable) -> None:
+        """Set the child TUI app launcher (injected by run_tui_app)."""
+        self._tui_launcher = launcher
+        self.editor.tui_launcher = launcher
 
     # ------------------------------------------------------------------
     # TuiApp protocol
@@ -113,17 +120,41 @@ class EditorView:
     async def on_after_key(self) -> ScreenBuffer | None:
         """Process pending async work (e.g., shell command execution).
 
-        Called by the TUI runner after each keystroke.  Returns a fresh
-        ``ScreenBuffer`` if the display needs updating, or ``None``.
+        Called by the TUI runner after each keystroke.  Drains the
+        after-key callback queue in FIFO order, yields to the event loop
+        so background tasks can make progress, and returns a fresh
+        ``ScreenBuffer`` if the display needs updating.
         """
-        handler = self.editor._pending_async
-        if handler is None:
+        import asyncio
+
+        queue = self.editor._after_key_queue
+        if not queue and not self.editor._render_requested:
             return None
-        self.editor._pending_async = None
-        await handler()
-        # Re-sync active window after async work modified the buffer
-        self._tree.active.sync_from_buffer()
-        return self._render()
+
+        changed = False
+        while queue:
+            cb = queue.pop(0)
+            try:
+                await cb()
+                changed = True
+            except Exception as e:
+                self.editor.message = f"Error in after-key callback: {e}"
+                changed = True
+
+        # Yield to the event loop so that background tasks (e.g., a
+        # Future resolved by a minibuffer callback) can make progress
+        # before we re-render.
+        await asyncio.sleep(0)
+
+        if self.editor._render_requested:
+            self.editor._render_requested = False
+            changed = True
+
+        if changed:
+            # Re-sync active window after async work modified the buffer
+            self._tree.active.sync_from_buffer()
+            return self._render()
+        return None
 
     # ------------------------------------------------------------------
     # Viewport compatibility (single-window convenience)
@@ -253,6 +284,9 @@ class EditorView:
             else:
                 screen.set_region(screen_row, win._left, win._width, text)
 
+        # Compute buffer-attr spans (ANSI colours from shell output)
+        self._compute_buffer_attr_spans(win, text_spans)
+
         # Compute highlight spans for this window (isearch term etc.)
         self._compute_highlight_spans(win, text_spans)
 
@@ -264,6 +298,49 @@ class EditorView:
                 screen.set_line(modeline_row, ml)
             else:
                 screen.set_region(modeline_row, win._left, win._width, ml)
+
+    def _compute_buffer_attr_spans(
+        self, win: Window, text_spans: list[StyleSpan]
+    ) -> None:
+        """Append StyleSpans from buffer attributes for visible lines."""
+        buf = win.buffer
+        if buf._line_attrs is None:
+            return
+        text_h = win.text_height
+        for row in range(text_h):
+            line_idx = win.scroll_top + row
+            if line_idx >= buf.line_count:
+                break
+            line_attrs = buf._line_attrs[line_idx]
+            screen_row = win._top + row
+            # Convert per-char attrs to runs, then to spans
+            col = 0
+            max_col = min(len(line_attrs), win._width)
+            while col < max_col:
+                attr = line_attrs[col]
+                if attr is None:
+                    col += 1
+                    continue
+                # Start of a styled run
+                start = col
+                while col < max_col and line_attrs[col] == attr:
+                    col += 1
+                width = col - start
+                screen_col = win._left + start
+                # Clip to window bounds
+                win_right = win._left + win._width
+                if screen_col >= win_right:
+                    continue
+                clipped = min(width, win_right - screen_col)
+                text_spans.append(
+                    StyleSpan(
+                        row=screen_row,
+                        col=screen_col,
+                        width=clipped,
+                        style=attr.to_sgr(),
+                        priority=_BUFFER_ATTR_PRIORITY,
+                    )
+                )
 
     def _compute_highlight_spans(
         self, win: Window, text_spans: list[StyleSpan]

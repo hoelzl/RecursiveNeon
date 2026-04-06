@@ -15,6 +15,7 @@ maintain mark consistency.  Higher-level operations are built on top.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from recursive_neon.editor.killring import KillRing
@@ -23,6 +24,7 @@ from recursive_neon.editor.mark import Mark
 if TYPE_CHECKING:
     from recursive_neon.editor.keymap import Keymap
     from recursive_neon.editor.modes import Mode
+    from recursive_neon.editor.text_attr import TextAttr
 from recursive_neon.editor.undo import (
     UndoBoundary,
     UndoCursorMove,
@@ -30,6 +32,68 @@ from recursive_neon.editor.undo import (
     UndoEntry,
     UndoInsert,
 )
+
+
+@dataclass
+class ReadOnlyRegion:
+    """A range of text that cannot be modified.
+
+    Both marks should be tracked on the buffer so they follow edits
+    automatically.  ``kind="left"`` is recommended so that text inserted
+    exactly at a boundary goes *outside* the protected region.
+    """
+
+    start: Mark
+    end: Mark
+
+    def contains(self, line: int, col: int) -> bool:
+        """True if *(line, col)* is strictly inside this region."""
+        s = (self.start.line, self.start.col)
+        e = (self.end.line, self.end.col)
+        if s > e:
+            s, e = e, s
+        pos = (line, col)
+        return s <= pos < e
+
+    def overlaps(self, sl: int, sc: int, el: int, ec: int) -> bool:
+        """True if the range [sl:sc, el:ec) overlaps this region."""
+        rs = (self.start.line, self.start.col)
+        re_ = (self.end.line, self.end.col)
+        if rs > re_:
+            rs, re_ = re_, rs
+        # Two ranges [A, B) and [C, D) overlap iff A < D and C < B
+        return rs < (el, ec) and (sl, sc) < re_
+
+
+def _undo_attrs_to_runs(
+    text: str,
+    attrs: tuple[tuple[TextAttr | None, ...], ...],
+) -> list[tuple[str, TextAttr | None]]:
+    """Convert undo-captured text + attrs back to runs for reinsertion."""
+    from recursive_neon.editor.text_attr import TextAttr as _TA  # noqa: F811
+
+    runs: list[tuple[str, _TA | None]] = []
+    lines = text.split("\n")
+    for i, line_text in enumerate(lines):
+        if i < len(attrs):
+            line_a = attrs[i]
+            # Build runs by grouping consecutive identical attrs
+            j = 0
+            while j < len(line_text) and j < len(line_a):
+                attr = line_a[j]
+                start = j
+                while j < len(line_text) and j < len(line_a) and line_a[j] == attr:
+                    j += 1
+                runs.append((line_text[start:j], attr))
+            # Any remaining text (if attrs shorter than text)
+            if j < len(line_text):
+                runs.append((line_text[j:], None))
+        else:
+            runs.append((line_text, None))
+        # Add newline between lines (not after last)
+        if i < len(lines) - 1:
+            runs.append(("\n", None))
+    return runs
 
 
 class Buffer:
@@ -89,6 +153,16 @@ class Buffer:
 
         # Last command type — used for consecutive kill merging
         self.last_command_type: str = ""
+
+        # Read-only regions — mark-pair ranges where mutations are refused
+        self._read_only_regions: list[ReadOnlyRegion] = []
+        self._read_only_error: bool = False
+
+        # Per-character text attributes (e.g., ANSI colours from shell
+        # output).  None = no attribute layer (zero cost for plain-text
+        # buffers).  When not None, parallel to self.lines — each inner
+        # list has the same length as the corresponding line string.
+        self._line_attrs: list[list[TextAttr | None]] | None = None
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -174,6 +248,139 @@ class Buffer:
             self.mark = None
 
     # ------------------------------------------------------------------
+    # Read-only regions
+    # ------------------------------------------------------------------
+
+    def add_read_only_region(self, start: Mark, end: Mark) -> ReadOnlyRegion:
+        """Mark a range as read-only.  Returns the region for later removal.
+
+        Both marks are tracked so they follow edits automatically.
+        """
+        self.track_mark(start)
+        self.track_mark(end)
+        region = ReadOnlyRegion(start=start, end=end)
+        self._read_only_regions.append(region)
+        return region
+
+    def remove_read_only_region(self, region: ReadOnlyRegion) -> None:
+        """Remove a previously-added read-only region."""
+        try:
+            self._read_only_regions.remove(region)
+        except ValueError:
+            return
+        self.untrack_mark(region.start)
+        self.untrack_mark(region.end)
+
+    def clear_read_only_regions(self) -> None:
+        """Remove all read-only regions."""
+        for region in self._read_only_regions:
+            self.untrack_mark(region.start)
+            self.untrack_mark(region.end)
+        self._read_only_regions.clear()
+
+    def is_read_only_at(self, line: int, col: int) -> bool:
+        """True if position falls inside any read-only region."""
+        return any(region.contains(line, col) for region in self._read_only_regions)
+
+    def _check_read_only_range(
+        self, start_line: int, start_col: int, end_line: int, end_col: int
+    ) -> bool:
+        """True if any part of the range overlaps a read-only region."""
+        for region in self._read_only_regions:
+            if region.overlaps(start_line, start_col, end_line, end_col):
+                return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Text attributes
+    # ------------------------------------------------------------------
+
+    def enable_attrs(self) -> None:
+        """Lazily initialise the attribute layer (all positions default)."""
+        if self._line_attrs is None:
+            self._line_attrs = [[None] * len(line) for line in self.lines]
+
+    def insert_string_attributed(self, runs: list[tuple[str, TextAttr | None]]) -> None:
+        """Insert text with per-character attributes at point.
+
+        Each run is a ``(text, attr)`` pair.  ``attr=None`` means
+        default styling.  Enables the attribute layer if not already
+        enabled.
+        """
+        if not runs:
+            return
+        if self.read_only:
+            return
+        if self._undo_recording and self.is_read_only_at(
+            self.point.line, self.point.col
+        ):
+            self._read_only_error = True
+            return
+
+        self.enable_attrs()
+
+        # Build full text and per-character attr list
+        full_text = "".join(text for text, _ in runs)
+        if not full_text:
+            return
+        char_attrs: list[TextAttr | None] = []
+        for text, attr in runs:
+            char_attrs.extend([attr] * len(text))
+
+        start = self.point.to_tuple()
+
+        # Insert using the same primitive pattern as insert_string,
+        # passing _attrs to _insert_within_line.
+        parts = full_text.split("\n")
+        offset = 0
+        seg = parts[0]
+        self._insert_within_line(seg, _attrs=char_attrs[offset : offset + len(seg)])
+        offset += len(seg)
+        for part in parts[1:]:
+            self._insert_newline()
+            offset += 1  # skip the \n in char_attrs
+            if part:
+                self._insert_within_line(
+                    part, _attrs=char_attrs[offset : offset + len(part)]
+                )
+                offset += len(part)
+
+        self.modified = True
+        if self._undo_recording:
+            self.undo_list.append(UndoCursorMove(*start))
+            self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
+
+    def _capture_single_attr(
+        self, line: int, col: int, ch: str
+    ) -> tuple[tuple[TextAttr | None, ...], ...] | None:
+        """Capture the attr of a single character (for single-char undo)."""
+        if self._line_attrs is None:
+            return None
+        if ch == "\n":
+            # Newline has no attr entry (it's between lines)
+            return ((),)
+        return ((self._line_attrs[line][col],),)
+
+    def _capture_line_attrs(
+        self,
+        start_line: int,
+        start_col: int,
+        end_line: int,
+        end_col: int,
+    ) -> tuple[tuple[TextAttr | None, ...], ...] | None:
+        """Capture attrs for a range (for undo).  None if no attr layer."""
+        if self._line_attrs is None:
+            return None
+        if start_line == end_line:
+            return (tuple(self._line_attrs[start_line][start_col:end_col]),)
+        result: list[tuple[TextAttr | None, ...]] = []
+        result.append(tuple(self._line_attrs[start_line][start_col:]))
+        for ln in range(start_line + 1, end_line):
+            result.append(tuple(self._line_attrs[ln]))
+        result.append(tuple(self._line_attrs[end_line][:end_col]))
+        return tuple(result)
+
+    # ------------------------------------------------------------------
     # Text access
     # ------------------------------------------------------------------
 
@@ -213,6 +420,11 @@ class Buffer:
         """Insert a single character at point."""
         if self.read_only:
             return
+        if self._undo_recording and self.is_read_only_at(
+            self.point.line, self.point.col
+        ):
+            self._read_only_error = True
+            return
         start = self.point.to_tuple()
         if ch == "\n":
             self._insert_newline()
@@ -229,6 +441,11 @@ class Buffer:
             return
         if self.read_only:
             return
+        if self._undo_recording and self.is_read_only_at(
+            self.point.line, self.point.col
+        ):
+            self._read_only_error = True
+            return
         start = self.point.to_tuple()
         # Split into lines and insert one segment at a time
         parts = s.split("\n")
@@ -244,7 +461,12 @@ class Buffer:
             self.undo_list.append(UndoCursorMove(*start))
             self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
 
-    def _insert_within_line(self, text: str) -> None:
+    def _insert_within_line(
+        self,
+        text: str,
+        *,
+        _attrs: list[TextAttr | None] | None = None,
+    ) -> None:
         """Insert text (no newlines) at point on the current line."""
         if not text:
             return
@@ -253,6 +475,12 @@ class Buffer:
         line = self.lines[ln]
         self.lines[ln] = line[:col] + text + line[col:]
         length = len(text)
+
+        # --- attrs ---
+        if self._line_attrs is not None:
+            la = self._line_attrs[ln]
+            new_attrs = _attrs if _attrs is not None else [None] * length
+            self._line_attrs[ln] = la[:col] + new_attrs + la[col:]
 
         # Update tracked marks on the same line
         for m in self._tracked_marks:
@@ -281,6 +509,12 @@ class Buffer:
         after = line[col:]
         self.lines[ln] = before
         self.lines.insert(ln + 1, after)
+
+        # --- attrs ---
+        if self._line_attrs is not None:
+            la = self._line_attrs[ln]
+            self._line_attrs[ln] = la[:col]
+            self._line_attrs.insert(ln + 1, la[col:])
 
         # Update tracked marks
         for m in self._tracked_marks:
@@ -316,10 +550,17 @@ class Buffer:
         """Delete the character after point.  Returns the deleted char."""
         if self.read_only:
             return None
+        if self._undo_recording and self.is_read_only_at(
+            self.point.line, self.point.col
+        ):
+            self._read_only_error = True
+            return None
         ch = self.char_after_point()
         if ch is None:
             return None
         pos = self.point.to_tuple()
+        # Capture attr of the char being deleted
+        del_attr = self._capture_single_attr(pos[0], pos[1], ch)
         if ch == "\n":
             self._join_line_forward()
         else:
@@ -327,17 +568,30 @@ class Buffer:
         self.modified = True
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*pos))
-            self.undo_list.append(UndoDelete(*pos, ch))
+            self.undo_list.append(UndoDelete(*pos, ch, attrs=del_attr))
         return ch
 
     def delete_char_backward(self) -> str | None:
         """Delete the character before point.  Returns the deleted char."""
         if self.read_only:
             return None
+        # Check the position of the char that would be deleted
+        bl, bc = self.point.line, self.point.col
+        if bc > 0:
+            check_line, check_col = bl, bc - 1
+        elif bl > 0:
+            check_line, check_col = bl - 1, len(self.lines[bl - 1])
+        else:
+            check_line, check_col = bl, bc
+        if self._undo_recording and self.is_read_only_at(check_line, check_col):
+            self._read_only_error = True
+            return None
         ch = self.char_before_point()
         if ch is None:
             return None
         orig_pos = self.point.to_tuple()
+        # Capture attr of the char being deleted
+        del_attr = self._capture_single_attr(check_line, check_col, ch)
         if ch == "\n":
             self._join_line_backward()
         else:
@@ -345,7 +599,9 @@ class Buffer:
         self.modified = True
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*orig_pos))
-            self.undo_list.append(UndoDelete(self.point.line, self.point.col, ch))
+            self.undo_list.append(
+                UndoDelete(self.point.line, self.point.col, ch, attrs=del_attr)
+            )
         return ch
 
     def delete_region(self, start: Mark, end: Mark) -> str:
@@ -355,6 +611,11 @@ class Buffer:
         """
         if self.read_only and self._undo_recording:
             return ""
+        if self._undo_recording and self._read_only_regions:
+            a, b = (start, end) if start <= end else (end, start)
+            if self._check_read_only_range(a.line, a.col, b.line, b.col):
+                self._read_only_error = True
+                return ""
         a, b = (
             (start.copy(), end.copy()) if start <= end else (end.copy(), start.copy())
         )
@@ -364,10 +625,17 @@ class Buffer:
 
         orig_point = self.point.to_tuple()
 
+        # Capture attrs before deletion (for undo)
+        captured_attrs = self._capture_line_attrs(a.line, a.col, b.line, b.col)
+
         if a.line == b.line:
             # Single-line deletion
             line = self.lines[a.line]
             self.lines[a.line] = line[: a.col] + line[b.col :]
+            # --- attrs ---
+            if self._line_attrs is not None:
+                la = self._line_attrs[a.line]
+                self._line_attrs[a.line] = la[: a.col] + la[b.col :]
             self._adjust_marks_after_delete_single(a.line, a.col, b.col)
         else:
             # Multi-line deletion: join first and last line remnants
@@ -376,12 +644,20 @@ class Buffer:
             self.lines[a.line] = before + after
             # Remove the lines in between (and b's line)
             del self.lines[a.line + 1 : b.line + 1]
+            # --- attrs ---
+            if self._line_attrs is not None:
+                before_a = self._line_attrs[a.line][: a.col]
+                after_a = self._line_attrs[b.line][b.col :]
+                self._line_attrs[a.line] = before_a + after_a
+                del self._line_attrs[a.line + 1 : b.line + 1]
             self._adjust_marks_after_delete_multi(a.line, a.col, b.line, b.col)
 
         self.modified = True
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*orig_point))
-            self.undo_list.append(UndoDelete(a.line, a.col, deleted))
+            self.undo_list.append(
+                UndoDelete(a.line, a.col, deleted, attrs=captured_attrs)
+            )
         return deleted
 
     def _delete_within_line_forward(self) -> None:
@@ -390,6 +666,11 @@ class Buffer:
         col = self.point.col
         line = self.lines[ln]
         self.lines[ln] = line[:col] + line[col + 1 :]
+
+        # --- attrs ---
+        if self._line_attrs is not None:
+            la = self._line_attrs[ln]
+            self._line_attrs[ln] = la[:col] + la[col + 1 :]
 
         # Marks after the deleted char shift left by 1
         for m in self._tracked_marks:
@@ -405,6 +686,11 @@ class Buffer:
         col = self.point.col
         line = self.lines[ln]
         self.lines[ln] = line[: col - 1] + line[col:]
+
+        # --- attrs ---
+        if self._line_attrs is not None:
+            la = self._line_attrs[ln]
+            self._line_attrs[ln] = la[: col - 1] + la[col:]
 
         # Marks at or after the deleted position shift left
         for m in self._tracked_marks:
@@ -423,6 +709,11 @@ class Buffer:
         self.lines[ln] = self.lines[ln] + next_line
         del self.lines[ln + 1]
 
+        # --- attrs ---
+        if self._line_attrs is not None:
+            self._line_attrs[ln] = self._line_attrs[ln] + self._line_attrs[ln + 1]
+            del self._line_attrs[ln + 1]
+
         # Marks on the removed line move up; marks below shift up by 1
         for m in self._tracked_marks:
             if m.line == ln + 1:
@@ -440,6 +731,11 @@ class Buffer:
         current_line = self.lines[ln]
         self.lines[ln - 1] = self.lines[ln - 1] + current_line
         del self.lines[ln]
+
+        # --- attrs ---
+        if self._line_attrs is not None:
+            self._line_attrs[ln - 1] = self._line_attrs[ln - 1] + self._line_attrs[ln]
+            del self._line_attrs[ln]
 
         # Marks on the current line move up; marks below shift up by 1
         for m in self._tracked_marks:
@@ -638,15 +934,29 @@ class Buffer:
             if isinstance(entry, UndoInsert):
                 start = Mark(entry.start_line, entry.start_col)
                 end = Mark(entry.end_line, entry.end_col)
+                # Capture attrs of the region about to be deleted
+                cap = self._capture_line_attrs(
+                    entry.start_line,
+                    entry.start_col,
+                    entry.end_line,
+                    entry.end_col,
+                )
                 self._undo_recording = False
                 deleted = self.delete_region(start, end)
                 self._undo_recording = True
-                reverse.append(UndoDelete(entry.start_line, entry.start_col, deleted))
+                reverse.append(
+                    UndoDelete(entry.start_line, entry.start_col, deleted, attrs=cap)
+                )
 
             elif isinstance(entry, UndoDelete):
                 self.point.move_to(entry.line, entry.col)
                 self._undo_recording = False
-                self.insert_string(entry.text)
+                if entry.attrs is not None and self._line_attrs is not None:
+                    # Restore with attrs
+                    runs = _undo_attrs_to_runs(entry.text, entry.attrs)
+                    self.insert_string_attributed(runs)
+                else:
+                    self.insert_string(entry.text)
                 self._undo_recording = True
                 reverse.append(
                     UndoInsert(

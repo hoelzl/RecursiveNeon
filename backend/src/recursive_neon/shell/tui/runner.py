@@ -44,6 +44,23 @@ async def run_tui_app(
     Returns:
         Exit code (always 0 for now).
     """
+
+    # Inject a child launcher so the app can spawn nested TUI apps
+    # (e.g., running `codebreaker` from M-x shell).
+    async def launch_child(child_app: TuiApp) -> int:
+        return await run_tui_app(
+            child_app,
+            raw_input,
+            output,
+            width=width,
+            height=height,
+            send_screen=send_screen,
+            # No enter_raw/exit_raw — parent is already in raw mode
+        )
+
+    if hasattr(app, "set_tui_launcher"):
+        app.set_tui_launcher(launch_child)
+
     if enter_raw:
         enter_raw()
 

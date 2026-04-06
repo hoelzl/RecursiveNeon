@@ -148,10 +148,11 @@ class TestBufferOutput:
         out.error("c")
         assert out.drain() == "ab\nc\n"
 
-    def test_strips_ansi(self):
+    def test_preserves_ansi(self):
+        """BufferOutput preserves raw ANSI for later parsing by the attr layer."""
         out = BufferOutput()
         out.write("\033[31mred\033[0m text")
-        assert out.drain() == "red text"
+        assert out.drain() == "\033[31mred\033[0m text"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -288,11 +289,11 @@ class TestReplaceInput:
 
 
 class TestComintSendInput:
-    def test_sets_pending_async(self, shell_editor):
+    def test_queues_after_key(self, shell_editor):
         buf = shell_editor.buffer
         buf.insert_string("ls")
         _comint_send_input(shell_editor, None)
-        assert shell_editor._pending_async is not None
+        assert len(shell_editor._after_key_queue) > 0
 
     def test_inserts_newline(self, shell_editor):
         buf = shell_editor.buffer
@@ -301,16 +302,16 @@ class TestComintSendInput:
         _comint_send_input(shell_editor, None)
         assert buf.line_count == line_count_before + 1
 
-    def test_empty_input_still_pending(self, shell_editor):
+    def test_empty_input_still_queued(self, shell_editor):
         _comint_send_input(shell_editor, None)
-        assert shell_editor._pending_async is not None
+        assert len(shell_editor._after_key_queue) > 0
 
     def test_finished_shell_ignored(self, shell_editor):
         buf = shell_editor.buffer
         state: ShellState = buf._shell_state  # type: ignore[attr-defined]
         state.finished = True
         _comint_send_input(shell_editor, None)
-        assert shell_editor._pending_async is None
+        assert len(shell_editor._after_key_queue) == 0
 
     def test_resets_history_nav(self, shell_editor):
         buf = shell_editor.buffer
@@ -534,12 +535,12 @@ class TestOnAfterKey:
             shell_view.on_key(ch)
         shell_view.on_key("Enter")
 
-        assert ed._pending_async is not None
+        assert len(ed._after_key_queue) > 0
 
         # Process the pending command
         result = await shell_view.on_after_key()
         assert result is not None  # Got a ScreenBuffer back
-        assert ed._pending_async is None  # Cleared
+        assert len(ed._after_key_queue) == 0  # Drained
 
         # Output should be in the buffer
         assert "hello" in buf.text

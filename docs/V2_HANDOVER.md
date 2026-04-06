@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-6k complete, Phase 6l-1 + 6l-2 + 6l-3 + 6l-4 + 6l-5 complete. **Phase 6l is now done.** 1620 passing tests + 13 xfail (TD-006 regressions). **Phase 7 (deferred-items cleanup: shell buffer, pipeline, tech debt incl. TD-006 and new 7c-6 aggressive undo coalescing, extensibility, game hooks, TUI apps) is next**, followed by Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-6l complete, Phase 7a (shell buffer completions) complete. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c (tech debt), 7d (extensibility), 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -1016,9 +1016,24 @@ Items **explicitly deferred again** (document but do not implement here). This l
 
 After Phase 7, every deferral carried forward from Phases 3–6 is either landed or consciously withdrawn. Nothing goes into Phase 8 (browser) unless it can work in the CLI first.
 
-#### 7a. Shell buffer completions (consolidates 6j deferrals)
+#### 7a. Shell buffer completions (consolidates 6j deferrals) — **DONE** (1730 tests; +110 from 6l-5's 1620)
 
 **Goal**: Make the `*shell*` buffer (M-x shell) a first-class interactive environment — not just a place to run `ls`. Consolidates the five 6j deferrals plus the generalised async bridge.
+
+Landed five sub-items:
+
+- **7a-1. Read-only regions** — `ReadOnlyRegion` dataclass with tracked mark pairs, `Buffer.add_read_only_region/remove_read_only_region/is_read_only_at`, enforcement at all public mutation boundaries (insert_char, insert_string, delete_char_forward/backward, delete_region). Programmatic bypass via `_undo_recording=False`. Editor shows "Text is read-only" in message area. Shell mode applies a single region `[(0,0), input_start)` after each command. 39 tests.
+
+- **7a-3. General after-key async bridge** — Replaced `_pending_async` with `_after_key_queue` (FIFO, error-isolated). `Editor.after_key(cb)` enqueues, `EditorView.on_after_key()` drains. `asyncio.sleep(0)` yields to event loop so background tasks can run before re-render. `Editor.request_render()` flag for background task re-render signalling. 10 tests.
+
+- **7a-2. Text attributes** — `TextAttr` frozen dataclass (fg/bg/bold/dim/italic/underline/reverse, 256-colour), lazy `Buffer._line_attrs` per-character attr storage, `Buffer.insert_string_attributed(runs)` for attributed insertion, `AnsiParser.parse_ansi()` converts ANSI text to runs. All 6 mutation primitives maintain attrs behind `if _line_attrs is not None` guards. `UndoDelete.attrs` field for undo round-trip. Rendering via `StyleSpan` pipeline at priority 10 (below isearch 20/25). `BufferOutput` now preserves raw ANSI; `execute_shell_command` parses into attributed text. Shell buffer enables attrs on setup. 51 tests.
+
+- **7a-4. Interactive programs in shell buffer** — `ShellBufferInput.get_line` creates `asyncio.Future`, opens minibuffer, awaits result. C-g cancels via `EOFError`. Shell commands spawned as `asyncio.Task`s (not direct await) so interactive programs can suspend at `get_line` without blocking the runner. Output flushing before each `get_line`. 6 tests.
+
+- **7a-5. TUI app passthrough** — `run_tui_app` injects `launch_child` callback into apps via `set_tui_launcher`. `EditorView` stores and exposes to `Editor`. Shell mode sets `_run_tui_factory` on the shell to delegate to `editor.tui_launcher`. 4 tests.
+
+Design document: `docs/PHASE_7A_DESIGN.md`.
+
 
 ##### 7a-1. Output region protection
 Make historical shell output read-only so the user can't clobber it while editing the current input. New primitives on `Buffer`:

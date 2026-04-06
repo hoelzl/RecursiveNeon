@@ -13,7 +13,11 @@ that reverse the undo, so repeated undo walks further back, and
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from recursive_neon.editor.text_attr import TextAttr
 
 
 @dataclass(frozen=True)
@@ -28,11 +32,19 @@ class UndoInsert:
 
 @dataclass(frozen=True)
 class UndoDelete:
-    """Records that text was deleted.  Undo = reinsert at position."""
+    """Records that text was deleted.  Undo = reinsert at position.
+
+    The optional ``attrs`` field captures per-character attributes so
+    that undo restores colours correctly.  Structure: a tuple of
+    per-line attr tuples, parallel to ``text.split('\\n')``.
+    """
 
     line: int
     col: int
     text: str
+    attrs: tuple[tuple[TextAttr | None, ...], ...] | None = field(
+        default=None, compare=False
+    )
 
 
 @dataclass(frozen=True)
