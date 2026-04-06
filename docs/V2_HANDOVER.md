@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-7c complete. 1815 passing tests, 0 xfail. **Phase 7d (editor extensibility) is next**, followed by 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7d complete. 1978 passing tests, 0 xfail. **Phase 7e (game-world hooks) is next**, followed by 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -1456,9 +1456,13 @@ holds (two `C-/` presses in a row walk two distinct groups back).
 
 ---
 
-#### 7d. Editor extensibility (Python config + syntax highlighting)
+#### 7d. Editor extensibility (Python config + syntax highlighting) — **COMPLETE**
 
 **Goal**: Make the editor extensible by users, not just by editing `default_commands.py`. Two major features: a user config file and regex-based syntax highlighting.
+
+**Completed**: 163 new tests (1978 total). Config loader with `ConfigNamespace` two-layer architecture, restricted `__import__` whitelisting safe stdlib modules (re, collections, etc.), three language modes (Python, Markdown, shell), per-line syntax cache, face→ANSI mapping with user overrides, auto-mode detection from file extension. Notable deviations: `modes.py` converted to `modes/` package to house language mode sub-modules; `__import__` replaced with whitelisted version rather than fully blocked (needed for `import re` in user-defined modes); buffer-attr priority raised to 15 so syntax highlighting (priority 10) doesn't override shell ANSI output.
+
+**Discoveries**: `_match_syntax_rules` static method on EditorView is reusable for future phases. `ConfigNamespace.build()` is the natural extension point for 7e — adding `GameState`, `GameEventBus`, etc. to the config namespace will let user configs interact with game state.
 
 ##### 7d-1. `~/.neon-edit.py` config loader
 On editor startup, execute the user's config file in a curated namespace:
@@ -1626,14 +1630,15 @@ Listed per sub-phase so each commit stays focused.
 - `docs/TECH_DEBT.md` — close out TD-003, TD-004, TD-005, TD-006; re-audit TD-001
 - Extensions to `test_tui_runner.py`, `test_sysmon.py`, `test_terminal.py`, `test_app_service.py`; new `test_mark_set.py`, `test_tui_resize.py`
 
-**7d** — editor extensibility:
-- `editor/config_loader.py` *(new)* — `~/.neon-edit.py` loader + sandbox
-- `editor/faces.py` *(new)* — face → ANSI mapping
+**7d** — editor extensibility (**DONE** — 163 new tests, 1978 total):
+- `editor/config_loader.py` *(new)* — `ConfigNamespace` + `load_config` + sandboxed exec + `M-x reload-config`
+- `editor/faces.py` *(new)* — face→ANSI mapping (`FACES`, `resolve_face`) with user override via `defvar`
+- `editor/modes/` *(new package, replaces `modes.py`)* — `SyntaxRule`, `Mode.syntax_rules`, `AUTO_MODE_ALIST`, `detect_mode`, `register_language_modes`
 - `editor/modes/python_mode.py`, `editor/modes/markdown_mode.py`, `editor/modes/sh_mode.py` *(new)*
-- `editor/modes.py` — `Mode.syntax_rules` field
-- `editor/view.py` — render syntax rules per visible line, cache
-- `shell/programs/edit.py` — trigger loader on editor startup
-- New tests: `test_config_loader.py`, `test_syntax_python.py`, `test_syntax_markdown.py`, `test_syntax_sh.py`, `test_faces.py`
+- `editor/view.py` — `_compute_syntax_spans`, `_match_syntax_rules` (static, first-match-wins), per-line content+mode cache
+- `editor/default_commands.py` — `_auto_detect_mode` in `find-file`/`find-file-other-window`, `register_language_modes` in `build_default_keymap`
+- `shell/programs/edit.py` — `load_config` call on editor startup
+- New tests: `test_config_loader.py` (59), `test_syntax_python.py` (38), `test_syntax_markdown.py` (26), `test_syntax_sh.py` (20), `test_faces.py` (20)
 
 **7e** — game-world hooks:
 - `editor/editor.py` — `game_state`, `on_npc_event`, save-hook plumbing

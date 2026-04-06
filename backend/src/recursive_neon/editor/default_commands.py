@@ -471,6 +471,16 @@ def write_file(ed: Editor, prefix: int | None) -> None:
     )
 
 
+def _auto_detect_mode(ed: Editor, filepath: str) -> None:
+    """Set the buffer's major mode based on file extension."""
+    from recursive_neon.editor.modes import MODES, detect_mode
+
+    mode_name = detect_mode(filepath)
+    mode = MODES.get(mode_name)
+    if mode is not None and mode is not ed.buffer.major_mode:
+        ed.set_major_mode(mode_name)
+
+
 @defcommand("find-file", "Open or create a file (C-x C-f).")
 def find_file(ed: Editor, prefix: int | None) -> None:
     def callback(path: str) -> None:
@@ -490,6 +500,7 @@ def find_file(ed: Editor, prefix: int | None) -> None:
 
         name = path.rsplit("/", 1)[-1] if "/" in path else path
         ed.create_buffer(name=name, text=content, filepath=path)
+        _auto_detect_mode(ed, path)
         ed.message = f"Opened {path}" if content else f"(New file) {path}"
 
     ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
@@ -2047,6 +2058,7 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
             content = ed.open_callback(path)
         name = path.rsplit("/", 1)[-1] if "/" in path else path
         ed.create_buffer(name=name, text=content, filepath=path)
+        _auto_detect_mode(ed, path)
         ed.message = f"Opened {path}" if content else f"(New file) {path}"
 
     ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
@@ -2060,6 +2072,11 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
 def build_default_keymap() -> Keymap:
     # Ensure shell-mode commands/mode are registered
     import recursive_neon.editor.shell_mode  # noqa: F401
+
+    # Register built-in language modes for auto-detection
+    from recursive_neon.editor.modes import register_language_modes
+
+    register_language_modes()
 
     """Build and return the default global keymap with Emacs bindings."""
     km = Keymap("global")

@@ -154,4 +154,9 @@ async def _run_edit(ctx: ProgramContext) -> int:
 
     view.editor.shell_factory = shell_factory
 
+    # Load user config (~/.neon-edit.py) — errors surface in *Messages*
+    from recursive_neon.editor.config_loader import load_config
+
+    load_config(view.editor)
+
     return await ctx.run_tui(view)

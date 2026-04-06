@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable
 
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
+from recursive_neon.editor.faces import resolve_face
 from recursive_neon.editor.mark import Mark
 
 if TYPE_CHECKING:
@@ -41,9 +42,10 @@ _DIVIDER_CHAR = "\u2502"  # │
 # Highlight styles for isearch / query-replace matches
 _HIGHLIGHT_MATCH = "\033[43;30m"  # yellow background, black foreground
 _HIGHLIGHT_CURRENT = "\033[1;41;97m"  # bold + red background + bright white
+_SYNTAX_PRIORITY = 10  # syntax highlighting (below buffer attrs)
+_BUFFER_ATTR_PRIORITY = 15  # buffer-level text attributes (shell ANSI)
 _HIGHLIGHT_PRIORITY = 20  # non-current match
 _HIGHLIGHT_PRIORITY_CURRENT = 25  # the match the point is on
-_BUFFER_ATTR_PRIORITY = 10  # buffer-level text attributes (lowest)
 
 
 class EditorView:
@@ -59,6 +61,11 @@ class EditorView:
         self._width: int = 80
         self._height: int = 24
         self._tui_launcher: Callable | None = None
+
+        # Per-line syntax highlight cache: (line_content_hash, mode_name)
+        # → list of (col, width, face_name) spans.  Invalidated on line
+        # mutation or mode change.
+        self._syntax_cache: dict[tuple[int, str], list[tuple[int, int, str]]] = {}
 
         # Create the initial window tree with a single root window
         if not self.editor.buffers:
@@ -284,6 +291,9 @@ class EditorView:
             else:
                 screen.set_region(screen_row, win._left, win._width, text)
 
+        # Compute syntax highlighting spans from the buffer's major mode
+        self._compute_syntax_spans(win, text_spans)
+
         # Compute buffer-attr spans (ANSI colours from shell output)
         self._compute_buffer_attr_spans(win, text_spans)
 
@@ -298,6 +308,88 @@ class EditorView:
                 screen.set_line(modeline_row, ml)
             else:
                 screen.set_region(modeline_row, win._left, win._width, ml)
+
+    def _compute_syntax_spans(self, win: Window, text_spans: list[StyleSpan]) -> None:
+        """Append syntax highlighting StyleSpans for visible lines.
+
+        Uses the major mode's ``syntax_rules`` to find matches on each
+        visible line.  Results are cached per (line_content_hash, mode_name)
+        so unchanged lines skip regex work on re-render.
+        """
+        buf = win.buffer
+        mode = buf.major_mode
+        if mode is None or not mode.syntax_rules:
+            return
+        mode_name = mode.name
+        text_h = win.text_height
+        win_right = win._left + win._width
+
+        for row in range(text_h):
+            line_idx = win.scroll_top + row
+            if line_idx >= buf.line_count:
+                break
+            line = buf.lines[line_idx]
+            if not line:
+                continue
+
+            # Cache lookup
+            cache_key = (hash(line), mode_name)
+            cached = self._syntax_cache.get(cache_key)
+            if cached is None:
+                cached = self._match_syntax_rules(line, mode.syntax_rules)
+                self._syntax_cache[cache_key] = cached
+
+            screen_row = win._top + row
+            for col, width, face_name in cached:
+                style = resolve_face(face_name)
+                if not style:
+                    continue
+                screen_col = win._left + col
+                if screen_col >= win_right:
+                    continue
+                clipped = min(width, win_right - screen_col)
+                text_spans.append(
+                    StyleSpan(
+                        row=screen_row,
+                        col=screen_col,
+                        width=clipped,
+                        style=style,
+                        priority=_SYNTAX_PRIORITY,
+                    )
+                )
+
+    @staticmethod
+    def _match_syntax_rules(
+        line: str,
+        rules: list,
+    ) -> list[tuple[int, int, str]]:
+        """Return non-overlapping (col, width, face) spans for *line*.
+
+        Rules are tried in order.  Characters already claimed by an
+        earlier rule are not matched again (first-match-wins, like Emacs
+        font-lock).
+        """
+        from recursive_neon.editor.modes import SyntaxRule
+
+        spans: list[tuple[int, int, str]] = []
+        # Track which character positions are already claimed
+        claimed = bytearray(len(line))  # 0 = free, 1 = claimed
+
+        for rule in rules:
+            assert isinstance(rule, SyntaxRule)
+            for m in rule.pattern.finditer(line):
+                start, end = m.start(), m.end()
+                # Skip if any character in this match is already claimed
+                if any(claimed[start:end]):
+                    continue
+                # Claim these characters
+                for i in range(start, end):
+                    claimed[i] = 1
+                spans.append((start, end - start, rule.face))
+
+        # Sort by column for deterministic output
+        spans.sort()
+        return spans
 
     def _compute_buffer_attr_spans(
         self, win: Window, text_spans: list[StyleSpan]
@@ -665,4 +757,12 @@ def create_editor_for_file(
     """
     editor = Editor(global_keymap=build_default_keymap())
     editor.create_buffer(name=name, text=content, filepath=filepath)
+    # Auto-detect major mode from file extension
+    if filepath:
+        from recursive_neon.editor.modes import MODES, detect_mode
+
+        mode_name = detect_mode(filepath)
+        mode = MODES.get(mode_name)
+        if mode is not None and mode is not editor.buffer.major_mode:
+            editor.set_major_mode(mode_name)
     return EditorView(editor=editor)

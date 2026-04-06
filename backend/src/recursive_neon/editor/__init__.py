@@ -17,12 +17,14 @@ Architecture follows the Zwei → Hemlock → GNU Emacs lineage:
 from recursive_neon.editor.ansi_parser import parse_ansi
 from recursive_neon.editor.buffer import Buffer, ReadOnlyRegion
 from recursive_neon.editor.commands import COMMANDS, Command, defcommand, get_command
+from recursive_neon.editor.config_loader import ConfigNamespace, load_config
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
+from recursive_neon.editor.faces import FACES, face_reset, resolve_face
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.mark import Mark
-from recursive_neon.editor.modes import MODES, Mode, defmode
+from recursive_neon.editor.modes import MODES, Mode, SyntaxRule, defmode
 from recursive_neon.editor.shell_mode import (
     BufferOutput,
     ShellBufferInput,
@@ -52,16 +54,19 @@ __all__ = [
     "BufferOutput",
     "COMMANDS",
     "Command",
+    "ConfigNamespace",
     "Editor",
     "EditorVariable",
     "Keymap",
     "KillRing",
+    "FACES",
     "MODES",
     "Mark",
     "ReadOnlyRegion",
     "TextAttr",
     "parse_ansi",
     "Mode",
+    "SyntaxRule",
     "ShellBufferInput",
     "ShellState",
     "UndoBoundary",
@@ -79,7 +84,10 @@ __all__ = [
     "defcommand",
     "defmode",
     "defvar",
+    "face_reset",
+    "resolve_face",
     "get_command",
+    "load_config",
     "setup_shell_buffer",
     "strip_ansi",
 ]
