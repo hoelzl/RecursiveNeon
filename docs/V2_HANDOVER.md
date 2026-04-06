@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-7e complete. 2029 passing tests, 0 xfail. **Phase 7f (TUI apps) is next**, then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7f complete. 2160 passing tests, 0 xfail. **Phase 8 (browser terminal + desktop GUI) is next**. Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -1553,46 +1553,23 @@ Tests (`test_game_event_bus.py`, `test_editor_save_events.py`): save fires event
 
 ---
 
-#### 7f. New TUI apps
+#### 7f. New TUI apps — **DONE** (2160 tests; +131 from 7e's 2029)
 
-**Goal**: Three new `TuiApp` implementations that round out the game's interactive surface. Each is a standalone commit.
+**Goal**: Three new `TuiApp` implementations that round out the game's interactive surface.
 
-##### 7f-1. File browser TUI (`fsbrowse`)
-Full-screen file browser for the virtual filesystem:
+##### 7f-1. File browser TUI (`fsbrowse`) — **DONE**
+Two-pane file browser (dir tree 40% + preview 60%). Arrow-key navigation, Enter to descend, Backspace to go up (restores cursor position), `e` to open in neon-edit via TUI passthrough, `q` to quit. Text preview up to 200 lines with truncation indicator. Registered as `fsbrowse` shell command. 41 tests.
 
-- Two-pane layout: directory tree (left 40%) + preview (right 60%).
-- Navigation: arrows, Enter to enter a directory or open a file in preview, Backspace to go up, `q` to quit, `e` to open the current file in `neon-edit`.
-- Preview: text files rendered inline (first 200 lines, truncated with an indicator).
-- Integration: backspace from root returns to shell; opening the editor suspends via the 7a-5 passthrough (and therefore also works from M-x shell).
-- Registered as the `fsbrowse` shell command.
+##### 7f-2. Port scanner minigame (`portscan`) — **DONE**
+12-port grid (4×3). Ports are OPEN, CLOSED, or DECOY. Player scans ports (5 max) to gather intel, then enters the 3-port access sequence. Wrong guess triggers a tick-based lockout countdown (3 s via `on_tick`). 3 attempts max. Registered as `portscan` shell command. 46 tests.
 
-Tests (`test_fsbrowse.py`): navigate directory; preview file; open in editor; quit cleanly.
+##### 7f-3. Memory dump minigame (`memdump`) — **DONE**
+256-byte hex viewer with 3 hidden ASCII patterns from a cyberpunk-themed pool. Find-as-you-type highlights matches (reverse video in hex + ASCII columns). Enter confirms a pattern. 40-keystroke move budget. Registered as `memdump` shell command. 44 tests.
 
-##### 7f-2. Port scanner minigame (`portscan`)
-Port from legacy branch `docs/minigames/portscanner-design.md` and `portscanner-requirements.md`:
-
-- Grid of N ports; scan reveals whether each is open/closed/decoy.
-- Player deduces which sequence triggers the target system.
-- Win condition: correct sequence entered.
-- Lose condition: too many wrong guesses (lockout).
-- Uses `on_tick` (from 7c-1) for a lockout countdown animation.
-
-Tests (`test_portscan.py`): win path; lose path; scan reveals correct state; tick-based animation frames render.
-
-##### 7f-3. Memory dump minigame (`memdump`)
-Port from legacy branch `docs/minigames/memorydump-design.md` and `memorydump-requirements.md`:
-
-- Hex viewer of a generated memory region.
-- Player searches for patterns (a hidden string, a signature).
-- Find-as-you-type highlights matches.
-- Win: find all required patterns within a time/move budget.
-
-Tests (`test_memdump.py`): hex rendering; pattern search; win/lose conditions.
-
-##### 7f-4. Acceptance criteria
+##### 7f-4. Acceptance criteria — **MET**
 - Three new `TuiApp` implementations, each registered as a shell command.
 - Each works in both local CLI and WebSocket client.
-- ~90 new tests (~30 per app).
+- 131 new tests (41 + 46 + 44).
 
 ---
 
@@ -1658,12 +1635,12 @@ Listed per sub-phase so each commit stays focused.
 - `docs/GAME_EVENTS.md` *(new)* — event schema
 - New tests: `test_editor_game_bridge.py`, `test_editor_npc_events.py`, `test_game_event_bus.py`, `test_editor_save_events.py`
 
-**7f** — new TUI apps:
-- `shell/programs/fsbrowse.py` *(new)*
-- `shell/programs/portscan.py` *(new)*
-- `shell/programs/memdump.py` *(new)*
-- Register in `shell/programs/__init__.py`
-- New tests: `test_fsbrowse.py`, `test_portscan.py`, `test_memdump.py`
+**7f** — new TUI apps (**done**):
+- `shell/programs/fsbrowse.py` *(new)* — two-pane file browser
+- `shell/programs/portscan.py` *(new)* — port scanner deduction game
+- `shell/programs/memdump.py` *(new)* — hex dump pattern search
+- `shell/shell.py` — registered all three commands
+- New tests: `test_fsbrowse.py` (41), `test_portscan.py` (46), `test_memdump.py` (44)
 
 #### 7h. Success criteria (whole phase)
 
@@ -1675,9 +1652,9 @@ Listed per sub-phase so each commit stays focused.
 - Editor loads user Python config safely; Python/Markdown/shell files have syntax highlighting.
 - Editor is wired into game state: notes, task lists, NPC messages, save-hook events.
 - Three new TUI apps: `fsbrowse`, `portscan`, `memdump`.
-- Target: ~1800 total tests (≈400 new across 7a–7f).
+- Actual: 2160 total tests (≈540 new across 7a–7f, exceeding the ~1800 target).
 
-After Phase 7, the project moves to Phase 8 (browser) with a genuinely polished CLI foundation — every feature that exists has been exercised end-to-end and nothing is carrying forward as deferred.
+Phase 7 is complete. The project moves to Phase 8 (browser) with a genuinely polished CLI foundation — every feature that exists has been exercised end-to-end and nothing is carrying forward as deferred.
 
 ### Phase 8: Browser Terminal + Desktop GUI
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.

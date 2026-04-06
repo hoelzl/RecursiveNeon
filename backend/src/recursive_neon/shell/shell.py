@@ -48,7 +48,10 @@ from recursive_neon.shell.programs.chat import register_chat_program
 from recursive_neon.shell.programs.codebreaker import register_codebreaker_program
 from recursive_neon.shell.programs.edit import register_edit_program
 from recursive_neon.shell.programs.filesystem import register_filesystem_programs
+from recursive_neon.shell.programs.fsbrowse import register_fsbrowse_program
+from recursive_neon.shell.programs.memdump import register_memdump_program
 from recursive_neon.shell.programs.notes import register_note_program
+from recursive_neon.shell.programs.portscan import register_portscan_program
 from recursive_neon.shell.programs.sysmon import register_sysmon_program
 from recursive_neon.shell.programs.tasks import register_task_program
 from recursive_neon.shell.programs.utility import register_utility_programs
@@ -197,6 +200,9 @@ class Shell:
         register_task_program(self.programs)
         register_codebreaker_program(self.programs)
         register_edit_program(self.programs)
+        register_fsbrowse_program(self.programs)
+        register_memdump_program(self.programs)
+        register_portscan_program(self.programs)
         register_sysmon_program(self.programs)
 
         # Cache help dicts — program registry is immutable after init

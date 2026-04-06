@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-7e complete. 2029 passing tests, 0 xfail. **Phase 7f (TUI apps) is next**, then Phase 8 (browser terminal + desktop GUI).
+**Status**: V2 reboot. Phases 0-7f complete. 2160 passing tests, 0 xfail. **Phase 8 (browser terminal + desktop GUI) is next**.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -55,7 +55,7 @@ cd backend
 
 **NPC**: `chat` (list NPCs or enter conversation; supports `/exit`, `/help`, `/relationship`, `/status`)
 
-**TUI Apps**: `edit` (Emacs-inspired text editor — neon-edit), `codebreaker` (Mastermind-style minigame), `sysmon` (system monitor); all require raw mode — work in local CLI and WebSocket client
+**TUI Apps**: `edit` (Emacs-inspired text editor — neon-edit), `codebreaker` (Mastermind-style minigame), `sysmon` (system monitor), `fsbrowse` (two-pane file browser), `portscan` (port scanner deduction game), `memdump` (hex dump pattern search); all require raw mode — work in local CLI and WebSocket client
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
@@ -67,7 +67,7 @@ cd backend
 
 - Shell entry: `backend/src/recursive_neon/shell/__main__.py` (`python -m recursive_neon.shell`)
 - Shell REPL: `backend/src/recursive_neon/shell/shell.py` (transport-agnostic via `InputSource` protocol)
-- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, sysmon, utility)
+- Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, sysmon, fsbrowse, portscan, memdump, utility)
 - Completion: `backend/src/recursive_neon/shell/completion.py` (`CompletionContext`, per-command completers)
 - Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, `**` recursive matching)
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect` with fd/stderr, `Pipeline.stderr_redirect`)
