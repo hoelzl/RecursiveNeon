@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
@@ -67,6 +67,10 @@ class NPCManager(INPCManager):
         """
         self.npcs: dict[str, NPC] = {}
         self._chat_locks: dict[str, asyncio.Lock] = {}
+        # Callback notified after every NPC reply.  Set by the editor
+        # (Phase 7e-2) to push messages into a per-NPC buffer.
+        # Signature: (npc_id: str, npc_name: str, text: str) -> None
+        self.on_message_callback: Callable[[str, str, str], None] | None = None
 
         # Support both new dependency injection and legacy initialization
         if llm is not None:
@@ -210,6 +214,13 @@ class NPCManager(INPCManager):
                 npc.memory.relationship_level = max(
                     -100, npc.memory.relationship_level - 5
                 )
+
+            # Notify listener (e.g., editor) of the reply
+            if self.on_message_callback is not None:
+                try:
+                    self.on_message_callback(npc.id, npc.name, cleaned)
+                except Exception:
+                    logger.exception("on_message_callback failed")
 
             return ChatResponse(npc_id=npc.id, npc_name=npc.name, message=cleaned)
 

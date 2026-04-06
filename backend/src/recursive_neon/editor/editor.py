@@ -167,6 +167,18 @@ class Editor:
         # Allows shell-mode to spawn nested TUI apps (e.g., codebreaker).
         self.tui_launcher: Callable | None = None
 
+        # Game-world integration (Phase 7e).  These are injected by the
+        # hosting environment (edit.py) when the editor is launched from
+        # the game shell.  ``None`` when running standalone.
+        self.game_state: Any | None = None  # GameState
+        self.app_service: Any | None = None  # AppService
+        self.npc_manager: Any | None = None  # INPCManager
+        self.event_bus: Any | None = None  # GameEventBus
+
+        # NPC notification style: "flash" shows a modeline flash,
+        # "silent" appends silently.
+        self._npc_notify: str = "flash"
+
     # ------------------------------------------------------------------
     # Buffer management
     # ------------------------------------------------------------------
@@ -809,3 +821,50 @@ class Editor:
         # Clear highlight overlay (isearch / query-replace)
         self.highlight_term = None
         self.highlight_case_fold = False
+
+    # ------------------------------------------------------------------
+    # NPC event delivery (Phase 7e-2)
+    # ------------------------------------------------------------------
+
+    def on_npc_event(self, npc_id: str, npc_name: str, text: str) -> None:
+        """Append *text* from NPC *npc_id* to a dedicated ``*npc-<id>*`` buffer.
+
+        Creates the buffer on first event.  Uses the async bridge
+        (``after_key`` / ``request_render``) so events arriving while
+        the user is typing don't corrupt editor state — but also works
+        in synchronous (headless) contexts by appending directly.
+        """
+        buf_name = f"*npc-{npc_id}*"
+        buf = self._find_buffer(buf_name)
+        if buf is None:
+            buf = Buffer(name=buf_name, text="")
+            buf.kill_ring = self.kill_ring
+            fundamental = MODES.get("fundamental-mode")
+            if fundamental is not None:
+                buf.major_mode = fundamental
+            self._buffers.append(buf)
+            # Don't switch — let the user stay where they are
+
+        # Append the message at the end of the buffer.
+        # Save/restore point so the insertion doesn't disrupt the user
+        # if they happen to be reading this buffer.
+        line = f"[{npc_name}] {text}"
+        old_line, old_col = buf.point.line, buf.point.col
+        buf.point.move_to(len(buf.lines) - 1, len(buf.lines[-1]))
+        if buf.text:
+            buf.insert_string("\n" + line)
+        else:
+            buf.insert_string(line)
+        buf.point.move_to(old_line, old_col)
+
+        # Notify
+        if self._npc_notify == "flash":
+            self.message = f"[NPC: {npc_name}] {text[:60]}"
+            self._render_requested = True
+
+    def _find_buffer(self, name: str) -> Buffer | None:
+        """Find a buffer by name without switching to it."""
+        for buf in self._buffers:
+            if buf.name == name:
+                return buf
+        return None

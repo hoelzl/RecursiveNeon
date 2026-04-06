@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-7d complete. 1978 passing tests, 0 xfail. **Phase 7e (game-world hooks) is next**, followed by 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI).
+**Status**: V2 reboot. Phases 0-7e complete. 2029 passing tests, 0 xfail. **Phase 7f (TUI apps) is next**, then Phase 8 (browser terminal + desktop GUI).
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -80,7 +80,9 @@ cd backend
 - Shell-in-editor: `backend/src/recursive_neon/editor/shell_mode.py` (`BufferOutput`, `ShellState`, `ShellBufferInput`, `setup_shell_buffer`, comint commands, `execute_shell_command`)
 - Text attributes: `backend/src/recursive_neon/editor/text_attr.py` (`TextAttr` — frozen SGR attribute type)
 - ANSI parser: `backend/src/recursive_neon/editor/ansi_parser.py` (`parse_ansi` — ANSI text to `(text, attr)` runs)
-- Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion, shell factory, config loader)
+- Game bridge: `backend/src/recursive_neon/editor/game_bridge.py` (`open-note`, `open-task-list`, `list-npcs` commands)
+- Game event bus: `backend/src/recursive_neon/services/game_event_bus.py` (`GameEventBus` pub/sub, `editor.buffer_saved` events)
+- Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion, shell factory, config loader, game state wiring)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
 - WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`, `--command` batch mode)
 - Backend main: `backend/src/recursive_neon/main.py` (includes `/ws/terminal` endpoint)
@@ -100,4 +102,5 @@ cd backend
 - `backend/FILESYSTEM_SECURITY.md` — Virtual filesystem security design
 - `docs/TECH_DEBT.md` — Tech debt tracker (workarounds, deferred fixes)
 - `docs/PHASE_7A_DESIGN.md` — Phase 7a design (read-only regions, text attrs, async bridge, interactive programs, TUI passthrough)
+- `docs/GAME_EVENTS.md` — Game event bus schema (editor.buffer_saved, future events)
 - `frontend/src/styles/desktop.css` — Cyberpunk CSS theme (preserved from v1 for future use)

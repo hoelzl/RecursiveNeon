@@ -16,6 +16,7 @@ from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
 from recursive_neon.models.process import ProcessTable
 from recursive_neon.services.app_service import AppService
+from recursive_neon.services.game_event_bus import GameEventBus
 from recursive_neon.services.interfaces import (
     INPCManager,
     IOllamaClient,
@@ -44,6 +45,7 @@ class ServiceContainer:
     app_service: AppService
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)
+    event_bus: GameEventBus = field(default_factory=GameEventBus)
 
     def __repr__(self) -> str:
         return (

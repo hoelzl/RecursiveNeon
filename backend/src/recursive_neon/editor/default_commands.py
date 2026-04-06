@@ -455,13 +455,18 @@ def write_file(ed: Editor, prefix: int | None) -> None:
             return
         ed.buffer.filepath = path
         ed.buffer.name = path.rsplit("/", 1)[-1] if "/" in path else path
-        # Attempt save via the save callback
-        if ed.save_callback is not None:
-            if ed.save_callback(ed.buffer):
-                ed.buffer.modified = False
-                ed.message = f"Wrote {path}"
-            else:
-                ed.message = "Save failed"
+        # Attempt save via on_save hook or save callback
+        saved = False
+        if ed.buffer.on_save is not None:
+            saved = ed.buffer.on_save(ed.buffer)
+        if not saved and ed.save_callback is not None:
+            saved = ed.save_callback(ed.buffer)
+        if saved:
+            ed.buffer.modified = False
+            ed.message = f"Wrote {path}"
+            _publish_buffer_saved(ed, ed.buffer)
+        elif ed.save_callback is not None or ed.buffer.on_save is not None:
+            ed.message = "Save failed"
         else:
             ed.message = f"File path set to {path} (no save handler)"
 
@@ -1735,13 +1740,16 @@ def save_some_buffers(ed: Editor, prefix: int | None) -> None:
         def callback(answer: str) -> None:
             answer = answer.strip().lower()
             buf_ref = remaining.pop(0)
-            if (
-                answer == "y"
-                and ed.save_callback is not None
-                and ed.save_callback(buf_ref)
-            ):
-                buf_ref.modified = False
-                saved_count[0] += 1
+            if answer == "y":
+                saved = False
+                if buf_ref.on_save is not None:
+                    saved = buf_ref.on_save(buf_ref)
+                if not saved and ed.save_callback is not None:
+                    saved = ed.save_callback(buf_ref)
+                if saved:
+                    buf_ref.modified = False
+                    saved_count[0] += 1
+                    _publish_buffer_saved(ed, buf_ref)
             _ask_next()
 
         ed.start_minibuffer(f"Save buffer {buf.name}? (y/n) ", callback)
@@ -1895,14 +1903,35 @@ def auto_fill_mode(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
+    buf = ed.buffer
+    # Try buffer-specific on_save first (e.g., note/task-list bridge)
+    if buf.on_save is not None and buf.on_save(buf):
+        buf.modified = False
+        ed.message = "Wrote " + (buf.filepath or buf.name)
+        _publish_buffer_saved(ed, buf)
+        return
     if ed.save_callback is None:
         ed.message = "No save handler configured"
         return
-    if ed.save_callback(ed.buffer):
-        ed.buffer.modified = False
-        ed.message = "Wrote " + (ed.buffer.filepath or ed.buffer.name)
+    if ed.save_callback(buf):
+        buf.modified = False
+        ed.message = "Wrote " + (buf.filepath or buf.name)
+        _publish_buffer_saved(ed, buf)
     else:
         ed.message = "Save failed"
+
+
+def _publish_buffer_saved(ed: Editor, buf: Buffer) -> None:
+    """Publish an ``editor.buffer_saved`` event if an event bus is wired."""
+    if ed.event_bus is not None:
+        ed.event_bus.publish(
+            "editor.buffer_saved",
+            {
+                "buffer_name": buf.name,
+                "filepath": buf.filepath,
+                "contents": buf.text,
+            },
+        )
 
 
 @defcommand("quit-editor", "Exit the editor.")
@@ -2071,6 +2100,8 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
 
 def build_default_keymap() -> Keymap:
     # Ensure shell-mode commands/mode are registered
+    # Ensure game-bridge commands are registered (open-note, etc.)
+    import recursive_neon.editor.game_bridge  # noqa: F401
     import recursive_neon.editor.shell_mode  # noqa: F401
 
     # Register built-in language modes for auto-detection

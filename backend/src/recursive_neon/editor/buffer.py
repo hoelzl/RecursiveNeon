@@ -151,6 +151,9 @@ class Buffer:
         self.on_focus: Callable[[], None] | None = (
             None  # called when buffer becomes current
         )
+        self.on_save: Callable[[Buffer], bool] | None = (
+            None  # called after a successful save; return True to suppress default
+        )
 
         # Mode system
         self.major_mode: Mode | None = None

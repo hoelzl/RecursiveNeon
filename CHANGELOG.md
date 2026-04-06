@@ -2,6 +2,28 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 7e — Game-World Integration Hooks (2026-04-06)
+
+### Added
+- **GameEventBus** (7e-3) — Simple pub/sub event bus in `services/game_event_bus.py`. `subscribe`, `unsubscribe`, `publish` with error isolation per handler. Event schema documented in `docs/GAME_EVENTS.md`.
+- **Editor ↔ GameState bridge** (7e-1) — `Editor` gained `game_state`, `app_service`, `npc_manager`, `event_bus` fields (injected by `edit.py`). `Buffer.on_save` hook takes priority over global `save_callback`. Three new M-x commands in `editor/game_bridge.py`:
+  - `open-note` — opens a game note as a buffer with minibuffer completion; save writes back via `on_save` hook.
+  - `open-task-list` — renders tasks as `- [x]`/`- [ ]` checkbox lines; save parses checkbox state back to game state.
+  - `list-npcs` — read-only buffer listing all registered NPCs with role, location, and greeting.
+- **NPC-triggered buffer events** (7e-2) — `Editor.on_npc_event()` creates/appends to `*npc-<id>*` buffers without switching the current buffer. Flash notification in message area (configurable via `_npc_notify`). `NPCManager.on_message_callback` fires after each NPC reply; wired by `edit.py`.
+- **Save-event publishing** (7e-3) — `save-buffer`, `write-file`, and `save-some-buffers` publish `editor.buffer_saved` events via the event bus with `buffer_name`, `filepath`, and `contents` payload.
+- **51 new tests** across 4 files. **2029 passing tests total** (+51 from 7d's 1978).
+
+### Changed
+- **`editor/default_commands.py`** — `save-buffer`, `write-file`, `save-some-buffers` updated to check `Buffer.on_save` before `save_callback`, and to publish events via `_publish_buffer_saved` helper. `build_default_keymap` imports `game_bridge` to register commands.
+- **`shell/programs/edit.py`** — wires `game_state`, `app_service`, `npc_manager`, `event_bus`, and NPC message callback into the editor at startup.
+- **`dependencies.py`** — `ServiceContainer` gained `event_bus: GameEventBus` field (auto-created).
+- **`services/npc_manager.py`** — gained `on_message_callback` field, fired after each successful chat reply.
+
+## Phase 7d — Editor Extensibility (2026-04-06)
+
+See commit `a3a3262` for the full 7d changelog (config loader, syntax highlighting, faces, language modes). 163 new tests (1978 total).
+
 ## Phase 7c — Tech Debt Cleanup (2026-04-06)
 
 ### Added

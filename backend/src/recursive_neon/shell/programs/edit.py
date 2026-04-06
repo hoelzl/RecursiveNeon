@@ -154,6 +154,18 @@ async def _run_edit(ctx: ProgramContext) -> int:
 
     view.editor.shell_factory = shell_factory
 
+    # Wire game-world integration (Phase 7e)
+    view.editor.game_state = ctx.services.game_state
+    view.editor.app_service = ctx.services.app_service
+    view.editor.npc_manager = ctx.services.npc_manager
+    if hasattr(ctx.services, "event_bus"):
+        view.editor.event_bus = ctx.services.event_bus
+
+    # Wire NPC message callback so replies surface in editor buffers
+    npc_mgr = ctx.services.npc_manager
+    if hasattr(npc_mgr, "on_message_callback"):
+        npc_mgr.on_message_callback = view.editor.on_npc_event
+
     # Load user config (~/.neon-edit.py) — errors surface in *Messages*
     from recursive_neon.editor.config_loader import load_config
 

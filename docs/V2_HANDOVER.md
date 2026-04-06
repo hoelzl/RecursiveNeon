@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-7d complete. 1978 passing tests, 0 xfail. **Phase 7e (game-world hooks) is next**, followed by 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7e complete. 2029 passing tests, 0 xfail. **Phase 7f (TUI apps) is next**, then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -116,6 +116,7 @@ backend/
       npc_manager.py                  # LangChain-based NPC conversation + persistence
       ollama_client.py                # httpx async client for Ollama API
       process_manager.py              # Ollama binary process lifecycle
+      game_event_bus.py               # Pub/sub event bus for game-world events (Phase 7e)
     terminal.py                       # WebSocket terminal session manager (Phase 3)
     editor/                           # TUI text editor — neon-edit (Phase 6a + E1-E5)
       __init__.py                     # Package exports (Buffer, Mark, Editor, EditorView, etc.)
@@ -134,6 +135,7 @@ backend/
       modes.py                        # Mode, MODES registry, defmode, fundamental-mode, text-mode (Phase 6g)
       window.py                       # Window, WindowSplit, WindowTree: Emacs-style window splitting (Phase 6i)
       shell_mode.py                   # Shell-in-editor: BufferOutput, ShellState, ShellBufferInput, comint commands, M-x shell (Phase 6j + 7a)
+      game_bridge.py                  # Game-world commands: open-note, open-task-list, list-npcs (Phase 7e)
       text_attr.py                    # TextAttr: frozen SGR attribute type for per-character styling (Phase 7a-2)
       ansi_parser.py                  # parse_ansi: ANSI text → (text, attr) runs (Phase 7a-2)
     shell/                            # CLI shell package (Phase 1-5)
@@ -233,6 +235,10 @@ backend/
     unit/editor/test_buffer_attrs.py         # Buffer attr layer: enable, insert, delete, join, undo round-trip (22 tests, Phase 7a-2)
     unit/editor/test_shell_buffer_interactive.py  # Future-based get_line, cancel, flush, Task execution (6 tests, Phase 7a-4)
     unit/editor/test_tui_passthrough.py      # Launcher injection, child app, shell-mode wiring (4 tests, Phase 7a-5)
+    unit/editor/test_game_event_bus.py       # GameEventBus pub/sub (10 tests, Phase 7e-3)
+    unit/editor/test_editor_game_bridge.py   # open-note, open-task-list, list-npcs (21 tests, Phase 7e-1)
+    unit/editor/test_editor_npc_events.py    # NPC buffer events, on_message_callback (11 tests, Phase 7e-2)
+    unit/editor/test_editor_save_events.py   # Save-hook event publishing (9 tests, Phase 7e-3)
     integration/__init__.py
     integration/conftest.py           # Integration test fixtures (shell, tmp_game_dir)
     integration/test_full_flows.py    # End-to-end workflow tests
@@ -244,6 +250,7 @@ docs/
   SHELL_DESIGN.md                     # CLI shell architecture and design
   TECH_DEBT.md                        # Tech debt tracker (workarounds, deferred fixes)
   PHASE_7A_DESIGN.md                  # Phase 7a design: read-only regions, text attrs, async bridge, TUI passthrough
+  GAME_EVENTS.md                      # Game event bus schema (editor.buffer_saved, future events)
 
 frontend/
   .npmrc                              # npm config
@@ -1502,9 +1509,11 @@ Tests (`test_syntax_python.py`, `test_syntax_markdown.py`, `test_syntax_sh.py`, 
 
 ---
 
-#### 7e. Game-world integration hooks
+#### 7e. Game-world integration hooks — **COMPLETE**
 
 **Goal**: Stop treating the editor as an isolated text tool — wire it into the game state and NPCs. This is what makes the editor feel like *part of Recursive://Neon* rather than a generic Emacs clone.
+
+**Completed**: 51 new tests (2029 total). `GameEventBus` pub/sub in `services/game_event_bus.py`. Three new editor commands: `M-x open-note` (opens a game note as a buffer, save writes back via `Buffer.on_save` hook), `M-x open-task-list` (renders tasks as `- [x]`/`- [ ]` lines, save parses checkbox state back to game state), `M-x list-npcs` (read-only NPC listing). `Editor` gained `game_state`, `app_service`, `npc_manager`, `event_bus` fields (injected by `edit.py`). `Editor.on_npc_event()` creates/appends to `*npc-<id>*` buffers with flash/silent notification. `NPCManager.on_message_callback` fires after each NPC reply. `save-buffer`/`write-file`/`save-some-buffers` publish `editor.buffer_saved` events via the event bus. `Buffer.on_save` hook takes priority over global `save_callback`. Event schema documented in `docs/GAME_EVENTS.md`.
 
 ##### 7e-1. Editor ↔ GameState bridge
 - `Editor.game_state: GameState | None` — injected at construction by the `edit` shell program.

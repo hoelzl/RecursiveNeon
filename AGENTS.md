@@ -4,7 +4,7 @@ This file helps AI agents (Claude Code, Copilot, etc.) work effectively on this 
 
 ## Project Context
 
-Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-6l complete. **Phase 7a (shell buffer completions) is done** — read-only regions, text attributes with ANSI colours, general after-key async bridge, Future-based interactive programs in the shell buffer, and TUI app passthrough. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c-7f, then Phase 8 (browser terminal + desktop GUI).
+Recursive://Neon is a CLI-first RPG where the player interacts via a terminal shell. The game simulates SSHing into a remote system. Phases 0-7e complete. 2029 passing tests, 0 xfail. **Phase 7f (TUI apps) is next**, then Phase 8 (browser terminal + desktop GUI).
 
 ## Architecture at a Glance
 
@@ -56,7 +56,7 @@ Shell builtins (ShellSession) ──────→ ServiceContainer (DI)
 
 ```bash
 cd backend
-../.venv/Scripts/pytest              # All 1730 tests (13 xfail for TD-006)
+../.venv/Scripts/pytest              # All 2029 tests
 ../.venv/Scripts/ruff check .        # Lint
 ../.venv/Scripts/mypy                # Type check
 ```
@@ -79,6 +79,8 @@ All three must pass before committing.
 | Config | `backend/src/recursive_neon/config.py` |
 | App service | `backend/src/recursive_neon/services/app_service.py` |
 | NPC manager | `backend/src/recursive_neon/services/npc_manager.py` |
+| Game event bus | `backend/src/recursive_neon/services/game_event_bus.py` |
+| Game bridge commands | `backend/src/recursive_neon/editor/game_bridge.py` |
 | TUI framework | `backend/src/recursive_neon/shell/tui/` |
 | Editor core | `backend/src/recursive_neon/editor/` |
 | Shell-in-editor | `backend/src/recursive_neon/editor/shell_mode.py` |
@@ -167,9 +169,9 @@ Run the game's shell inside an editor buffer (`M-x shell`), like Emacs comint-mo
 
 ## What's Next (Phase 7, then Phase 8)
 
-**Phase 6l is complete** — the editor polish pass landed everything scheduled plus the undo-granularity fix.
+**Phases 7a-7e are complete** — shell buffer completions, pipeline completeness, tech debt cleanup, editor extensibility, and game-world integration hooks are all shipped.
 
-- **Phase 7** — deferred-items cleanup (7a-7f): shell buffer completions, `on_tick` / auto-refresh, extensibility API, game-world hooks, future TUI apps, **TD-006** (filesystem name uniqueness + editor `save_callback` multi-buffer bug, 7c-5), and the newly-added **7c-6 aggressive undo-group coalescing** (runs of Backspace / C-d / kill / yank merge into a single undo group, discovered during 6l-5 — scheduled before Phase 8 so every future frontend inherits the improved granularity).
+- **Phase 7f** — three new TUI apps: `fsbrowse` (file browser), `portscan` (port scanner minigame), `memdump` (memory dump minigame).
 - **Phase 8** — browser terminal + desktop GUI: xterm.js over `/ws/terminal`, raw/cooked rendering, desktop chrome, cyberpunk CSS restore.
 
 See `docs/V2_HANDOVER.md` for the full plan.
