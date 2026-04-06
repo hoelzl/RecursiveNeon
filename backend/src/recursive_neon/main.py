@@ -410,6 +410,11 @@ async def _ws_reader(websocket: WebSocket, session) -> None:
                 session.feed_key(key)
             # Ignore key messages in cooked mode
 
+        elif msg_type == "resize":
+            width = data.get("width", 80)
+            height = data.get("height", 24)
+            session.feed_resize(width, height)
+
         elif msg_type == "complete":
             if session.mode == "cooked":
                 line = data.get("line", "")

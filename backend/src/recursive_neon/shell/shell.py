@@ -9,6 +9,7 @@ implementations (e.g. WebSocket) can supply lines from any source.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Protocol
@@ -649,18 +650,36 @@ class PromptToolkitInput:
 
     def _make_run_tui(self) -> Callable[[Any], Awaitable[int]]:
         """Create a run_tui callback for local terminal raw mode."""
-        from recursive_neon.shell.tui.runner import run_tui_app
+        from recursive_neon.shell.tui.runner import _measure_terminal, run_tui_app
 
         shell = self._shell
 
         async def _run_tui(app: Any) -> int:
+            w, h = _measure_terminal()
             raw_input = LocalRawInput()
+            # Windows poll-on-keystroke resize detection.
+            # On each loop iteration, re-measure and return the new size
+            # if it changed.  POSIX could use SIGWINCH instead, but
+            # poll-on-iteration works everywhere and costs one
+            # get_terminal_size call per keystroke/tick.
+            last_size = [w, h]
+
+            def _poll_resize() -> tuple[int, int] | None:
+                nw, nh = _measure_terminal()
+                if (nw, nh) != (last_size[0], last_size[1]):
+                    last_size[0], last_size[1] = nw, nh
+                    return (nw, nh)
+                return None
+
             return await run_tui_app(
                 app,
                 raw_input,
                 shell.output,
                 enter_raw=lambda: _enter_alt_screen(),
                 exit_raw=lambda: _exit_alt_screen(),
+                width=w,
+                height=h,
+                resize_source=_poll_resize,
             )
 
         return _run_tui
@@ -732,7 +751,12 @@ class LocalRawInput:
     running the blocking read in a thread executor.
     """
 
-    async def get_key(self) -> str:
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
         from recursive_neon.shell.keys import read_key_async
 
-        return await read_key_async()
+        if timeout is None:
+            return await read_key_async()
+        try:
+            return await asyncio.wait_for(read_key_async(), timeout=timeout)
+        except TimeoutError:
+            return None

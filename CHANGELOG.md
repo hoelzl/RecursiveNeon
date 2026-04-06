@@ -2,6 +2,29 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 7c — Tech Debt Cleanup (2026-04-06)
+
+### Added
+- **TUI `on_tick` timer** (7c-1 / TD-003) — `TuiApp` protocol gained `tick_interval_ms` and `on_tick(dt_ms)`. `RawInputSource.get_key` now accepts `timeout` keyword. `run_tui_app` fires ticks via keystroke-read timeout. `sysmon` sets `tick_interval_ms=1000` and auto-refreshes every second without keypresses. 5 new tests in `test_tui.py`.
+- **`_MarkSet` identity wrapper** (7c-2 / TD-004) — New `_MarkSet` class in `buffer.py` wraps mark tracking with `id()`-based membership. `track_mark`/`untrack_mark` delegate to `_MarkSet.add`/`discard`. Debug assertion catches duplicate tracking. 9 new tests in `test_mark_set.py`.
+- **TUI terminal size + resize handling** (7c-4 / TD-005) — `_measure_terminal()` reads real terminal dimensions via `shutil.get_terminal_size`. `run_tui_app` accepts `resize_source` callback and drains resize events each loop iteration. Local CLI path polls on each keystroke/tick. WebSocket protocol extended with `{"type": "resize", "width": N, "height": M}` messages. `TerminalSession.feed_resize()` stores pending events. `wsclient` sends resize on connect. 11 new tests in `test_tui_resize.py`.
+- **Filesystem name uniqueness** (7c-5 / TD-006 bug 1) — `AppService` gained `_find_child_by_name` and `_check_name_collision` helpers. All mutating methods (`create_file`, `create_directory`, `update_file` rename, `copy_file`, `move_file`) now raise `FileExistsError` on `(parent_id, name)` collision. `copy_file`/`move_file` accept `overwrite: bool = False` flag for future `cp -f`/`mv -f` semantics. 9 xfail tests turned green.
+- **Per-buffer save_callback** (7c-5 / TD-006 bug 2) — Editor `save_callback` replaced single shared `file_id` closure with per-buffer `dict[id(buffer), str]` mapping. Save resolves existing files by path on first save of a `find-file`'d buffer, preventing duplicate nodes and cross-buffer corruption. 4 xfail tests turned green.
+- **Undo-group coalescing** (7c-6) — `Command` dataclass gained `coalesce_key: str | None` field. `defcommand` decorator accepts `coalesce_key=`. Dispatcher skips undo boundary when consecutive commands share a non-None key. Keys: `"insert"` (self-insert), `"delete-backward"` (Backspace), `"delete-forward"` (C-d), `"kill"` (kill-line/word/region/sentence), `"yank"` (yank/yank-pop). `_last_coalesce_key` cleared in `_reset_transient_state`. 7 new tests in `test_undo_chain.py`.
+- **45 new tests** across 4 files (2 new + 2 extended). **1815 passing tests total** (+45 from 7b's 1770). **0 xfail** (down from 13).
+
+### Changed
+- **`RawInputSource` protocol** — `get_key` signature changed to `get_key(*, timeout: float | None = None) -> str | None`. `None` return signals timeout (used for tick callbacks). All implementations (`LocalRawInput`, `WebSocketRawInput`, test mocks) updated.
+- **`run_tui_app` signature** — gained `resize_source` parameter for pluggable resize detection.
+- **`shell.py::_make_run_tui`** — now measures terminal size and passes `width`/`height`/`resize_source` to `run_tui_app`.
+- **`terminal.py::TerminalSession`** — gained `_terminal_size`, `_resize_pending`, `feed_resize()`. TUI factory passes measured WS dimensions and resize drain to `run_tui_app`.
+- **`main.py::_ws_reader`** — routes `"resize"` message type to `session.feed_resize()`.
+- **`editor/editor.py` dispatcher** — undo boundary logic uses `cmd.coalesce_key` instead of hard-coded `name != "self-insert-command"` check. Both `_execute_command_by_name` and `execute_command` updated.
+
+### Fixed
+- **TD-001 re-audit** (7c-3) — `pydantic.v1` warning still fires with `langchain-core==1.2.20` / `pydantic==2.12.5` / Python 3.14.3. Filter stays; dated re-audit note added to `TECH_DEBT.md`.
+- **TD-006 resolved** — 13 xfail regression tests (9 filesystem + 4 editor) now pass. Filesystem prevents duplicate `(parent_id, name)` pairs; editor tracks file IDs per buffer.
+
 ## Phase 7b — Shell Pipeline Completeness (2026-04-06)
 
 ### Added

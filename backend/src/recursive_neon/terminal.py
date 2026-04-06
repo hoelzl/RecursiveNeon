@@ -74,8 +74,11 @@ class WebSocketRawInput:
     def __init__(self, key_queue: asyncio.Queue[str | None]) -> None:
         self._key_queue = key_queue
 
-    async def get_key(self) -> str:
-        key = await self._key_queue.get()
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
+        try:
+            key = await asyncio.wait_for(self._key_queue.get(), timeout=timeout)
+        except TimeoutError:
+            return None
         if key is None:
             raise EOFError
         return key
@@ -102,6 +105,8 @@ class TerminalSession:
     key_queue: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
     mode: str = "cooked"
     _shell_task: asyncio.Task | None = field(default=None, repr=False)
+    _terminal_size: tuple[int, int] = (80, 24)
+    _resize_pending: tuple[int, int] | None = field(default=None, repr=False)
 
     async def start(self) -> None:
         """Start the shell REPL as a background task."""
@@ -114,6 +119,14 @@ class TerminalSession:
 
         def _run_tui_factory():
             raw_input = WebSocketRawInput(session.key_queue)
+            w, h = session._terminal_size
+
+            def _drain_resize() -> tuple[int, int] | None:
+                pending = session._resize_pending
+                if pending is not None:
+                    session._resize_pending = None
+                    return pending
+                return None
 
             async def _run_tui(app: TuiApp) -> int:
                 return await run_tui_app(
@@ -123,6 +136,9 @@ class TerminalSession:
                     enter_raw=lambda: session._enter_raw_mode(),
                     exit_raw=lambda: session._exit_raw_mode(),
                     send_screen=lambda msg: session.output_queue.put_nowait(msg),
+                    width=w,
+                    height=h,
+                    resize_source=_drain_resize,
                 )
 
             return _run_tui
@@ -166,6 +182,15 @@ class TerminalSession:
     def feed_key(self, key: str) -> None:
         """Send a keystroke to the active TUI app (called by the WS handler)."""
         self.key_queue.put_nowait(key)
+
+    def feed_resize(self, width: int, height: int) -> None:
+        """Record a resize event from the WS client.
+
+        The runner will pick it up on the next loop iteration via
+        ``_drain_resize`` and call ``app.on_resize``.
+        """
+        self._terminal_size = (width, height)
+        self._resize_pending = (width, height)
 
     def _enter_raw_mode(self) -> None:
         """Switch to raw mode and notify the client."""

@@ -62,10 +62,6 @@ def _root_id(svc: AppService) -> str:
 
 
 class TestCreateFileDuplicate:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: create_file does not check for name collisions",
-    )
     def test_create_file_rejects_duplicate_name_in_same_parent(self, svc):
         """Creating a second file with the same name in the same parent
         must raise ``ValueError`` (or ``FileExistsError``).
@@ -77,10 +73,6 @@ class TestCreateFileDuplicate:
                 {"name": "readme.txt", "parent_id": root, "content": "second"}
             )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: create_file does not check for name collisions",
-    )
     def test_duplicate_creation_leaves_only_one_node(self, svc):
         """Even with the current buggy behaviour, there must not be two
         nodes sharing ``(parent_id, name)`` after a rejected create.
@@ -113,20 +105,12 @@ class TestCreateFileDuplicate:
 
 
 class TestCreateDirectoryDuplicate:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: create_directory does not check for collisions",
-    )
     def test_create_directory_rejects_duplicate(self, svc):
         root = _root_id(svc)
         svc.create_directory({"name": "Documents", "parent_id": root})
         with pytest.raises((ValueError, FileExistsError)):
             svc.create_directory({"name": "Documents", "parent_id": root})
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: directory/file name collision not rejected",
-    )
     def test_directory_cannot_shadow_existing_file(self, svc):
         """A directory with the same name as an existing file in the
         same parent must be rejected — path resolution can't distinguish
@@ -144,10 +128,6 @@ class TestCreateDirectoryDuplicate:
 
 
 class TestUpdateFileRenameCollision:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: update_file rename does not check collisions",
-    )
     def test_rename_to_existing_name_rejected(self, svc):
         root = _root_id(svc)
         svc.create_file({"name": "keep.txt", "parent_id": root})
@@ -169,10 +149,6 @@ class TestUpdateFileRenameCollision:
 
 
 class TestCopyFileCollision:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: copy_file does not check for target name collision",
-    )
     def test_copy_into_parent_with_existing_name_rejected(self, svc):
         """Copying a file into a directory that already has a child
         with the same name must raise (or require ``new_name``).
@@ -204,10 +180,6 @@ class TestCopyFileCollision:
 
 
 class TestMoveFileCollision:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: move_file does not check for target name collision",
-    )
     def test_move_into_parent_with_existing_name_rejected(self, svc):
         root = _root_id(svc)
         dir_a = svc.create_directory({"name": "A", "parent_id": root})
@@ -217,10 +189,6 @@ class TestMoveFileCollision:
         with pytest.raises((ValueError, FileExistsError)):
             svc.move_file(source.id, dir_b.id)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: rename-during-move does not check collisions",
-    )
     def test_move_with_new_name_collision_rejected(self, svc):
         """Moving with ``new_name`` that collides in the target must be
         rejected, even if the source's original name wouldn't collide.
@@ -240,10 +208,6 @@ class TestMoveFileCollision:
 
 
 class TestPathResolutionInvariant:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 1: duplicates break path resolution uniqueness",
-    )
     def test_resolve_path_is_deterministic_after_duplicate_attempt(self, svc):
         """After any sequence of operations, ``resolve_path`` must
         always return the unique node at a given path — guaranteed by

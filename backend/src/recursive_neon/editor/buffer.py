@@ -96,6 +96,43 @@ def _undo_attrs_to_runs(
     return runs
 
 
+class _MarkSet:
+    """Identity-based collection of tracked marks.
+
+    Uses ``id()`` internally so that membership checks and removal
+    operate on object identity, not value equality.  This prevents
+    accidental matches when two distinct ``Mark`` objects happen to
+    share the same ``(line, col)`` position — a common situation with
+    the window system where multiple windows track independent marks
+    in the same buffer.
+    """
+
+    __slots__ = ("_marks",)
+
+    def __init__(self) -> None:
+        self._marks: list[Mark] = []
+
+    def __contains__(self, m: object) -> bool:
+        return any(t is m for t in self._marks)
+
+    def __iter__(self):
+        return iter(self._marks)
+
+    def __len__(self) -> int:
+        return len(self._marks)
+
+    def add(self, m: Mark) -> None:
+        """Add *m* if not already tracked (identity check)."""
+        assert not any(t is m for t in self._marks), (
+            f"Mark {m!r} is already tracked — duplicate track_mark call"
+        )
+        self._marks.append(m)
+
+    def discard(self, m: Mark) -> None:
+        """Remove *m* by identity. No-op if not present."""
+        self._marks = [t for t in self._marks if t is not m]
+
+
 class Buffer:
     """A named text buffer with point, mark, and tracked marks."""
 
@@ -135,7 +172,8 @@ class Buffer:
 
         # All non-temporary marks tracked for automatic maintenance.
         # Point is always tracked; mark is added/removed as set/cleared.
-        self._tracked_marks: list[Mark] = [self.point]
+        self._tracked_marks: _MarkSet = _MarkSet()
+        self._tracked_marks.add(self.point)
 
         # Goal column for vertical movement (-1 = not set)
         self._goal_col: int = -1
@@ -218,12 +256,12 @@ class Buffer:
 
     def track_mark(self, m: Mark) -> None:
         """Register a mark for automatic maintenance during edits."""
-        if not any(t is m for t in self._tracked_marks):
-            self._tracked_marks.append(m)
+        if m not in self._tracked_marks:
+            self._tracked_marks.add(m)
 
     def untrack_mark(self, m: Mark) -> None:
         """Remove a mark from automatic maintenance."""
-        self._tracked_marks = [t for t in self._tracked_marks if t is not m]
+        self._tracked_marks.discard(m)
 
     def set_mark(self, line: int | None = None, col: int | None = None) -> Mark:
         """Set the mark at the given position (default: point's position).

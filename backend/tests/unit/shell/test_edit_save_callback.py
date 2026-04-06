@@ -30,8 +30,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
 from recursive_neon.shell.output import CapturedOutput
 from recursive_neon.shell.programs import ProgramContext
 from recursive_neon.shell.programs.edit import _run_edit
@@ -87,10 +85,6 @@ def _count_children_named(app_service: Any, parent_id: str, name: str) -> int:
 
 
 class TestSaveDoesNotDuplicateExistingFile:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 2: save_callback on find-file'd buffer creates duplicate",
-    )
     def test_editor_launched_without_args_then_find_file_and_save(self, test_container):
         """Launch ``edit`` with no args, open an existing file via
         find-file, edit, save.  The save must **update** the existing
@@ -131,10 +125,6 @@ class TestSaveDoesNotDuplicateExistingFile:
         updated = app_service.get_file(target.id)
         assert updated.content == "original edited"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 2: save_callback on find-file'd buffer creates duplicate",
-    )
     def test_editor_launched_with_file_then_find_file_different_file_and_save(
         self, test_container
     ):
@@ -187,10 +177,6 @@ class TestSaveDoesNotDuplicateExistingFile:
 
 
 class TestUserReportedScenario:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 2: shared file_id closure corrupts multi-buffer saves",
-    )
     def test_open_split_open_second_save_both(self, test_container):
         """Reproduces the user-reported scenario from the bug report:
 
@@ -257,10 +243,6 @@ class TestUserReportedScenario:
 
 
 class TestCreateTwoNewFilesInSession:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="TD-006 bug 2: second new-file save overwrites first via stale file_id",
-    )
     def test_write_file_to_two_new_paths_creates_two_files(self, test_container):
         """Start with ``edit`` (no args), write two different new files
         via consecutive write-file operations on two different buffers.

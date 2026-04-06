@@ -133,6 +133,10 @@ class Editor:
         # can correlate consecutive operations (e.g., kill merging)
         self._last_command_name: str = ""
 
+        # Undo-group coalescing: consecutive commands that share a
+        # non-None coalesce_key skip the undo boundary between them.
+        self._last_coalesce_key: str | None = None
+
         # Viewport — set by EditorView when attached, None in headless mode
         self.viewport: Viewport | None = None
 
@@ -469,7 +473,7 @@ class Editor:
 
         # Insert undo boundary between distinct commands.
         #
-        # Exception: ``undo`` is a chaining command.  ``Buffer.undo()``
+        # Exception 1: ``undo`` is a chaining command.  ``Buffer.undo()``
         # tracks a consecutive-undo chain via ``last_command_type`` and
         # ``_undo_cursor``; calling ``add_undo_boundary`` between two
         # ``undo`` dispatches would break that chain (it clears both
@@ -478,11 +482,16 @@ class Editor:
         # the boundary preserves the chain.  The boundary that
         # separates the previous command's entries from the undo's
         # reverse entries is added inside ``Buffer.undo()`` itself.
+        #
+        # Exception 2: commands that share a non-None ``coalesce_key``
+        # are coalesced when dispatched back-to-back — a run of
+        # Backspaces or C-k kills becomes one undo group.
         buf = self.buffer
-        if name != "undo" and (
-            self._last_command_name != name or name != "self-insert-command"
-        ):
+        ckey = cmd.coalesce_key
+        same_run = ckey is not None and ckey == self._last_coalesce_key
+        if name != "undo" and not same_run:
             buf.add_undo_boundary()
+        self._last_coalesce_key = ckey
 
         # Stash the key for self-insert-command
         self._current_key = key
@@ -514,11 +523,14 @@ class Editor:
         cmd = COMMANDS.get(name)
         if cmd is None:
             return False
-        # Same ``undo``-is-chaining exception as _execute_command_by_name;
-        # see that method for rationale.
+        # Same ``undo``-is-chaining and coalescing exceptions as
+        # _execute_command_by_name; see that method for rationale.
         buf = self.buffer
-        if name != "undo":
+        ckey = cmd.coalesce_key
+        same_run = ckey is not None and ckey == self._last_coalesce_key
+        if name != "undo" and not same_run:
             buf.add_undo_boundary()
+        self._last_coalesce_key = ckey
         buf._read_only_error = False
         cmd.function(self, prefix)
         if buf._read_only_error:
@@ -792,6 +804,8 @@ class Editor:
         # Clear ESC-as-Meta state machine
         self._meta_pending = False
         self._escape_quit_pending = False
+        # Clear undo-group coalescing key
+        self._last_coalesce_key = None
         # Clear highlight overlay (isearch / query-replace)
         self.highlight_term = None
         self.highlight_case_fold = False

@@ -82,6 +82,27 @@ class AppService:
             with contextlib.suppress(ValueError):
                 children.remove(node.id)
 
+    def _find_child_by_name(self, parent_id: str | None, name: str) -> FileNode | None:
+        """O(n) scan of *parent_id*'s children for a child named *name*."""
+        for cid in self._children_index.get(parent_id, []):
+            child = self._node_index.get(cid)
+            if child is not None and child.name == name:
+                return child
+        return None
+
+    def _check_name_collision(
+        self, parent_id: str | None, name: str, *, exclude_id: str | None = None
+    ) -> None:
+        """Raise ``FileExistsError`` if *name* already exists in *parent_id*.
+
+        *exclude_id* is the node's own ID (for rename-to-self no-ops).
+        """
+        existing = self._find_child_by_name(parent_id, name)
+        if existing is not None and existing.id != exclude_id:
+            raise FileExistsError(
+                f"A file or directory named {name!r} already exists in this directory"
+            )
+
     def handle_action(self, app_type: str, action: str, data: dict) -> dict:
         """Route an app action to the appropriate handler."""
         handlers = {
@@ -316,6 +337,7 @@ class AppService:
         self._validate_parent_id(parent_id)
         name = data.get("name", "Untitled Folder")
         self._validate_node_name(name)
+        self._check_name_collision(parent_id, name)
         timestamp = datetime.now(tz=UTC)
         directory = FileNode(
             id=str(uuid.uuid4()),
@@ -334,6 +356,7 @@ class AppService:
         self._validate_parent_id(parent_id)
         name = data.get("name", "untitled.txt")
         self._validate_node_name(name)
+        self._check_name_collision(parent_id, name)
         content = data.get("content", "")
         if len(content) > MAX_FILE_CONTENT_SIZE:
             raise ValueError(
@@ -359,6 +382,7 @@ class AppService:
         new_name = data.get("name", node.name)
         if new_name != node.name:
             self._validate_node_name(new_name)
+            self._check_name_collision(node.parent_id, new_name, exclude_id=node.id)
         content = data.get("content", node.content)
         if content is not None and len(content) > MAX_FILE_CONTENT_SIZE:
             raise ValueError(
@@ -411,11 +435,19 @@ class AppService:
         return result
 
     def copy_file(
-        self, file_id: str, target_parent_id: str, new_name: str | None = None
+        self,
+        file_id: str,
+        target_parent_id: str,
+        new_name: str | None = None,
+        *,
+        overwrite: bool = False,
     ) -> FileNode:
         source = self.get_file(file_id)
         if new_name is not None:
             self._validate_node_name(new_name)
+        final_name = new_name or source.name
+        if not overwrite:
+            self._check_name_collision(target_parent_id, final_name)
         timestamp = datetime.now(tz=UTC)
         copy = FileNode(
             id=str(uuid.uuid4()),
@@ -444,10 +476,15 @@ class AppService:
         file_id: str,
         target_parent_id: str,
         new_name: str | None = None,
+        *,
+        overwrite: bool = False,
     ) -> FileNode:
         file = self.get_file(file_id)  # O(1) fail-fast via index
         if new_name is not None:
             self._validate_node_name(new_name)
+        final_name = new_name or file.name
+        if not overwrite:
+            self._check_name_collision(target_parent_id, final_name, exclude_id=file.id)
         timestamp = datetime.now(tz=UTC)
         if file.type == "directory":
             current: str | None = target_parent_id

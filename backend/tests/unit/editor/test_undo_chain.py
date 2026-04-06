@@ -202,3 +202,110 @@ class TestBufferLevelUndoChain:
         assert b.text == "a"
         b.undo()
         assert b.text == ""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Undo-group coalescing (7c-6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestUndoGroupCoalescing:
+    def test_consecutive_backspaces_coalesce(self) -> None:
+        """A run of Backspaces is one undo group."""
+        h = make_harness()
+        h.type_string("abcde")
+        assert h.buffer_text() == "abcde"
+        # Three consecutive Backspaces
+        h.send_keys("Backspace")
+        h.send_keys("Backspace")
+        h.send_keys("Backspace")
+        assert h.buffer_text() == "ab"
+        # One undo reverts all three Backspaces
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abcde"
+
+    def test_consecutive_delete_char_coalesces(self) -> None:
+        """A run of C-d (delete-char) is one undo group."""
+        h = make_harness()
+        h.type_string("abcde")
+        h.send_keys("C-a")  # move to beginning
+        h.send_keys("C-d")
+        h.send_keys("C-d")
+        h.send_keys("C-d")
+        assert h.buffer_text() == "de"
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abcde"
+
+    def test_consecutive_kill_lines_coalesce(self) -> None:
+        """A run of C-k (kill-line) is one undo group."""
+        h = make_harness()
+        h.type_string("line1\nline2\nline3")
+        h.send_keys("C-a")  # beginning of last line
+        # Go to first line
+        h.send_keys("M-<")
+        h.send_keys("C-k")  # kill "line1"
+        h.send_keys("C-k")  # kill newline
+        assert h.buffer_text() == "line2\nline3"
+        h.send_keys("C-/")
+        assert h.buffer_text() == "line1\nline2\nline3"
+
+    def test_mixed_commands_break_coalescing(self) -> None:
+        """Switching from Backspace to C-d breaks the undo group."""
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("Backspace")  # delete-backward-char group
+        h.send_keys("C-a")  # movement — breaks coalescing (different coalesce_key=None)
+        h.send_keys("C-d")  # delete-char — different group
+        assert h.buffer_text() == "b"
+        # First undo reverts the C-d
+        h.send_keys("C-/")
+        assert h.buffer_text() == "ab"
+        # Second undo reverts movement (no-op on content) + Backspace
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abc"
+
+    def test_self_insert_coalesces(self) -> None:
+        """Typing multiple characters is already one undo group via coalesce_key."""
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("Backspace")
+        h.type_string("xyz")
+        assert h.buffer_text() == "abxyz"
+        # Undo reverts the "xyz" run
+        h.send_keys("C-/")
+        assert h.buffer_text() == "ab"
+        # Undo reverts the Backspace
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abc"
+
+    def test_undo_chain_still_works_with_coalescing(self) -> None:
+        """The undo exception from 6l-5 still holds — consecutive C-/
+        walks groups back, not forward.
+        """
+        h = make_harness()
+        h.type_string("aaa")
+        h.send_keys("Backspace")
+        h.send_keys("Backspace")
+        assert h.buffer_text() == "a"
+        h.send_keys("C-/")
+        assert h.buffer_text() == "aaa"  # Backspaces coalesced → one undo
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""  # typing coalesced → one undo
+
+    def test_intervening_movement_breaks_delete_run(self) -> None:
+        """A movement command (coalesce_key=None) between Backspaces
+        breaks them into two undo groups.
+        """
+        h = make_harness()
+        h.type_string("abcde")
+        h.send_keys("Backspace")  # group 1
+        h.send_keys("C-e")  # movement — coalesce_key=None, breaks the run
+        h.send_keys("Backspace")  # group 2 (this is end of "abcd" after C-e)
+        # Actually after the first Backspace: "abcd", C-e is end-of-line → no move, then second Backspace: "abc"
+        assert h.buffer_text() == "abc"
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abcd"  # second Backspace reverted
+        h.send_keys("C-/")
+        # C-e is a movement command with no undo entries, so this
+        # reverts the first Backspace.
+        assert h.buffer_text() == "abcde"

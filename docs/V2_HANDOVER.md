@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-7b complete. 1770 passing tests + 13 xfail (TD-006 regressions). **Phase 7c (tech debt cleanup) is next**, followed by 7d (extensibility), 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7c complete. 1815 passing tests, 0 xfail. **Phase 7d (editor extensibility) is next**, followed by 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every

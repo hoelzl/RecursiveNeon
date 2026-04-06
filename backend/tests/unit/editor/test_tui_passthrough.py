@@ -17,7 +17,7 @@ class FakeRawInput:
     def __init__(self, keys: list[str]) -> None:
         self._keys = list(keys)
 
-    async def get_key(self) -> str:
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
         if not self._keys:
             raise EOFError
         return self._keys.pop(0)

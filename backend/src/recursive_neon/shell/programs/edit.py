@@ -47,7 +47,7 @@ async def _run_edit(ctx: ProgramContext) -> int:
     filepath: str | None = None
     content = ""
     name = "*scratch*"
-    file_id: str | None = None
+    initial_file_id: str | None = None
 
     if args:
         path_str = args[0]
@@ -59,14 +59,14 @@ async def _run_edit(ctx: ProgramContext) -> int:
             content = node.content or ""
             name = node.name
             filepath = path_str
-            file_id = node.id
+            initial_file_id = node.id
         except (FileNotFoundError, ValueError) as e:
             # New file — try to resolve parent to validate path
             try:
                 parent, fname = ctx.resolve_parent_and_name(path_str)
                 name = fname
                 filepath = path_str
-                # file_id stays None — will create on save
+                # initial_file_id stays None — will create on save
             except (FileNotFoundError, ValueError):
                 ctx.stderr.error(f"edit: {e}")
                 return 1
@@ -77,24 +77,40 @@ async def _run_edit(ctx: ProgramContext) -> int:
     # Create the editor view
     view = create_editor_for_file(content=content, name=name, filepath=filepath)
 
-    # Wire up save callback to virtual filesystem
+    # Wire up save callback to virtual filesystem.
+    # Per-buffer mapping from buffer identity to filesystem node ID.
     app_service = ctx.services.app_service
+    buf_file_ids: dict[int, str] = {}
+
+    # Register the initial buffer if it has a file_id
+    if initial_file_id is not None:
+        buf_file_ids[id(view.editor.buffer)] = initial_file_id
 
     def save_callback(buf: Buffer) -> bool:
-        nonlocal file_id
         try:
-            if file_id is not None:
+            fid = buf_file_ids.get(id(buf))
+            if fid is not None:
                 # Update existing file
-                app_service.update_file(file_id, {"content": buf.text})
+                app_service.update_file(fid, {"content": buf.text})
             else:
                 # Create new file — use buf.filepath (set by write-file command)
                 path = buf.filepath
                 if path:
                     parent, fname = ctx.resolve_parent_and_name(path)
+                    # Check if the file already exists (e.g., opened via find-file)
+                    try:
+                        existing = ctx.resolve_path(path)
+                        if existing.type != "directory":
+                            # Update existing file and register it
+                            app_service.update_file(existing.id, {"content": buf.text})
+                            buf_file_ids[id(buf)] = existing.id
+                            return True
+                    except (FileNotFoundError, ValueError):
+                        pass
                     new_node = app_service.create_file(
                         {"name": fname, "parent_id": parent.id, "content": buf.text}
                     )
-                    file_id = new_node.id
+                    buf_file_ids[id(buf)] = new_node.id
                 else:
                     return False
             return True
@@ -109,6 +125,11 @@ async def _run_edit(ctx: ProgramContext) -> int:
             node = ctx.resolve_path(path)
             if node.type == "directory":
                 return ""
+            # Register the file_id for this path so save works correctly
+            # The buffer doesn't exist yet — it will be registered when
+            # the editor creates it and we get a save_callback call.
+            # We stash the mapping keyed by path for the save_callback
+            # to pick up via resolve_path.
             return node.content or ""
         except (FileNotFoundError, ValueError):
             return ""  # new file

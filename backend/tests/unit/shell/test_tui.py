@@ -117,7 +117,7 @@ class MockRawInput:
     def __init__(self, keys: list[str]) -> None:
         self._keys = iter(keys)
 
-    async def get_key(self) -> str:
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
         try:
             return next(self._keys)
         except StopIteration:
@@ -270,3 +270,159 @@ class TestTuiRunner:
         # Output should contain ANSI clear/position codes
         text = output.text
         assert "\033[2J\033[H" in text
+
+
+# ── Tick support ─────────────────────────────────────────────────────────
+
+
+class MockRawInputWithTicks:
+    """RawInputSource that returns None (timeout) a configurable number of
+    times before yielding keys, allowing tick callbacks to fire."""
+
+    def __init__(self, ticks_before_keys: int, keys: list[str]) -> None:
+        self._ticks_remaining = ticks_before_keys
+        self._keys = iter(keys)
+
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
+        if self._ticks_remaining > 0:
+            self._ticks_remaining -= 1
+            return None  # simulate timeout → tick
+        try:
+            return next(self._keys)
+        except StopIteration:
+            raise EOFError from None
+
+
+class TickingApp:
+    """TUI app that records tick calls and exits on 'q'."""
+
+    tick_interval_ms = 500
+
+    def __init__(self) -> None:
+        self.tick_log: list[int] = []
+        self.width = 80
+        self.height = 24
+
+    def on_start(self, width: int, height: int) -> ScreenBuffer:
+        self.width = width
+        self.height = height
+        return ScreenBuffer.create(width, height)
+
+    def on_key(self, key: str) -> ScreenBuffer | None:
+        if key == "q":
+            return None
+        return ScreenBuffer.create(self.width, self.height)
+
+    def on_resize(self, width: int, height: int) -> ScreenBuffer:
+        self.width = width
+        self.height = height
+        return ScreenBuffer.create(width, height)
+
+    def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
+        self.tick_log.append(dt_ms)
+        screen = ScreenBuffer.create(self.width, self.height)
+        screen.set_line(0, f"Tick #{len(self.tick_log)}")
+        return screen
+
+
+@pytest.mark.asyncio
+class TestTuiTicks:
+    async def test_tick_fires_on_timeout(self):
+        """on_tick is called when get_key returns None (timeout)."""
+        from recursive_neon.shell.tui.runner import run_tui_app
+
+        app = TickingApp()
+        raw_input = MockRawInputWithTicks(ticks_before_keys=3, keys=["q"])
+        output = CapturedOutput()
+
+        await run_tui_app(app, raw_input, output)
+
+        assert len(app.tick_log) == 3
+
+    async def test_tick_delivers_screen(self):
+        """Screens returned by on_tick are delivered to the client."""
+        from recursive_neon.shell.tui.runner import run_tui_app
+
+        app = TickingApp()
+        raw_input = MockRawInputWithTicks(ticks_before_keys=2, keys=["q"])
+        screens: list[dict] = []
+
+        await run_tui_app(
+            app,
+            raw_input,
+            CapturedOutput(),
+            send_screen=lambda msg: screens.append(msg),
+        )
+
+        # 1 on_start + 2 ticks = 3 screens (the "q" key returns None → exit)
+        assert len(screens) == 3
+        assert "Tick #1" in screens[1]["lines"][0]
+        assert "Tick #2" in screens[2]["lines"][0]
+
+    async def test_no_tick_when_interval_zero(self):
+        """Apps with tick_interval_ms=0 never get ticked."""
+        from recursive_neon.shell.tui.runner import run_tui_app
+
+        app = SimpleTuiApp()  # no tick_interval_ms → defaults to 0
+        raw_input = MockRawInput(["a", "Escape"])
+        output = CapturedOutput()
+
+        await run_tui_app(app, raw_input, output)
+        # SimpleTuiApp has no on_tick, and no ticks should have fired.
+        assert not hasattr(app, "tick_log")
+
+    async def test_tick_None_return_keeps_current_screen(self):
+        """When on_tick returns None, the screen is not re-delivered."""
+        from recursive_neon.shell.tui.runner import run_tui_app
+
+        class NullTickApp:
+            tick_interval_ms = 100
+
+            def on_start(self, w: int, h: int) -> ScreenBuffer:
+                return ScreenBuffer.create(w, h)
+
+            def on_key(self, key: str) -> ScreenBuffer | None:
+                return None
+
+            def on_resize(self, w: int, h: int) -> ScreenBuffer:
+                return ScreenBuffer.create(w, h)
+
+            def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
+                return None  # no screen update
+
+        app = NullTickApp()
+        raw_input = MockRawInputWithTicks(ticks_before_keys=2, keys=["q"])
+        screens: list[dict] = []
+
+        await run_tui_app(
+            app,
+            raw_input,
+            CapturedOutput(),
+            send_screen=lambda msg: screens.append(msg),
+        )
+
+        # Only the on_start screen is delivered — ticks returned None
+        assert len(screens) == 1
+
+    async def test_keyboard_input_still_works_between_ticks(self):
+        """Keys between ticks are still processed correctly."""
+        from recursive_neon.shell.tui.runner import run_tui_app
+
+        app = TickingApp()
+
+        # Interleave: tick, key "a", tick, key "q"
+        class InterleavedInput:
+            def __init__(self) -> None:
+                self._seq = iter([None, "a", None, "q"])
+
+            async def get_key(self, *, timeout: float | None = None) -> str | None:
+                try:
+                    val = next(self._seq)
+                except StopIteration:
+                    raise EOFError from None
+                return val
+
+        raw_input = InterleavedInput()
+        output = CapturedOutput()
+        await run_tui_app(app, raw_input, output)
+        assert len(app.tick_log) == 2

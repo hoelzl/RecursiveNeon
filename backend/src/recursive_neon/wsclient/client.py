@@ -289,8 +289,21 @@ async def _headless_stdin_sender(ws) -> None:
         await ws.send(json.dumps(msg))
 
 
+async def _send_resize(ws) -> None:
+    """Send a resize message with the current terminal dimensions."""
+    import shutil
+
+    size = shutil.get_terminal_size(fallback=(80, 24))
+    await ws.send(
+        json.dumps({"type": "resize", "width": size.columns, "height": size.lines})
+    )
+
+
 async def _session_loop(ws) -> None:
     """Main client loop: read server messages, send user input."""
+    # Tell the server our terminal dimensions right away
+    await _send_resize(ws)
+
     completer = _WebSocketCompleter(ws)
 
     input_queue: asyncio.Queue[str | tuple[str, str] | None] = asyncio.Queue()

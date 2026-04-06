@@ -150,7 +150,11 @@ def end_of_buffer(ed: Editor, prefix: int | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@defcommand("self-insert-command", "Insert the character that invoked this command.")
+@defcommand(
+    "self-insert-command",
+    "Insert the character that invoked this command.",
+    coalesce_key="insert",
+)
 def self_insert_command(ed: Editor, prefix: int | None) -> None:
     key = getattr(ed, "_current_key", None)
     if key is None:
@@ -191,14 +195,20 @@ def newline(ed: Editor, prefix: int | None) -> None:
     ed.buffer.insert_char("\n")
 
 
-@defcommand("delete-char", "Delete the character after point.")
+@defcommand(
+    "delete-char", "Delete the character after point.", coalesce_key="delete-forward"
+)
 def delete_char(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.delete_char_forward()
 
 
-@defcommand("delete-backward-char", "Delete the character before point.")
+@defcommand(
+    "delete-backward-char",
+    "Delete the character before point.",
+    coalesce_key="delete-backward",
+)
 def delete_backward_char(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
@@ -210,45 +220,59 @@ def delete_backward_char(ed: Editor, prefix: int | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@defcommand("kill-line", "Kill from point to end of line.")
+@defcommand("kill-line", "Kill from point to end of line.", coalesce_key="kill")
 def kill_line(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_line()
 
 
-@defcommand("kill-region", "Kill the region (text between point and mark).")
+@defcommand(
+    "kill-region", "Kill the region (text between point and mark).", coalesce_key="kill"
+)
 def kill_region(ed: Editor, prefix: int | None) -> None:
     ed.buffer.kill_region()
 
 
-@defcommand("kill-word", "Kill from point to the end of the current word.")
+@defcommand(
+    "kill-word", "Kill from point to the end of the current word.", coalesce_key="kill"
+)
 def kill_word(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_word_forward()
 
 
-@defcommand("kill-backward-word", "Kill backward to the start of the current word.")
+@defcommand(
+    "kill-backward-word",
+    "Kill backward to the start of the current word.",
+    coalesce_key="kill",
+)
 def kill_backward_word(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_word_backward()
 
 
-@defcommand("kill-sentence", "Kill from point to the end of the sentence.")
+@defcommand(
+    "kill-sentence", "Kill from point to the end of the sentence.", coalesce_key="kill"
+)
 def kill_sentence(ed: Editor, prefix: int | None) -> None:
     n = prefix if prefix is not None else 1
     for _ in range(n):
         ed.buffer.kill_sentence()
 
 
-@defcommand("yank", "Yank (paste) the most recent kill.")
+@defcommand("yank", "Yank (paste) the most recent kill.", coalesce_key="yank")
 def yank(ed: Editor, prefix: int | None) -> None:
     ed.buffer.yank()
 
 
-@defcommand("yank-pop", "Replace just-yanked text with the next kill ring entry.")
+@defcommand(
+    "yank-pop",
+    "Replace just-yanked text with the next kill ring entry.",
+    coalesce_key="yank",
+)
 def yank_pop(ed: Editor, prefix: int | None) -> None:
     ed.buffer.yank_pop()
 

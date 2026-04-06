@@ -133,6 +133,9 @@ class TuiApp(Protocol):
     testable by calling ``on_start`` / ``on_key`` directly.
     """
 
+    tick_interval_ms: int
+    """Tick interval in milliseconds.  ``0`` disables ticks."""
+
     def on_start(self, width: int, height: int) -> ScreenBuffer:
         """Called when the app launches. Return the initial screen."""
         ...
@@ -154,14 +157,26 @@ class TuiApp(Protocol):
         """Handle terminal resize. Return a re-rendered screen."""
         ...
 
+    def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
+        """Called periodically when ``tick_interval_ms > 0``.
+
+        *dt_ms* is the approximate elapsed time since the last tick (or
+        since ``on_start`` for the first tick).  Return a new screen to
+        display, or ``None`` to keep the current screen.
+        """
+        ...
+
 
 class RawInputSource(Protocol):
     """Provides individual keystrokes to a TUI application."""
 
-    async def get_key(self) -> str:
+    async def get_key(self, *, timeout: float | None = None) -> str | None:
         """Read one keystroke.
 
-        Returns a canonical key string (see ``TuiApp.on_key`` for encoding).
+        Returns a canonical key string (see ``TuiApp.on_key`` for encoding),
+        or ``None`` if *timeout* seconds elapsed with no input.
+
+        When *timeout* is ``None``, blocks indefinitely.
 
         Raises:
             EOFError: Connection lost or input exhausted.

@@ -58,6 +58,8 @@ def _format_uptime(start_time: datetime) -> str:
 class SysMonApp:
     """TUI app for the system monitor."""
 
+    tick_interval_ms: int = 1000
+
     def __init__(
         self,
         process_table: ProcessTable,
@@ -99,6 +101,9 @@ class SysMonApp:
     def on_resize(self, width: int, height: int) -> ScreenBuffer:
         self.width = width
         self.height = height
+        return self._render()
+
+    def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
         return self._render()
 
     # ── rendering ─────────────────────────────────────────────────────

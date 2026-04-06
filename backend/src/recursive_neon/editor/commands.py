@@ -27,14 +27,21 @@ class Command:
     name: str
     function: CommandFn
     doc: str
+    coalesce_key: str | None = None
 
 
 # Global command registry
 COMMANDS: dict[str, Command] = {}
 
 
-def defcommand(name: str, doc: str = "") -> Callable[[CommandFn], CommandFn]:
+def defcommand(
+    name: str, doc: str = "", *, coalesce_key: str | None = None
+) -> Callable[[CommandFn], CommandFn]:
     """Decorator to register a named editor command.
+
+    *coalesce_key*: when non-``None``, consecutive commands that share
+    the same key are coalesced into a single undo group.  For example,
+    a run of ``delete-backward-char`` keystrokes becomes one undo step.
 
     Usage::
 
@@ -45,7 +52,9 @@ def defcommand(name: str, doc: str = "") -> Callable[[CommandFn], CommandFn]:
     """
 
     def wrapper(fn: CommandFn) -> CommandFn:
-        COMMANDS[name] = Command(name=name, function=fn, doc=doc)
+        COMMANDS[name] = Command(
+            name=name, function=fn, doc=doc, coalesce_key=coalesce_key
+        )
         return fn
 
     return wrapper
