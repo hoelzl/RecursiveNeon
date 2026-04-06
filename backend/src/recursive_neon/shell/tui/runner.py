@@ -9,6 +9,7 @@ which delegates here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import sys
@@ -67,19 +68,25 @@ async def run_tui_app(
 
     cur_w, cur_h = width, height
 
-    # Inject a child launcher so the app can spawn nested TUI apps
-    # (e.g., running `codebreaker` from M-x shell).
+    # --- Child TUI app management (issue #52) ---
+    #
+    # When a background task (e.g., shell command execution) launches a
+    # child TUI app via launch_child(), the child signals the parent
+    # loop to run it inline rather than starting a competing key loop.
+    # This ensures only one consumer reads from raw_input at a time.
+    _pending_child: list[tuple[TuiApp, asyncio.Event] | None] = [None]
+
     async def launch_child(child_app: TuiApp) -> int:
-        return await run_tui_app(
-            child_app,
-            raw_input,
-            output,
-            width=cur_w,
-            height=cur_h,
-            send_screen=send_screen,
-            resize_source=resize_source,
-            # No enter_raw/exit_raw — parent is already in raw mode
-        )
+        """Request the parent loop to run *child_app* inline.
+
+        Called from background tasks (e.g., shell-in-editor).  Sets a
+        pending-child slot and blocks until the parent loop finishes
+        running the child.
+        """
+        done = asyncio.Event()
+        _pending_child[0] = (child_app, done)
+        await done.wait()
+        return 0
 
     if hasattr(app, "set_tui_launcher"):
         app.set_tui_launcher(launch_child)
@@ -140,6 +147,34 @@ async def run_tui_app(
                 after_result = await on_after()
                 if after_result is not None:
                     _deliver_screen(after_result, output, send_screen)
+
+            # --- Run pending child TUI app inline (issue #52) ---
+            #
+            # A background task (e.g., _comint_send_input) may have
+            # launched a child TUI app via launch_child().  Run it here
+            # in the parent's key loop so there is only one consumer of
+            # raw_input at a time.
+            if _pending_child[0] is not None:
+                child_app, child_done = _pending_child[0]
+                _pending_child[0] = None
+                await _run_child_inline(
+                    child_app,
+                    child_done,
+                    raw_input,
+                    output,
+                    send_screen=send_screen,
+                    resize_source=resize_source,
+                    width=cur_w,
+                    height=cur_h,
+                )
+                # Yield so the background task can finish post-command
+                # work (e.g., insert prompt into buffer).
+                await asyncio.sleep(0)
+                # Re-render parent after child exits
+                if on_after is not None:
+                    after_result = await on_after()
+                    if after_result is not None:
+                        _deliver_screen(after_result, output, send_screen)
     except EOFError:
         logger.debug("TUI raw input EOF — exiting app")
     finally:
@@ -149,6 +184,71 @@ async def run_tui_app(
         output.write("\033[2J\033[H")
 
     return 0
+
+
+async def _run_child_inline(
+    child_app: TuiApp,
+    child_done: asyncio.Event,
+    raw_input: RawInputSource,
+    output: Output,
+    *,
+    send_screen: Callable[[dict], None] | None = None,
+    resize_source: Callable[[], tuple[int, int] | None] | None = None,
+    width: int = 80,
+    height: int = 24,
+) -> None:
+    """Run a child TUI app inside the parent's key loop.
+
+    Called by ``run_tui_app`` when a background task has queued a child
+    via ``launch_child()``.  Consumes all keystrokes until the child
+    exits, then signals the background task to resume.
+    """
+    cur_w, cur_h = width, height
+
+    screen = child_app.on_start(cur_w, cur_h)
+    _deliver_screen(screen, output, send_screen)
+
+    child_tick_ms: int = getattr(child_app, "tick_interval_ms", 0)
+    child_timeout: float | None = child_tick_ms / 1000.0 if child_tick_ms > 0 else None
+    last_tick = time.monotonic()
+
+    try:
+        while True:
+            if resize_source is not None:
+                new_size = resize_source()
+                if new_size is not None:
+                    nw, nh = new_size
+                    if (nw, nh) != (cur_w, cur_h):
+                        cur_w, cur_h = nw, nh
+                        try:
+                            resize_screen = child_app.on_resize(cur_w, cur_h)
+                            _deliver_screen(resize_screen, output, send_screen)
+                        except Exception:
+                            logger.exception("child on_resize error")
+
+            key = await raw_input.get_key(timeout=child_timeout)
+
+            if key is None:
+                now = time.monotonic()
+                dt_ms = int((now - last_tick) * 1000)
+                last_tick = now
+                on_tick = getattr(child_app, "on_tick", None)
+                if on_tick is not None:
+                    try:
+                        tick_result = on_tick(dt_ms)
+                    except Exception:
+                        logger.exception("child on_tick error")
+                        tick_result = None
+                    if tick_result is not None:
+                        _deliver_screen(tick_result, output, send_screen)
+                continue
+
+            result = child_app.on_key(key)
+            if result is None:
+                break
+            _deliver_screen(result, output, send_screen)
+    finally:
+        child_done.set()
 
 
 def _deliver_screen(

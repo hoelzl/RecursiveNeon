@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-7f complete. 2160 passing tests, 0 xfail. **Phase 8 (browser terminal + desktop GUI) is next**. Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7f complete. 2163 passing tests, 0 xfail. **Phase 8 (browser terminal + desktop GUI) is next**. Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -1652,7 +1652,9 @@ Listed per sub-phase so each commit stays focused.
 - Editor loads user Python config safely; Python/Markdown/shell files have syntax highlighting.
 - Editor is wired into game state: notes, task lists, NPC messages, save-hook events.
 - Three new TUI apps: `fsbrowse`, `portscan`, `memdump`.
-- Actual: 2160 total tests (≈540 new across 7a–7f, exceeding the ~1800 target).
+- Actual: 2163 total tests (≈540 new across 7a–7f, exceeding the ~1800 target).
+
+**Post-phase bug fix (issue #52)**: TUI apps launched from the editor shell (`M-x shell` → `codebreaker`) alternated keystrokes between the parent EditorView and the child app. Root cause: `_comint_send_input` spawned commands as background tasks (`asyncio.create_task`), so the child's `run_tui_app` competed with the parent for keys from the same `RawInputSource`. Fix: `launch_child` now signals the parent loop to run the child inline via `_run_child_inline()` — only one consumer reads from `raw_input` at a time. +3 tests.
 
 Phase 7 is complete. The project moves to Phase 8 (browser) with a genuinely polished CLI foundation — every feature that exists has been exercised end-to-end and nothing is carrying forward as deferred.
 

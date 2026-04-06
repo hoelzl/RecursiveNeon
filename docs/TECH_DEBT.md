@@ -48,6 +48,12 @@ Filter stays. Re-check on next dependency bump.
 
 ## Resolved
 
+### ~~TD-007: TUI apps in editor shell compete for keystrokes (issue #52)~~ (resolved 2026-04-06)
+
+- **Location**: `shell/tui/runner.py`, `editor/shell_mode.py`
+- **Summary**: `_comint_send_input` spawned shell commands as `asyncio.create_task`, so a child TUI app's `run_tui_app` competed with the parent EditorView's loop for keystrokes from the same `RawInputSource`, causing alternating screen rendering.
+- **Resolution**: `launch_child` now sets a `_pending_child` slot and awaits an `asyncio.Event`; the parent loop detects the pending child after `on_after_key()` and runs it inline via `_run_child_inline()`. Only one consumer reads from `raw_input` at a time. Background-task spawning is preserved for non-TUI commands (e.g., `chat` with `get_line()`).
+
 ### ~~TD-003: TUI framework has no timer/auto-refresh~~ (resolved 2026-04-06)
 
 - **Location**: `shell/tui/__init__.py`, `shell/tui/runner.py`, `shell/programs/sysmon.py`
