@@ -7,7 +7,11 @@ import asyncio
 import contextlib
 import sys
 
-from recursive_neon.wsclient.client import run_client, run_headless_client
+from recursive_neon.wsclient.client import (
+    run_batch_client,
+    run_client,
+    run_headless_client,
+)
 
 
 def _enable_ansi_on_windows() -> None:
@@ -46,11 +50,25 @@ def main() -> None:
         help="Headless mode: read JSON commands from stdin, write JSON to stdout. "
         "No terminal required. Suitable for automation and scripting.",
     )
+    parser.add_argument(
+        "--command",
+        "-c",
+        type=str,
+        default=None,
+        help="Run a single command, print output, and exit. "
+        "ANSI codes are stripped when stdout is not a TTY.",
+    )
     args = parser.parse_args()
 
     url = f"ws://{args.host}:{args.port}/ws/terminal"
 
-    if args.headless:
+    if args.command is not None:
+        if sys.stdout.isatty():
+            _enable_ansi_on_windows()
+        with contextlib.suppress(KeyboardInterrupt):
+            exit_code = asyncio.run(run_batch_client(url, args.command))
+        sys.exit(exit_code)
+    elif args.headless:
         with contextlib.suppress(KeyboardInterrupt):
             asyncio.run(run_headless_client(url))
     else:

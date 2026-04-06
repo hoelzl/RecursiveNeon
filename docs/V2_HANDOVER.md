@@ -1,7 +1,7 @@
 # V2 Handover Document
 
 > **Date**: 2025-03-23 (updated 2026-04-06)
-> **Status**: Phases 0-6l complete, Phase 7a (shell buffer completions) complete. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c (tech debt), 7d (extensibility), 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
+> **Status**: Phases 0-7b complete. 1770 passing tests + 13 xfail (TD-006 regressions). **Phase 7c (tech debt cleanup) is next**, followed by 7d (extensibility), 7e (game hooks), 7f (TUI apps), then Phase 8 (browser terminal + desktop GUI). Detailed descriptions of phases 6b-6k have been moved to [V2_HANDOVER-archive.md](./V2_HANDOVER-archive.md).
 > **Branch**: `master` (orphan branch, initial commit: `384e373`)
 
 > **Editor design principle: Emacs is the ground truth.** For every
@@ -198,6 +198,7 @@ backend/
     unit/shell/test_task_program.py   # Task CLI program tests
     unit/shell/test_tui.py            # TUI framework: ScreenBuffer, runner lifecycle (Phase 4)
     unit/shell/test_codebreaker.py    # CodeBreaker: game logic, TUI app, key handling (Phase 4)
+    unit/shell/test_wsclient_batch.py # WS client --command batch mode (Phase 7b-4)
     unit/editor/__init__.py
     unit/editor/test_buffer.py        # Buffer primitives, insertion, deletion, movement (101 tests)
     unit/editor/test_mark.py          # Mark comparison, copying, move_to (22 tests)
@@ -1114,9 +1115,22 @@ Tests (harness-only, since raw input is mocked): run `codebreaker` from shell bu
 
 ---
 
-#### 7b. Shell pipeline completeness
+#### 7b. Shell pipeline completeness — **DONE** (1770 tests; +40 from 7a's 1730)
 
 **Goal**: Close the gaps Phase 5 left in the cooked shell pipeline. Four small deferrals, one sub-phase.
+
+Landed all four sub-items:
+
+- **7b-1. Recursive globs (`**`)** — `_match_glob` rewritten with `_match_recursive` and `_collect_all` for depth-first traversal. `**/*.txt` (any depth), `Documents/**` (everything under), `**/notes.md` (name at any depth), `deep/**/c.txt` (between literals), `**` alone (all files). Combined with `?` and `[...]`. Quoted `**` not expanded. 13 tests.
+- **7b-2. Stderr redirection** — `Redirect` gained `fd` field (1=stdout, 2=stderr). `Pipeline` gained `stderr_redirect` field. `parse_pipeline` recognises `2>`, `2>>`, `2>&1`. New `_extract_redirect_target` helper for multi-redirect parsing. `Shell.execute_line` routes stderr via `stderr_output` parameter on `_execute_tokens` and `_make_program_context`. New `MergedStderrOutput` class for `2>&1` (routes `error()` to stdout stream). 17 tests.
+- **7b-3. Builtins in pipes** — Builtins already safely discarded piped stdin. Added stderr routing for builtins via error-stream swapping when `stderr_output` is set. 5 tests.
+- **7b-4. WS client `--command` batch mode** — `run_batch_client()` in `client.py`: connects, waits for prompt, sends command, collects output, sends `exit`, disconnects. ANSI stripped when stdout is not a TTY. `--command`/`-c` flag in `__main__.py`. Exit code reflects command result. Persistent sessions remain deferred. 6 tests.
+
+**Files modified**: `shell/glob.py` (recursive glob engine), `shell/parser.py` (stderr redirect parsing), `shell/output.py` (`MergedStderrOutput`), `shell/shell.py` (stderr routing in execute_line), `wsclient/client.py` (`run_batch_client`), `wsclient/__main__.py` (`--command` flag).
+
+**New test files**: `tests/unit/shell/test_wsclient_batch.py` (6 tests). Extensions to `test_glob.py` (+13), `test_pipeline.py` (+17), `test_builtins.py` (+5).
+
+The original plan and spec are preserved below.
 
 ##### 7b-1. Recursive globs (`**`)
 Extend `expand_globs()` in `shell/glob.py` so `**` matches zero-or-more directories:

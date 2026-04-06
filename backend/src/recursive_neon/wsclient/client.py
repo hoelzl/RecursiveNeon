@@ -130,6 +130,85 @@ async def run_client(url: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def run_batch_client(url: str, command: str) -> int:
+    """Connect, run a single command, print its output, and disconnect.
+
+    Args:
+        url: WebSocket URL to connect to.
+        command: Shell command to execute.
+
+    Returns:
+        Exit code from the command (0 = success, non-zero = error).
+    """
+    import re
+
+    is_tty = sys.stdout.isatty()
+    _ansi_re = re.compile(r"\033\[[0-9;]*[A-Za-z]")
+
+    exit_code = 0
+
+    try:
+        async with connect(url) as ws:
+            # Wait for the initial prompt
+            prompt_received = False
+            while not prompt_received:
+                raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
+                msg = json.loads(raw)
+                if msg.get("type") == "prompt":
+                    prompt_received = True
+                elif msg.get("type") == "output" and is_tty:
+                    sys.stdout.write(msg.get("text", ""))
+
+            # Send the command
+            await ws.send(json.dumps({"type": "input", "line": command}))
+
+            # Send exit immediately after so the session terminates
+            # after the command finishes.
+            exit_sent = False
+
+            while True:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                except TimeoutError:
+                    break
+                msg = json.loads(raw)
+                msg_type = msg.get("type")
+
+                if msg_type == "output":
+                    text = msg.get("text", "")
+                    if not is_tty:
+                        text = _ansi_re.sub("", text)
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+
+                elif msg_type == "prompt":
+                    if not exit_sent:
+                        # Command finished — send exit
+                        await ws.send(json.dumps({"type": "input", "line": "exit"}))
+                        exit_sent = True
+                    else:
+                        # Second prompt after exit — we're done
+                        break
+
+                elif msg_type == "exit":
+                    break
+
+                elif msg_type == "error":
+                    err = msg.get("message", "Unknown error")
+                    sys.stderr.write(f"Server error: {err}\n")
+                    exit_code = 1
+
+    except OSError as e:
+        print(f"Connection failed: {e}", file=sys.stderr)
+        print(f"Is the server running at {url}?", file=sys.stderr)
+        return 1
+    except TimeoutError:
+        print("Timeout waiting for server response", file=sys.stderr)
+        return 1
+
+    return exit_code
+
+
 async def run_headless_client(url: str) -> None:
     """Connect and run a headless session reading JSON from stdin.
 

@@ -32,6 +32,7 @@ from recursive_neon.shell.output import (
     RED,
     RESET,
     CapturedOutput,
+    MergedStderrOutput,
     Output,
 )
 from recursive_neon.shell.parser import (
@@ -275,7 +276,9 @@ class Shell:
     async def execute_line(self, line: str) -> int:
         """Parse and execute a single command line.
 
-        Supports pipes (``|``) and output redirection (``>``, ``>>``).
+        Supports pipes (``|``), stdout redirection (``>``, ``>>``),
+        stderr redirection (``2>``, ``2>>``), and stderr-to-stdout
+        merging (``2>&1``).
 
         Returns:
             Exit code (0 = success, -1 = exit requested, other = error).
@@ -289,14 +292,34 @@ class Shell:
         if not pipeline.segments or not pipeline.segments[0].tokens:
             return 0
 
-        # Simple case: single command, no redirect
-        if len(pipeline.segments) == 1 and pipeline.redirect is None:
+        has_redirect = (
+            pipeline.redirect is not None or pipeline.stderr_redirect is not None
+        )
+
+        # Simple case: single command, no redirect, no stderr redirect
+        if len(pipeline.segments) == 1 and not has_redirect:
             tokens = expand_globs(
                 pipeline.segments[0].tokens,
                 self.session.cwd_id,
                 self.session.container.app_service,
             )
             return await self._execute_tokens(tokens, self.output)
+
+        # Determine if stderr should merge into stdout (2>&1)
+        merge_stderr = (
+            pipeline.stderr_redirect is not None
+            and pipeline.stderr_redirect.target == "&1"
+        )
+        # Determine if stderr should go to a file
+        stderr_to_file = (
+            pipeline.stderr_redirect is not None
+            and pipeline.stderr_redirect.target != "&1"
+        )
+
+        # Create a stderr capture buffer if redirecting stderr to a file
+        stderr_captured: CapturedOutput | None = None
+        if stderr_to_file:
+            stderr_captured = CapturedOutput()
 
         # Pipeline / redirect execution
         stdin_text: str | None = None
@@ -310,22 +333,51 @@ class Shell:
             )
             is_last = i == len(pipeline.segments) - 1
 
+            # Decide stderr destination for this segment
+            seg_stderr: Output | None = None
+            if merge_stderr:
+                # Will be set to the captured stdout below
+                pass
+            elif stderr_captured is not None:
+                seg_stderr = stderr_captured
+
             if not is_last or pipeline.redirect is not None:
                 # Capture stdout for piping or redirect
                 captured = CapturedOutput()
+                if merge_stderr:
+                    seg_stderr = MergedStderrOutput(captured)
                 last_exit = await self._execute_tokens(
-                    tokens, captured, stdin=stdin_text
+                    tokens,
+                    captured,
+                    stdin=stdin_text,
+                    stderr_output=seg_stderr,
                 )
                 stdin_text = captured.text
             else:
-                # Last segment, no redirect — write to real output
+                # Last segment, no stdout redirect — write to real output
+                if merge_stderr:
+                    seg_stderr = MergedStderrOutput(self.output)
                 last_exit = await self._execute_tokens(
-                    tokens, self.output, stdin=stdin_text
+                    tokens,
+                    self.output,
+                    stdin=stdin_text,
+                    stderr_output=seg_stderr,
                 )
 
-        # Handle redirect
+        # Handle stdout redirect
         if pipeline.redirect is not None:
             self._write_redirect(pipeline.redirect, stdin_text or "")
+
+        # Handle stderr redirect to file
+        if (
+            pipeline.stderr_redirect is not None
+            and pipeline.stderr_redirect.target != "&1"
+            and stderr_captured is not None
+        ):
+            self._write_redirect(
+                pipeline.stderr_redirect,
+                stderr_captured.error_text or "",
+            )
 
         return last_exit
 
@@ -335,6 +387,7 @@ class Shell:
         output: Output,
         *,
         stdin: str | None = None,
+        stderr_output: Output | None = None,
     ) -> int:
         """Execute a single command from expanded tokens.
 
@@ -342,6 +395,9 @@ class Shell:
             tokens: Expanded argv-style tokens (first is command name).
             output: Where stdout goes (may be CapturedOutput for pipes).
             stdin: Piped input from a previous command, or None.
+            stderr_output: Where stderr goes.  Defaults to ``self.output``
+                (the real terminal).  Pass a :class:`CapturedOutput` for
+                stderr redirection.
 
         Returns:
             Exit code.
@@ -350,31 +406,49 @@ class Shell:
             return 0
 
         name = tokens[0]
+        err_out = stderr_output or self.output
 
         # Handle -h / --help for any known command
         if len(tokens) >= 2 and tokens[1] in ("-h", "--help"):
             return self._show_command_help(name)
 
-        # 1. Check builtins (builtins don't participate in pipes)
+        # 1. Check builtins
         if name in self.builtins:
+            # If stderr is being redirected, route the builtin's error()
+            # calls to the stderr target by swapping the error stream.
+            builtin_output = output
+            if stderr_output is not None and stderr_output is not output:
+                builtin_output = Output(
+                    stream=output._stream,
+                    err_stream=stderr_output._err_stream,
+                    color=stderr_output._color,
+                )
             try:
-                return await self.builtins[name](self.session, tokens, output)
+                return await self.builtins[name](
+                    self.session,
+                    tokens,
+                    builtin_output,
+                )
             except Exception as e:
-                self.output.error(f"{name}: {e}")
+                err_out.error(f"{name}: {e}")
                 return 1
 
         # 2. Check system programs
         program = self.programs.get(name)
         if program is not None:
-            ctx = self._make_program_context(tokens, output=output, stdin=stdin)
+            ctx = self._make_program_context(
+                tokens,
+                output=output,
+                stdin=stdin,
+                stderr_output=stderr_output,
+            )
             try:
                 return await program.run(ctx)
             except Exception as e:
-                # Errors go to the real output, not the pipe
-                self.output.error(f"{name}: {e}")
+                err_out.error(f"{name}: {e}")
                 return 1
 
-        self.output.error(f"nsh: command not found: {name}")
+        err_out.error(f"nsh: command not found: {name}")
         return 127
 
     def _write_redirect(self, redirect: Redirect, content: str) -> None:
@@ -431,6 +505,7 @@ class Shell:
         *,
         output: Output | None = None,
         stdin: str | None = None,
+        stderr_output: Output | None = None,
     ) -> ProgramContext:
         """Create a ProgramContext from current session state."""
         env = dict(self.session.env)
@@ -443,7 +518,7 @@ class Shell:
         return ProgramContext(
             args=args,
             stdout=stdout,
-            stderr=self.output,  # stderr always goes to real output
+            stderr=stderr_output or self.output,
             env=env,
             services=self.session.container,
             cwd_id=self.session.cwd_id,

@@ -4,7 +4,7 @@
 
 Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
 
-**Status**: V2 reboot. Phases 0-6l complete + Phase 7a (shell buffer completions: read-only regions, text attributes with ANSI colours, async bridge, interactive programs via Future-based get_line, TUI app passthrough) done. 1730 passing tests + 13 xfail (TD-006 regressions). **Phase 7b (shell pipeline completeness) is next**, followed by 7c-7f, then Phase 8 (browser terminal + desktop GUI).
+**Status**: V2 reboot. Phases 0-7b complete. 1770 passing tests + 13 xfail (TD-006 regressions). **Phase 7c (tech debt cleanup) is next**, followed by 7d-7f, then Phase 8 (browser terminal + desktop GUI).
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -59,7 +59,7 @@ cd backend
 
 **Utility**: `help`, `clear`, `echo`, `env`, `whoami`, `hostname`, `date`, `save`
 
-**Shell features**: Glob expansion (`*.txt`, `Documents/*.txt`), pipes (`cat file | grep pattern`), output redirection (`echo hello > file.txt`, `>> file.txt`). Tab completion is context-sensitive (per-command flags, subcommands, dynamic note/task/NPC refs).
+**Shell features**: Glob expansion (`*.txt`, `Documents/*.txt`, `**/*.txt` recursive), pipes (`cat file | grep pattern`), output redirection (`echo hello > file.txt`, `>> file.txt`), stderr redirection (`2> err.txt`, `2>> err.txt`, `2>&1`). Tab completion is context-sensitive (per-command flags, subcommands, dynamic note/task/NPC refs).
 
 **Persistence**: Game state auto-saves on exit to `game_data/`, and periodically during WebSocket sessions. Manual save via `save` command. Files: `filesystem.json`, `notes.json`, `tasks.json`, `npcs.json`, `history.txt`.
 
@@ -69,8 +69,8 @@ cd backend
 - Shell REPL: `backend/src/recursive_neon/shell/shell.py` (transport-agnostic via `InputSource` protocol)
 - Shell programs: `backend/src/recursive_neon/shell/programs/` (filesystem, notes, tasks, chat, codebreaker, sysmon, utility)
 - Completion: `backend/src/recursive_neon/shell/completion.py` (`CompletionContext`, per-command completers)
-- Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, virtual filesystem matching)
-- Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect`)
+- Glob expansion: `backend/src/recursive_neon/shell/glob.py` (`expand_globs`, `**` recursive matching)
+- Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect` with fd/stderr, `Pipeline.stderr_redirect`)
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
 - Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`)
@@ -79,7 +79,7 @@ cd backend
 - ANSI parser: `backend/src/recursive_neon/editor/ansi_parser.py` (`parse_ansi` — ANSI text to `(text, attr)` runs)
 - Editor shell host: `backend/src/recursive_neon/shell/programs/edit.py` (file I/O callbacks, path completion, shell factory)
 - WS terminal: `backend/src/recursive_neon/terminal.py` (session manager, `WebSocketInput`, `QueueOutput`, raw mode)
-- WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`)
+- WS client: `backend/src/recursive_neon/wsclient/` (`python -m recursive_neon.wsclient`, `--command` batch mode)
 - Backend main: `backend/src/recursive_neon/main.py` (includes `/ws/terminal` endpoint)
 - DI container: `backend/src/recursive_neon/dependencies.py`
 - Models: `backend/src/recursive_neon/models/`

@@ -173,10 +173,18 @@ def tokenize_ext(line: str) -> list[Token]:
 
 @dataclass(slots=True)
 class Redirect:
-    """Output redirection target."""
+    """Output redirection target.
+
+    Attributes:
+        mode: ``">"`` (overwrite) or ``">>"`` (append).
+        target: Filename (after tokenization), or ``"&1"`` for fd merging.
+        fd: File descriptor being redirected: ``1`` for stdout,
+            ``2`` for stderr.
+    """
 
     mode: str  # ">" or ">>"
-    target: str  # Filename (after tokenization)
+    target: str  # Filename (after tokenization), or "&1" for merge
+    fd: int = 1  # 1 = stdout, 2 = stderr
 
 
 @dataclass(slots=True)
@@ -189,23 +197,33 @@ class PipelineSegment:
 
 @dataclass(slots=True)
 class Pipeline:
-    """A parsed command line that may contain pipes and/or redirection."""
+    """A parsed command line that may contain pipes and/or redirection.
+
+    Attributes:
+        segments: One or more pipe-separated commands.
+        redirect: Stdout redirection (fd=1), if any.
+        stderr_redirect: Stderr redirection (fd=2), if any.  When the
+            target is ``"&1"`` this means "merge stderr into stdout".
+    """
 
     segments: list[PipelineSegment]
     redirect: Redirect | None = None
+    stderr_redirect: Redirect | None = None
 
 
 def parse_pipeline(line: str) -> Pipeline:
     """Parse a command line into pipe segments and optional redirection.
 
-    Splits *line* at unquoted ``|``, ``>``, and ``>>`` operators.
-    Each segment is tokenized independently via :func:`tokenize_ext`.
+    Splits *line* at unquoted ``|``, ``>``, ``>>``, ``2>``, ``2>>``,
+    and ``2>&1`` operators.  Each segment is tokenized independently
+    via :func:`tokenize_ext`.
 
     Args:
         line: Raw input string.
 
     Returns:
-        A :class:`Pipeline` with one or more segments and an optional
+        A :class:`Pipeline` with one or more segments, an optional
+        stdout :class:`Redirect`, and an optional stderr
         :class:`Redirect`.
 
     Raises:
@@ -215,6 +233,7 @@ def parse_pipeline(line: str) -> Pipeline:
     # Walk the line, tracking quote state, to find unquoted operators
     segments_raw: list[str] = []
     redirect: Redirect | None = None
+    stderr_redirect: Redirect | None = None
     current_start = 0
     i = 0
     n = len(line)
@@ -239,19 +258,56 @@ def parse_pipeline(line: str) -> Pipeline:
             if redirect is not None:
                 raise ValueError("Cannot pipe after redirection")
             segment_text = line[current_start:i]
-            if not segment_text.strip():
+            if not segment_text.strip() and not segments_raw:
                 raise ValueError("Empty command before |")
-            segments_raw.append(segment_text)
+            if segment_text.strip():
+                segments_raw.append(segment_text)
             i += 1
+            current_start = i
+
+        elif ch == "2" and i + 1 < n and line[i + 1] == ">":
+            # stderr redirection: 2>, 2>>, 2>&1
+            if stderr_redirect is not None:
+                raise ValueError("Multiple stderr redirections")
+            segment_text = line[current_start:i]
+            if not segment_text.strip() and not segments_raw:
+                raise ValueError("Empty command before 2>")
+            if segment_text.strip():
+                segments_raw.append(segment_text)
+
+            i += 2  # skip "2>"
+
+            # Check for 2>> (append)
+            if i < n and line[i] == ">":
+                mode = ">>"
+                i += 1
+            else:
+                mode = ">"
+
+            # Check for 2>&1 (merge stderr into stdout)
+            remaining_after = line[i:].lstrip()
+            if remaining_after.startswith("&1"):
+                stderr_redirect = Redirect(mode=mode, target="&1", fd=2)
+                i = line.index("&1", i) + 2
+                current_start = i
+                continue
+
+            # Everything up to the next operator is the target
+            target_text, consumed = _extract_redirect_target(line, i)
+            if not target_text:
+                raise ValueError("Missing stderr redirect target")
+            stderr_redirect = Redirect(mode=mode, target=target_text, fd=2)
+            i += consumed
             current_start = i
 
         elif ch == ">":
             if redirect is not None:
-                raise ValueError("Multiple redirections")
+                raise ValueError("Multiple stdout redirections")
             segment_text = line[current_start:i]
-            if not segment_text.strip():
+            if not segment_text.strip() and not segments_raw:
                 raise ValueError("Empty command before >")
-            segments_raw.append(segment_text)
+            if segment_text.strip():
+                segments_raw.append(segment_text)
 
             # Check for >> (append)
             if i + 1 < n and line[i + 1] == ">":
@@ -261,17 +317,13 @@ def parse_pipeline(line: str) -> Pipeline:
                 mode = ">"
                 i += 1
 
-            # Everything after the redirect operator is the target
-            target_text = line[i:].strip()
+            # Everything up to the next operator is the target
+            target_text, consumed = _extract_redirect_target(line, i)
             if not target_text:
                 raise ValueError("Missing redirect target")
-            target_tokens = tokenize(target_text)
-            if len(target_tokens) != 1:
-                raise ValueError("Redirect target must be a single filename")
-            redirect = Redirect(mode=mode, target=target_tokens[0])
-            # Consumed the rest of the line
-            current_start = n
-            break
+            redirect = Redirect(mode=mode, target=target_text, fd=1)
+            i += consumed
+            current_start = i
 
         else:
             i += 1
@@ -280,7 +332,7 @@ def parse_pipeline(line: str) -> Pipeline:
     remaining = line[current_start:].strip()
     if remaining:
         segments_raw.append(line[current_start:])
-    elif segments_raw and redirect is None:
+    elif segments_raw and redirect is None and stderr_redirect is None:
         # We had pipe(s) but nothing after the last one
         raise ValueError("Empty command after |")
     elif not segments_raw:
@@ -295,4 +347,87 @@ def parse_pipeline(line: str) -> Pipeline:
             raise ValueError("Empty command in pipeline")
         segments.append(PipelineSegment(raw=raw, tokens=tokens))
 
-    return Pipeline(segments=segments, redirect=redirect)
+    return Pipeline(
+        segments=segments,
+        redirect=redirect,
+        stderr_redirect=stderr_redirect,
+    )
+
+
+def _extract_redirect_target(line: str, start: int) -> tuple[str, int]:
+    """Extract a redirect target starting at *start* in *line*.
+
+    Reads a single token (respecting quotes), stopping at whitespace
+    or a redirect/pipe operator.  The remainder of the line after the
+    target is left for the main ``parse_pipeline`` loop to process.
+
+    Returns:
+        ``(target, chars_consumed)`` where *target* is the unquoted
+        filename and *chars_consumed* is how far past *start* we read.
+
+    Raises:
+        ValueError: If the target is empty or contains multiple tokens.
+    """
+    # Skip leading whitespace
+    i = start
+    n = len(line)
+    while i < n and line[i] in (" ", "\t"):
+        i += 1
+
+    if i >= n:
+        return "", i - start
+
+    # Find end of the target token
+    token_start = i
+    in_dq = False
+    in_sq = False
+    while i < n:
+        ch = line[i]
+        if in_dq:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == '"':
+                in_dq = False
+            i += 1
+            continue
+        if in_sq:
+            if ch == "'":
+                in_sq = False
+            i += 1
+            continue
+        if ch == '"':
+            in_dq = True
+            i += 1
+            continue
+        if ch == "'":
+            in_sq = True
+            i += 1
+            continue
+        if ch in (" ", "\t"):
+            break
+        i += 1
+
+    token_text = line[token_start:i].strip()
+    if not token_text:
+        return "", i - start
+
+    # Tokenize to strip quotes
+    tokens = tokenize(token_text)
+    if len(tokens) != 1:
+        raise ValueError("Redirect target must be a single filename")
+
+    # Check that what follows is either EOL, whitespace + another
+    # operator, or another redirect — NOT another plain word.
+    j = i
+    while j < n and line[j] in (" ", "\t"):
+        j += 1
+    if (
+        j < n
+        and line[j] not in ("|", ">")
+        and not (j + 1 < n and line[j] == "2" and line[j + 1] == ">")
+    ):
+        # There's another token after the target that isn't an operator
+        raise ValueError("Redirect target must be a single filename")
+
+    return tokens[0], i - start

@@ -235,6 +235,129 @@ class TestExpandGlobs:
 
 
 # ---------------------------------------------------------------------------
+# Recursive globs (**) — Phase 7b-1
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRecursiveGlobs:
+    """Tests for ** recursive glob expansion."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_deep_tree(self, test_container):
+        """Create a deep directory tree for recursive glob tests.
+
+        Structure (in addition to initial_fs):
+            /deep/
+            /deep/a.txt
+            /deep/sub/
+            /deep/sub/b.txt
+            /deep/sub/inner/
+            /deep/sub/inner/c.txt
+            /deep/sub/inner/notes.md
+        """
+        self.svc = test_container.app_service
+        self.root_id = test_container.game_state.filesystem.root_id
+
+        deep = self.svc.create_directory({"name": "deep", "parent_id": self.root_id})
+        self.svc.create_file({"name": "a.txt", "parent_id": deep.id, "content": "a"})
+        sub = self.svc.create_directory({"name": "sub", "parent_id": deep.id})
+        self.svc.create_file({"name": "b.txt", "parent_id": sub.id, "content": "b"})
+        inner = self.svc.create_directory({"name": "inner", "parent_id": sub.id})
+        self.svc.create_file({"name": "c.txt", "parent_id": inner.id, "content": "c"})
+        self.svc.create_file(
+            {"name": "notes.md", "parent_id": inner.id, "content": "notes"}
+        )
+
+    def _expand(self, pattern: str) -> list[str]:
+        tokens = [Token("cmd", False), Token(pattern, False)]
+        result = expand_globs(tokens, self.root_id, self.svc)
+        return result[1:]  # skip "cmd"
+
+    def test_double_star_slash_txt(self):
+        """**/*.txt matches .txt files at any depth under cwd."""
+        matches = self._expand("**/*.txt")
+        # Should find files in root, deep/, deep/sub/, deep/sub/inner/
+        assert "deep/a.txt" in matches
+        assert "deep/sub/b.txt" in matches
+        assert "deep/sub/inner/c.txt" in matches
+        # Also welcome.txt and Documents/*.txt from initial_fs
+        assert "welcome.txt" in matches
+
+    def test_double_star_slash_md(self):
+        """**/*.md matches .md files at any depth."""
+        matches = self._expand("**/*.md")
+        assert "deep/sub/inner/notes.md" in matches
+
+    def test_dir_double_star(self):
+        """deep/** matches everything under deep/ recursively."""
+        matches = self._expand("deep/**")
+        assert "deep/a.txt" in matches
+        assert "deep/sub/" in matches
+        assert "deep/sub/b.txt" in matches
+        assert "deep/sub/inner/" in matches
+        assert "deep/sub/inner/c.txt" in matches
+        assert "deep/sub/inner/notes.md" in matches
+
+    def test_double_star_specific_name(self):
+        """**/notes.md matches notes.md at any depth."""
+        matches = self._expand("**/notes.md")
+        assert "deep/sub/inner/notes.md" in matches
+
+    def test_dir_between_literals(self):
+        """deep/**/c.txt matches c.txt at any depth under deep/."""
+        matches = self._expand("deep/**/c.txt")
+        assert "deep/sub/inner/c.txt" in matches
+
+    def test_double_star_at_root(self):
+        """** alone matches everything under cwd."""
+        matches = self._expand("**")
+        # Should include files and dirs recursively
+        assert "deep/" in matches
+        assert "deep/a.txt" in matches
+        assert "deep/sub/inner/notes.md" in matches
+        assert "welcome.txt" in matches
+
+    def test_double_star_combined_with_question(self):
+        """**/?.*  matches single-char filenames at any depth."""
+        matches = self._expand("**/?.*")
+        assert "deep/a.txt" in matches
+        assert "deep/sub/b.txt" in matches
+        assert "deep/sub/inner/c.txt" in matches
+
+    def test_double_star_combined_with_bracket(self):
+        """**/[ab].txt matches a.txt and b.txt at any depth."""
+        matches = self._expand("**/[ab].txt")
+        assert "deep/a.txt" in matches
+        assert "deep/sub/b.txt" in matches
+        assert "deep/sub/inner/c.txt" not in matches
+
+    def test_no_match_passthrough(self):
+        """Unmatched ** glob passes through as literal."""
+        tokens = [Token("cat", False), Token("**/nonexistent.xyz", False)]
+        result = expand_globs(tokens, self.root_id, self.svc)
+        assert result == ["cat", "**/nonexistent.xyz"]
+
+    def test_quoted_double_star_not_expanded(self):
+        """Quoted ** is not expanded."""
+        tokens = [Token("cat", False), Token("**/*.txt", True)]
+        result = expand_globs(tokens, self.root_id, self.svc)
+        assert result == ["cat", "**/*.txt"]
+
+    def test_absolute_double_star(self):
+        """/deep/**/*.txt with absolute path."""
+        matches = self._expand("/deep/**/*.txt")
+        assert "/deep/a.txt" in matches
+        assert "/deep/sub/b.txt" in matches
+        assert "/deep/sub/inner/c.txt" in matches
+
+    def test_results_sorted(self):
+        """Recursive glob results are sorted alphabetically."""
+        matches = self._expand("**/*.txt")
+        assert matches == sorted(matches)
+
+
+# ---------------------------------------------------------------------------
 # Integration with Shell.execute_line
 # ---------------------------------------------------------------------------
 
@@ -297,4 +420,18 @@ class TestGlobIntegration:
         exit_code = await shell.execute_line("echo *.txt")
         assert exit_code == 0
         # Should contain actual filenames, not "*.txt" (unless no match)
+        assert "welcome.txt" in output.text
+
+    @pytest.mark.asyncio
+    async def test_echo_recursive_glob(self, shell, output):
+        """echo **/*.txt should expand recursively."""
+        # Create a nested file so there's something to match
+        svc = shell.session.container.app_service
+        root_id = shell.session.container.game_state.filesystem.root_id
+        sub = svc.create_directory({"name": "rsub", "parent_id": root_id})
+        svc.create_file({"name": "deep.txt", "parent_id": sub.id, "content": ""})
+
+        exit_code = await shell.execute_line("echo **/*.txt")
+        assert exit_code == 0
+        assert "rsub/deep.txt" in output.text
         assert "welcome.txt" in output.text

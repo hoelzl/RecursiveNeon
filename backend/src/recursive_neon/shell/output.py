@@ -101,6 +101,24 @@ class CapturedOutput(Output):
         self._err_buf.seek(0)
 
 
+class MergedStderrOutput(Output):
+    """Output that routes ``error()`` calls to the stdout stream.
+
+    Used when ``2>&1`` merges stderr into stdout: errors appear in the
+    same buffer as normal output, with no colour formatting (since the
+    merged stream is typically captured or piped).
+    """
+
+    def __init__(self, stdout_stream: Output) -> None:
+        # Pass the stdout stream's underlying stream for both stdout and
+        # stderr so that error() writes go to the same buffer.
+        super().__init__(
+            stream=stdout_stream._stream,
+            err_stream=stdout_stream._stream,
+            color=False,
+        )
+
+
 class QueueOutput(Output):
     """Output that pushes text fragments to an asyncio.Queue.
 

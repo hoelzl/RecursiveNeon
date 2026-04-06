@@ -70,11 +70,11 @@ class TestParsePipeline:
             parse_pipeline("ls |")
 
     def test_multiple_redirections(self):
-        with pytest.raises(ValueError, match="single filename"):
+        with pytest.raises(ValueError, match="Multiple stdout redirections"):
             parse_pipeline("echo foo > a.txt > b.txt")
 
     def test_pipe_after_redirect(self):
-        with pytest.raises(ValueError, match="single filename"):
+        with pytest.raises(ValueError, match="Cannot pipe after redirection"):
             parse_pipeline("echo foo > a.txt | cat")
 
     def test_empty_input(self):
@@ -291,3 +291,142 @@ class TestPipeWithRedirectIntegration:
         exit_code = await shell.execute_line("cat match.txt")
         assert exit_code == 0
         assert "alpha" in output.text
+
+
+# ---------------------------------------------------------------------------
+# Stderr redirection — Phase 7b-2
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestParseStderrRedirection:
+    """Parser-level tests for 2>, 2>>, 2>&1 forms."""
+
+    def test_stderr_redirect(self):
+        p = parse_pipeline("cat foo 2> err.txt")
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.mode == ">"
+        assert p.stderr_redirect.target == "err.txt"
+        assert p.stderr_redirect.fd == 2
+        assert p.redirect is None
+
+    def test_stderr_append(self):
+        p = parse_pipeline("cat foo 2>> err.txt")
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.mode == ">>"
+        assert p.stderr_redirect.target == "err.txt"
+
+    def test_stderr_merge_into_stdout(self):
+        p = parse_pipeline("cat foo 2>&1")
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.target == "&1"
+        assert p.stderr_redirect.fd == 2
+
+    def test_stdout_and_stderr_separate(self):
+        """cmd > out 2> err splits streams."""
+        p = parse_pipeline("cat foo > out.txt 2> err.txt")
+        assert p.redirect is not None
+        assert p.redirect.target == "out.txt"
+        assert p.redirect.fd == 1
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.target == "err.txt"
+        assert p.stderr_redirect.fd == 2
+
+    def test_stdout_redirect_and_stderr_merge(self):
+        """cmd > all 2>&1 merges stderr into stdout then redirects."""
+        p = parse_pipeline("cat foo > all.txt 2>&1")
+        assert p.redirect is not None
+        assert p.redirect.target == "all.txt"
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.target == "&1"
+
+    def test_stderr_merge_with_pipe(self):
+        """cmd 2>&1 | grep merges into the pipe."""
+        p = parse_pipeline("cat foo 2>&1 | grep bar")
+        assert len(p.segments) == 2
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.target == "&1"
+
+    def test_stderr_redirect_quoted_filename(self):
+        p = parse_pipeline('cat foo 2> "error log.txt"')
+        assert p.stderr_redirect is not None
+        assert p.stderr_redirect.target == "error log.txt"
+
+    def test_missing_stderr_target(self):
+        with pytest.raises(ValueError, match="Missing stderr redirect target"):
+            parse_pipeline("cat foo 2>")
+
+    def test_multiple_stderr_redirections(self):
+        with pytest.raises(ValueError, match="Multiple stderr"):
+            parse_pipeline("cat foo 2> a.txt 2> b.txt")
+
+    def test_stderr_fd_field_default(self):
+        """Default fd on Redirect is 1 (stdout)."""
+        p = parse_pipeline("echo hello > out.txt")
+        assert p.redirect is not None
+        assert p.redirect.fd == 1
+
+
+@pytest.mark.unit
+class TestStderrRedirectIntegration:
+    """Integration tests for stderr redirection through Shell.execute_line."""
+
+    @pytest.mark.asyncio
+    async def test_stderr_to_file(self, shell, output):
+        """cmd 2> file captures stderr to the file."""
+        exit_code = await shell.execute_line("cat nonexistent 2> err.txt")
+        assert exit_code != 0
+
+        output.reset()
+        exit_code = await shell.execute_line("cat err.txt")
+        assert exit_code == 0
+        assert "nonexistent" in output.text
+
+    @pytest.mark.asyncio
+    async def test_stderr_append_to_file(self, shell, output):
+        """cmd 2>> file appends stderr."""
+        await shell.execute_line("cat nofile1 2> err.txt")
+        await shell.execute_line("cat nofile2 2>> err.txt")
+
+        output.reset()
+        exit_code = await shell.execute_line("cat err.txt")
+        assert exit_code == 0
+        assert "nofile1" in output.text
+        assert "nofile2" in output.text
+
+    @pytest.mark.asyncio
+    async def test_split_stdout_stderr(self, shell, output):
+        """cmd > out 2> err writes stdout and stderr to separate files."""
+        # echo produces stdout; cat nonexistent produces stderr.
+        # Use a pipe to combine.
+        await shell.execute_line("echo hello > out.txt")
+
+        output.reset()
+        exit_code = await shell.execute_line("cat out.txt")
+        assert exit_code == 0
+        assert "hello" in output.text
+
+    @pytest.mark.asyncio
+    async def test_merge_stderr_into_stdout_redirect(self, shell, output):
+        """cmd > all 2>&1 captures both stdout and stderr to the file."""
+        # cat nonexistent produces stderr; 2>&1 merges into stdout redirect
+        await shell.execute_line("cat nonexistent > all.txt 2>&1")
+
+        output.reset()
+        exit_code = await shell.execute_line("cat all.txt")
+        assert exit_code == 0
+        assert "nonexistent" in output.text
+
+    @pytest.mark.asyncio
+    async def test_merge_stderr_into_pipe(self, shell, output):
+        """cmd 2>&1 | grep should let grep see stderr output."""
+        exit_code = await shell.execute_line("cat nonexistent 2>&1 | grep nonexistent")
+        assert exit_code == 0
+        assert "nonexistent" in output.text
+
+    @pytest.mark.asyncio
+    async def test_stderr_redirect_stdout_unaffected(self, shell, output):
+        """2> file should not capture stdout."""
+        await shell.execute_line("echo hello 2> err.txt")
+        # stdout should go to real output
+        assert "hello" in output.text

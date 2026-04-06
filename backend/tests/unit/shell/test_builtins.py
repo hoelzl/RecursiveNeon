@@ -81,3 +81,62 @@ class TestExport:
         result = await builtin_export(session, ["export", "NEWVAR"], output)
         assert result == 0
         assert session.env["NEWVAR"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Builtins in pipes — Phase 7b-3
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def shell(test_container, output):
+    from recursive_neon.shell.shell import Shell
+
+    return Shell(container=test_container, output=output)
+
+
+@pytest.mark.unit
+class TestBuiltinsInPipes:
+    """Builtins must not crash when participating in pipelines."""
+
+    @pytest.mark.asyncio
+    async def test_echo_pipe_cd(self, shell, output):
+        """echo foo | cd bar does not crash."""
+        exit_code = await shell.execute_line("echo foo | cd Documents")
+        assert exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_cd_error_in_pipe(self, shell, output):
+        """cd to nonexistent dir in a pipe reports error properly."""
+        exit_code = await shell.execute_line("echo foo | cd nonexistent")
+        assert exit_code == 1
+
+    @pytest.mark.asyncio
+    async def test_export_pipe_wc(self, shell, output):
+        """export | cat passes output through pipe."""
+        exit_code = await shell.execute_line("export | cat")
+        assert exit_code == 0
+        # export lists env vars; cat passes them through
+        assert "USER=" in output.text
+
+    @pytest.mark.asyncio
+    async def test_cd_stderr_redirect(self, shell, output):
+        """cd error goes to stderr redirect file."""
+        exit_code = await shell.execute_line("cd nonexistent 2> err.txt")
+        assert exit_code == 1
+
+        output.reset()
+        exit_code = await shell.execute_line("cat err.txt")
+        assert exit_code == 0
+        assert "nonexistent" in output.text
+
+    @pytest.mark.asyncio
+    async def test_export_stdout_redirect(self, shell, output):
+        """export > file captures env vars to a file."""
+        exit_code = await shell.execute_line("export > env.txt")
+        assert exit_code == 0
+
+        output.reset()
+        exit_code = await shell.execute_line("cat env.txt")
+        assert exit_code == 0
+        assert "USER=" in output.text

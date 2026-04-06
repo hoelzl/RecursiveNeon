@@ -2,6 +2,21 @@
 
 All notable changes to Recursive://Neon are documented here.
 
+## Phase 7b — Shell Pipeline Completeness (2026-04-06)
+
+### Added
+- **Recursive globs (`**`)** (7b-1) — `expand_globs()` now handles `**` patterns for zero-or-more directory matching. Supports `**/*.txt` (any depth), `Documents/**` (everything under), `**/notes.md` (specific name at any depth), `deep/**/c.txt` (between literals), and `**` alone (all files). Combined with `?` and `[...]`. Recursive traversal stays bounded to the virtual filesystem. 13 new tests in `test_glob.py`.
+- **Stderr redirection** (7b-2) — Parser recognises `2>`, `2>>`, and `2>&1` redirect forms. `Redirect` dataclass gained `fd` field (1=stdout, 2=stderr). `Pipeline` gained `stderr_redirect` field. All five forms work: `cmd 2> file`, `cmd 2>> file`, `cmd > out 2> err`, `cmd > all 2>&1`, `cmd 2>&1 | grep`. New `MergedStderrOutput` class routes `error()` calls to the stdout stream for `2>&1` merging. 17 new tests in `test_pipeline.py`.
+- **Builtins in pipes** (7b-3) — Builtins (`cd`, `exit`, `export`) verified to work correctly in pipelines: they safely discard piped stdin and now route stderr through the redirect infrastructure when `2>` is used. 5 new tests in `test_builtins.py`.
+- **WS client `--command` batch mode** (7b-4) — `python -m recursive_neon.wsclient --command "ls Documents"` connects to the server, runs a single command, prints output, and disconnects. ANSI codes are stripped when stdout is not a TTY (for pipeline use). Exit code reflects command success/failure. `-c` short flag available. Persistent sessions remain deferred. 6 new tests in `test_wsclient_batch.py`.
+- **40 new tests** across 4 files. **1770 passing tests total** (+40 from 7a's 1730).
+
+### Changed
+- **`shell/glob.py`** — `_match_glob` refactored into `_match_simple` (original single-level logic) and `_match_recursive` + `_collect_all` (new depth-first `**` traversal).
+- **`shell/parser.py`** — `parse_pipeline` rewritten to handle multiple redirect operators in a single line. New `_extract_redirect_target` helper parses one token at a time, allowing `> out 2> err` combinations.
+- **`shell/shell.py`** — `_execute_tokens` and `_make_program_context` gained `stderr_output` parameter. `execute_line` routes stderr based on `Pipeline.stderr_redirect`. Builtin error-stream swapped when stderr is redirected.
+- **`wsclient/__main__.py`** — Added `--command`/`-c` argument; batch mode exits with the command's exit code.
+
 ## Phase 7a — Shell Buffer Completions (2026-04-06)
 
 ### Added
