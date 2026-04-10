@@ -216,8 +216,10 @@ class TestPortScanScanning:
         app.on_key("Enter")  # port 1 is OPEN
         screen = app.on_key("ArrowRight")  # just to re-render
         assert screen is not None
-        all_text = "\n".join(screen.lines)
-        assert "OPEN" in all_text
+        # Check the actual grid row (row 3) contains the OPEN label,
+        # not just the legend or message area.
+        grid_row = screen.lines[3]
+        assert "OPEN" in grid_row
 
     def test_tab_switches_to_sequence(self):
         app = _make_app()
@@ -540,3 +542,69 @@ class TestPortScanRendering:
         assert screen is not None
         all_text = "\n".join(screen.lines)
         assert "Sequence" in all_text
+
+
+# ── Additional coverage ─────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestPortScanAdditional:
+    def _to_sequence(self, app: PortScanApp) -> None:
+        app.on_start(80, 24)
+        app.on_key("Enter")
+        app.on_key("Tab")
+
+    def test_q_exits_from_sequence(self):
+        app = _make_app()
+        self._to_sequence(app)
+        assert app.on_key("q") is None
+
+    def test_escape_exits_from_sequence(self):
+        app = _make_app()
+        self._to_sequence(app)
+        assert app.on_key("Escape") is None
+
+    def test_correct_ports_wrong_order_wins(self):
+        """Order-insensitive: [11, 1, 6] should win (answer is [1, 6, 11])."""
+        app = _make_app()
+        self._to_sequence(app)
+        _enter_sequence(app, [11, 1, 6])
+        app.on_key("Enter")
+        assert app.state.phase == Phase.WON
+
+    def test_duplicate_port_rejected_on_submit(self):
+        """Submitting a sequence with duplicate port numbers is rejected."""
+        app = _make_app()
+        self._to_sequence(app)
+        # Manually set duplicate slots (bypass digit entry)
+        app.state.sequence_slots = [1, 1, 6]
+        app.on_key("Enter")
+        assert app.state.phase == Phase.SEQUENCE
+        assert "once" in app.state.message.lower()
+
+    def test_feedback_counts_unique_matches(self):
+        """Wrong sequence feedback counts unique correct ports, not duplicates."""
+        app = _make_app()
+        self._to_sequence(app)
+        # Enter [1, 2, 3] against answer [1, 6, 11] → 1/3 correct
+        _enter_sequence(app, [1, 2, 3])
+        app.on_key("Enter")
+        assert app.state.phase == Phase.LOCKOUT
+        assert "1/3" in app.state.message
+
+    def test_scanned_port_type_in_grid_row(self):
+        """Scanned port type label appears on the grid row, not just legend."""
+        app = _make_app()
+        app.on_start(80, 24)
+        # Scan port 1 (OPEN) — grid row 3
+        app.on_key("Enter")
+        screen = app.on_key("ArrowRight")
+        assert screen is not None
+        # OPEN should be in the grid row (row 3), not just legend
+        assert "OPEN" in screen.lines[3]
+
+    def test_small_terminal(self):
+        """Small terminal should not crash."""
+        app = _make_app()
+        screen = app.on_start(40, 12)
+        assert screen is not None

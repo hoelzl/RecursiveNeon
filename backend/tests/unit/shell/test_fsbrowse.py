@@ -511,3 +511,97 @@ class TestFsBrowseAppStartPath:
         app.on_start(80, 24)
         # content is None → treated as ""
         assert app.state.preview_lines == [""]
+
+
+# ── Tiny terminal ───────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestFsBrowseTinyTerminal:
+    def test_on_start_very_small_height(self, populated_fs):
+        """Terminal with height <= 4 should not crash."""
+        app = _make_app(populated_fs)
+        screen = app.on_start(30, 3)
+        assert screen is not None
+        assert screen.width == 30
+
+    def test_on_start_height_5(self, populated_fs):
+        """Terminal with exactly 5 rows (content_rows=0) should not crash."""
+        app = _make_app(populated_fs)
+        screen = app.on_start(80, 5)
+        assert screen is not None
+
+    def test_on_resize_to_tiny(self, populated_fs):
+        """Resizing to tiny terminal should not crash."""
+        app = _make_app(populated_fs)
+        app.on_start(80, 24)
+        screen = app.on_resize(20, 3)
+        assert screen is not None
+
+    def test_narrow_terminal(self, populated_fs):
+        """Very narrow terminal should not crash."""
+        app = _make_app(populated_fs)
+        screen = app.on_start(22, 24)
+        assert screen is not None
+        assert screen.width == 22
+
+
+# ── on_after_key / editor launch ─────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestFsBrowseOnAfterKey:
+    @pytest.mark.asyncio
+    async def test_on_after_key_noop_without_pending(self, populated_fs):
+        app = _make_app(populated_fs)
+        app.on_start(80, 24)
+        result = await app.on_after_key()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_on_after_key_noop_without_launcher(self, populated_fs):
+        app = _make_app(populated_fs)
+        app.on_start(80, 24)
+        # Move to log.txt and set pending edit without a launcher
+        app.on_key("ArrowDown")
+        app.on_key("ArrowDown")
+        app._pending_edit = app.state.selected_node
+        result = await app.on_after_key()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_on_after_key_launches_editor(self, populated_fs):
+        app = _make_app(populated_fs)
+        app.on_start(80, 24)
+
+        launched = []
+
+        async def fake_launcher(tui_app):
+            launched.append(tui_app)
+            return 0
+
+        app.set_tui_launcher(fake_launcher)
+
+        # Move to log.txt and press 'e'
+        app.on_key("ArrowDown")
+        app.on_key("ArrowDown")
+        app.on_key("e")
+        assert app._pending_edit is not None
+
+        result = await app.on_after_key()
+        assert len(launched) == 1
+        assert result is not None  # re-renders after editor exits
+
+
+# ── _sorted_dir_first ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestSortedDirFirst:
+    def test_static_method(self, populated_fs):
+        svc, root_id = populated_fs
+        children = svc.list_directory(root_id)
+        result = FsBrowseState._sorted_dir_first(children)
+        names = [e.name for e in result]
+        # Dirs first, then files, both alphabetical
+        assert names == ["Documents", "Programs", "log.txt"]

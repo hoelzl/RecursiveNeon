@@ -305,3 +305,352 @@ class TestIssue52Fix:
         assert child_app.keys == ["a"]
         assert "y" in parent.keys
         assert "z" in parent.keys
+
+    @pytest.mark.asyncio
+    async def test_child_crash_parent_survives(self):
+        """If a child app raises in on_key, the parent loop continues."""
+        keys = AsyncKeyQueue()
+        output = DummyOutput()
+        screens: list[str] = []
+
+        def track_screen(msg: dict) -> None:
+            lines = msg.get("lines", [])
+            screens.append(lines[0] if lines else "")
+
+        class CrashingChild:
+            tick_interval_ms = 0
+
+            def on_start(self, w, h):
+                s = ScreenBuffer.create(w, h)
+                s.set_line(0, "CRASH_CHILD")
+                return s
+
+            def on_key(self, key):
+                raise RuntimeError("child crashed!")
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+        child_app = CrashingChild()
+
+        class ParentApp:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self.keys: list[str] = []
+                self._after_queue: list = []
+
+            def set_tui_launcher(self, launcher):
+                self.tui_launcher = launcher
+
+            def on_start(self, w, h):
+                s = ScreenBuffer.create(w, h)
+                s.set_line(0, "PARENT")
+                return s
+
+            def on_key(self, key):
+                self.keys.append(key)
+                if key == "Q":
+                    return None
+                s = ScreenBuffer.create(80, 24)
+                s.set_line(0, f"PARENT got {key}")
+                return s
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            async def on_after_key(self):
+                while self._after_queue:
+                    cb = self._after_queue.pop(0)
+                    await cb()
+                await asyncio.sleep(0)
+                return None
+
+        parent = ParentApp()
+        parent_task = asyncio.create_task(
+            run_tui_app(
+                parent, keys, output, width=80, height=24, send_screen=track_screen
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        async def spawn_child():
+            asyncio.create_task(parent.tui_launcher(child_app))
+
+        parent._after_queue.append(spawn_child)
+        keys.feed("x")
+        await asyncio.sleep(0.1)
+
+        # Feed a key that will cause the child to crash
+        keys.feed("a")
+        await asyncio.sleep(0.1)
+
+        # Parent should still be alive — send more keys
+        keys.feed("y")
+        await asyncio.sleep(0.01)
+        keys.feed("Q")
+        await asyncio.sleep(0.05)
+
+        await asyncio.wait_for(parent_task, timeout=5.0)
+
+        # Parent survived the child crash
+        assert "y" in parent.keys
+
+    @pytest.mark.asyncio
+    async def test_child_receives_tui_launcher(self):
+        """Child app gets set_tui_launcher called before on_start."""
+        keys = AsyncKeyQueue()
+        output = DummyOutput()
+        screens: list[str] = []
+
+        def track_screen(msg: dict) -> None:
+            lines = msg.get("lines", [])
+            screens.append(lines[0] if lines else "")
+
+        class LauncherTrackingChild:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self.got_launcher = False
+
+            def set_tui_launcher(self, launcher):
+                self.got_launcher = True
+
+            def on_start(self, w, h):
+                s = ScreenBuffer.create(w, h)
+                s.set_line(0, "CHILD")
+                return s
+
+            def on_key(self, key):
+                if key == "Escape":
+                    return None
+                return ScreenBuffer.create(80, 24)
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+        child_app = LauncherTrackingChild()
+
+        class ParentApp:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self.keys: list[str] = []
+                self._after_queue: list = []
+
+            def set_tui_launcher(self, launcher):
+                self.tui_launcher = launcher
+
+            def on_start(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            def on_key(self, key):
+                self.keys.append(key)
+                if key == "Q":
+                    return None
+                return ScreenBuffer.create(80, 24)
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            async def on_after_key(self):
+                while self._after_queue:
+                    cb = self._after_queue.pop(0)
+                    await cb()
+                await asyncio.sleep(0)
+                return None
+
+        parent = ParentApp()
+        parent_task = asyncio.create_task(
+            run_tui_app(
+                parent, keys, output, width=80, height=24, send_screen=track_screen
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        async def spawn_child():
+            asyncio.create_task(parent.tui_launcher(child_app))
+
+        parent._after_queue.append(spawn_child)
+        keys.feed("x")
+        await asyncio.sleep(0.1)
+
+        keys.feed("Escape")
+        await asyncio.sleep(0.1)
+
+        keys.feed("Q")
+        await asyncio.sleep(0.05)
+
+        await asyncio.wait_for(parent_task, timeout=5.0)
+
+        assert child_app.got_launcher
+
+    @pytest.mark.asyncio
+    async def test_child_on_after_key_called(self):
+        """Child app's on_after_key is drained after each keystroke."""
+        keys = AsyncKeyQueue()
+        output = DummyOutput()
+
+        class AfterKeyChild:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self.after_key_calls = 0
+
+            def on_start(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            def on_key(self, key):
+                if key == "Escape":
+                    return None
+                return ScreenBuffer.create(80, 24)
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            async def on_after_key(self):
+                self.after_key_calls += 1
+                return None
+
+        child_app = AfterKeyChild()
+
+        class ParentApp:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self._after_queue: list = []
+
+            def set_tui_launcher(self, launcher):
+                self.tui_launcher = launcher
+
+            def on_start(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            def on_key(self, key):
+                if key == "Q":
+                    return None
+                return ScreenBuffer.create(80, 24)
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            async def on_after_key(self):
+                while self._after_queue:
+                    cb = self._after_queue.pop(0)
+                    await cb()
+                await asyncio.sleep(0)
+                return None
+
+        parent = ParentApp()
+        parent_task = asyncio.create_task(
+            run_tui_app(
+                parent,
+                keys,
+                output,
+                width=80,
+                height=24,
+                send_screen=lambda msg: None,
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        async def spawn_child():
+            asyncio.create_task(parent.tui_launcher(child_app))
+
+        parent._after_queue.append(spawn_child)
+        keys.feed("x")
+        await asyncio.sleep(0.1)
+
+        # Feed 3 keys to the child
+        keys.feed("a")
+        await asyncio.sleep(0.01)
+        keys.feed("b")
+        await asyncio.sleep(0.01)
+        keys.feed("c")
+        await asyncio.sleep(0.01)
+        keys.feed("Escape")
+        await asyncio.sleep(0.1)
+
+        keys.feed("Q")
+        await asyncio.sleep(0.05)
+
+        await asyncio.wait_for(parent_task, timeout=5.0)
+
+        # on_after_key should have been called once per key
+        assert child_app.after_key_calls == 3
+
+    @pytest.mark.asyncio
+    async def test_double_launch_child_raises(self):
+        """Calling launch_child while one is pending raises RuntimeError."""
+        keys = AsyncKeyQueue()
+        output = DummyOutput()
+
+        child_a = TrackingApp("A")
+        child_b = TrackingApp("B")
+        launch_errors: list[Exception] = []
+
+        class ParentApp:
+            tick_interval_ms = 0
+
+            def __init__(self):
+                self._after_queue: list = []
+
+            def set_tui_launcher(self, launcher):
+                self.tui_launcher = launcher
+
+            def on_start(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            def on_key(self, key):
+                if key == "Q":
+                    return None
+                return ScreenBuffer.create(80, 24)
+
+            def on_resize(self, w, h):
+                return ScreenBuffer.create(w, h)
+
+            async def on_after_key(self):
+                while self._after_queue:
+                    cb = self._after_queue.pop(0)
+                    await cb()
+                await asyncio.sleep(0)
+                return None
+
+        parent = ParentApp()
+        parent_task = asyncio.create_task(
+            run_tui_app(
+                parent,
+                keys,
+                output,
+                width=80,
+                height=24,
+                send_screen=lambda msg: None,
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        async def spawn_both():
+            # Launch first child (this will block until child exits)
+            asyncio.create_task(parent.tui_launcher(child_a))
+            await asyncio.sleep(0)
+            # Try to launch second child while first is pending
+            try:
+                await parent.tui_launcher(child_b)
+            except RuntimeError as e:
+                launch_errors.append(e)
+            # Don't await task_a — it will complete when the child exits
+
+        parent._after_queue.append(spawn_both)
+        keys.feed("x")
+        await asyncio.sleep(0.2)
+
+        # Exit the first child and the parent
+        keys.feed("Escape")
+        await asyncio.sleep(0.1)
+        keys.feed("Q")
+        await asyncio.sleep(0.05)
+
+        await asyncio.wait_for(parent_task, timeout=5.0)
+
+        assert len(launch_errors) == 1
+        assert "already pending" in str(launch_errors[0])

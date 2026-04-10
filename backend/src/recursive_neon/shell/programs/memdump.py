@@ -99,6 +99,10 @@ class MemDumpState:
         hidden: list[HiddenPattern] = []
         for text, offset in patterns:
             encoded = text.encode("ascii")
+            if offset < 0 or offset + len(encoded) > MEM_SIZE:
+                raise ValueError(
+                    f"Pattern {text!r} at offset {offset} exceeds memory bounds"
+                )
             mem[offset : offset + len(encoded)] = encoded
             hidden.append(HiddenPattern(text=text, offset=offset))
 
@@ -165,8 +169,21 @@ def _generate_game(rng: random.Random) -> MemDumpState:
                 placed = True
                 break
         if not placed:  # pragma: no cover
-            # Fallback: place at end
-            offset = MEM_SIZE - len(encoded)
+            # Fallback: scan from the end for a non-overlapping position
+            for fallback_off in range(MEM_SIZE - len(encoded), -1, -1):
+                fb_end = fallback_off + len(encoded)
+                fb_conflict = False
+                for existing in patterns:
+                    ex_start = existing.offset
+                    ex_end = ex_start + len(existing.text)
+                    if not (fb_end <= ex_start or fallback_off >= ex_end):
+                        fb_conflict = True
+                        break
+                if not fb_conflict:
+                    offset = fallback_off
+                    break
+            else:
+                offset = MEM_SIZE - len(encoded)
             mem[offset : offset + len(encoded)] = encoded
             patterns.append(HiddenPattern(text=text, offset=offset))
 
@@ -210,6 +227,17 @@ class MemDumpApp:
             return self._render()
 
         # ── Playing ──────────────────────────────────────────────
+
+        # Deferred loss check: when the move budget is exhausted, only
+        # Enter (free) is still allowed so the player can confirm a
+        # pattern they just finished typing.
+        if s.moves_remaining <= 0 and key != "Enter":
+            if key in ("q", "Escape", "ArrowUp", "ArrowDown"):
+                pass  # allow navigation / exit below
+            else:
+                self._check_loss()
+                return self._render()
+
         if key in ("q", "Escape"):
             if s.search:
                 # Clear search first
@@ -225,8 +253,6 @@ class MemDumpApp:
                 s.search = s.search[:-1]
                 s.moves_remaining -= 1
                 s.message = ""
-                if s.moves_remaining <= 0:
-                    self._check_loss()
         elif key == "ArrowUp":
             s.scroll_offset = max(0, s.scroll_offset - 1)
         elif key == "ArrowDown":
@@ -236,14 +262,14 @@ class MemDumpApp:
             s.search += key
             s.moves_remaining -= 1
             s.message = ""
-            if s.moves_remaining <= 0:
-                self._check_loss()
 
         return self._render()
 
     def on_resize(self, width: int, height: int) -> ScreenBuffer:
         self.width = width
         self.height = height
+        max_scroll = max(0, NUM_ROWS - self._visible_rows())
+        self.state.scroll_offset = min(self.state.scroll_offset, max_scroll)
         return self._render()
 
     # ── Actions ──────────────────────────────────────────────────
@@ -416,7 +442,7 @@ class MemDumpApp:
 
             # Extra space between groups of 8
             if i == 7:
-                hex_parts.append(" ")
+                hex_parts.append("")
 
         parts.append(" ".join(hex_parts))
 

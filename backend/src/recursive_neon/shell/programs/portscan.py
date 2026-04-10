@@ -294,7 +294,12 @@ class PortScanApp:
 
         guess = [v for v in s.sequence_slots if v is not None]
 
-        if guess == s.answer:
+        # Reject duplicate port numbers
+        if len(set(guess)) != len(guess):
+            s.message = "Each port can only appear once in the sequence"
+            return
+
+        if sorted(guess) == s.answer:
             s.phase = Phase.WON
             s.message = (
                 f"{GREEN}{BOLD}*** ACCESS GRANTED ***{RESET}  "
@@ -316,7 +321,7 @@ class PortScanApp:
             return
 
         # Wrong guess — lockout countdown
-        in_answer = sum(1 for g in guess if g in s.answer)
+        in_answer = len(set(guess) & set(s.answer))
         s.message = (
             f"{YELLOW}Wrong sequence!{RESET} "
             f"{in_answer}/{len(s.answer)} ports correct. "
@@ -343,23 +348,22 @@ class PortScanApp:
             style=DIM,
         )
 
-        # Port grid
+        # Port grid — build each row as a single string to avoid
+        # set_region truncating ANSI escape codes inside styled cells.
         grid_start_row = 3
         cell_width = 8
-        grid_pixel_width = GRID_COLS * cell_width
-        grid_left = max(2, (self.width - grid_pixel_width) // 2)
+        grid_char_width = GRID_COLS * cell_width
+        grid_left = max(2, (self.width - grid_char_width) // 2)
 
         for row_idx in range(GRID_ROWS):
             row = grid_start_row + row_idx * 2
+            parts: list[str] = [" " * grid_left]
             for col_idx in range(GRID_COLS):
                 port_idx = row_idx * GRID_COLS + col_idx
                 port = s.ports[port_idx]
-
                 is_cursor = port_idx == s.cursor and s.phase == Phase.SCANNING
-
-                cell_text = self._render_port_cell(port, is_cursor)
-                col = grid_left + col_idx * cell_width
-                screen.set_region(row, col, cell_width, cell_text)
+                parts.append(self._render_port_cell(port, is_cursor))
+            screen.set_line(row, "".join(parts))
 
         # Stats bar
         stats_row = grid_start_row + GRID_ROWS * 2 + 1
@@ -437,17 +441,24 @@ class PortScanApp:
         return screen
 
     def _render_port_cell(self, port: Port, is_cursor: bool) -> str:
-        """Render a single port cell."""
+        """Render a single port cell (8 visible chars).
+
+        Builds the plain-text cell first, then wraps with ANSI styles
+        so escape codes never affect the visible width.
+        """
         if port.scanned:
-            style = _PORT_STYLE[port.port_type]
             label = _PORT_LABEL[port.port_type]
-            inner = f"{style}{label:^4}{RESET}"
+            # Plain: "[OPEN] " = 8 chars (label centered in 4)
+            plain = f"[{label:^4}] "
+            style = _PORT_STYLE[port.port_type]
+            inner_styled = f"[{style}{label:^4}{RESET}] "
         else:
-            inner = f" {port.number:02d} "
+            plain = f"[ {port.number:02d} ] "
+            inner_styled = plain
 
         if is_cursor:
-            return f"\033[7m[{inner}\033[7m]{RESET} "
-        return f"[{inner}] "
+            return f"\033[7m{plain}{RESET}"
+        return inner_styled
 
     def _render_sequence_entry(self, screen: ScreenBuffer, row: int) -> None:
         """Render the sequence input slots."""

@@ -82,7 +82,12 @@ async def run_tui_app(
         Called from background tasks (e.g., shell-in-editor).  Sets a
         pending-child slot and blocks until the parent loop finishes
         running the child.
+
+        Raises ``RuntimeError`` if a child is already pending (only one
+        child can be queued at a time).
         """
+        if _pending_child[0] is not None:
+            raise RuntimeError("A child TUI app is already pending")
         done = asyncio.Event()
         _pending_child[0] = (child_app, done)
         await done.wait()
@@ -157,16 +162,20 @@ async def run_tui_app(
             if _pending_child[0] is not None:
                 child_app, child_done = _pending_child[0]
                 _pending_child[0] = None
-                await _run_child_inline(
-                    child_app,
-                    child_done,
-                    raw_input,
-                    output,
-                    send_screen=send_screen,
-                    resize_source=resize_source,
-                    width=cur_w,
-                    height=cur_h,
-                )
+                try:
+                    await _run_child_inline(
+                        child_app,
+                        child_done,
+                        raw_input,
+                        output,
+                        send_screen=send_screen,
+                        resize_source=resize_source,
+                        width=cur_w,
+                        height=cur_h,
+                        launch_child=launch_child,
+                    )
+                except Exception:
+                    logger.exception("child TUI app crashed")
                 # Yield so the background task can finish post-command
                 # work (e.g., insert prompt into buffer).
                 await asyncio.sleep(0)
@@ -196,6 +205,7 @@ async def _run_child_inline(
     resize_source: Callable[[], tuple[int, int] | None] | None = None,
     width: int = 80,
     height: int = 24,
+    launch_child: Callable | None = None,
 ) -> None:
     """Run a child TUI app inside the parent's key loop.
 
@@ -204,6 +214,10 @@ async def _run_child_inline(
     exits, then signals the background task to resume.
     """
     cur_w, cur_h = width, height
+
+    # Inject TUI launcher so the child can itself launch nested children
+    if launch_child is not None and hasattr(child_app, "set_tui_launcher"):
+        child_app.set_tui_launcher(launch_child)
 
     screen = child_app.on_start(cur_w, cur_h)
     _deliver_screen(screen, output, send_screen)
@@ -247,6 +261,13 @@ async def _run_child_inline(
             if result is None:
                 break
             _deliver_screen(result, output, send_screen)
+
+            # Drain async post-key work (mirrors parent loop)
+            on_after = getattr(child_app, "on_after_key", None)
+            if on_after is not None:
+                after_result = await on_after()
+                if after_result is not None:
+                    _deliver_screen(after_result, output, send_screen)
     finally:
         child_done.set()
 

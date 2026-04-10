@@ -304,6 +304,13 @@ class TestMemDumpLoss:
         for _ in range(MAX_MOVES):
             app.on_key("Z")
 
+        # After the last keystroke, player is at 0 moves but still
+        # PLAYING — they get one more chance to press Enter.
+        assert app.state.phase == Phase.PLAYING
+        assert app.state.moves_remaining == 0
+
+        # The next non-Enter key triggers the loss.
+        app.on_key("Z")
         assert app.state.phase == Phase.LOST
         assert "OUT OF MOVES" in app.state.message
 
@@ -313,6 +320,8 @@ class TestMemDumpLoss:
 
         for _ in range(MAX_MOVES):
             app.on_key("Z")
+        # Trigger deferred loss
+        app.on_key("Z")
 
         # All patterns should be listed as missing
         for p in app.state.patterns:
@@ -331,6 +340,10 @@ class TestMemDumpLoss:
         remaining = app.state.moves_remaining
         for _ in range(remaining):
             app.on_key("Z")
+
+        assert app.state.phase == Phase.PLAYING
+        # Trigger deferred loss
+        app.on_key("Z")
 
         assert app.state.phase == Phase.LOST
         assert app.state.found_count == 1
@@ -431,3 +444,174 @@ class TestMemDumpRendering:
         app.on_start(80, 24)
         result = app.on_key("F1")
         assert result is not None
+
+
+# ── Last-move confirm ────────────────────────────────────���─────────
+
+
+@pytest.mark.unit
+class TestMemDumpLastMoveConfirm:
+    def test_last_move_correct_pattern_allows_confirm(self):
+        """Typing a correct pattern with the last moves, then Enter, wins."""
+        state = MemDumpState.from_patterns(
+            [("ROOT", 0x10), ("KEY", 0x30), ("EXEC", 0x50)],
+            rng=random.Random(42),
+        )
+        # Set moves to exactly the length of "ROOT"
+        state.moves_remaining = 4
+        app = MemDumpApp(state=state)
+        app.on_start(80, 24)
+
+        for ch in "ROOT":
+            app.on_key(ch)
+
+        assert app.state.moves_remaining == 0
+        assert app.state.phase == Phase.PLAYING
+
+        # Enter is free — should confirm the pattern
+        app.on_key("Enter")
+        assert app.state.patterns[0].found
+
+    def test_zero_moves_enter_still_works(self):
+        """At 0 moves, Enter can still confirm a pattern."""
+        state = MemDumpState.from_patterns(
+            [("AB", 0x10)],
+            rng=random.Random(42),
+        )
+        state.moves_remaining = 2
+        app = MemDumpApp(state=state)
+        app.on_start(80, 24)
+
+        app.on_key("A")
+        app.on_key("B")
+        assert app.state.moves_remaining == 0
+
+        app.on_key("Enter")
+        assert app.state.patterns[0].found
+        assert app.state.phase == Phase.WON
+
+    def test_zero_moves_non_enter_triggers_loss(self):
+        """At 0 moves, any non-Enter/navigation key triggers loss."""
+        app = _make_app()
+        app.on_start(80, 24)
+
+        for _ in range(MAX_MOVES):
+            app.on_key("Z")
+
+        assert app.state.phase == Phase.PLAYING
+        app.on_key("X")  # non-Enter key
+        assert app.state.phase == Phase.LOST
+
+    def test_zero_moves_navigation_still_works(self):
+        """At 0 moves, arrow keys and Escape/q still work."""
+        app = _make_app()
+        app.on_start(80, 14)  # small terminal to enable scrolling
+
+        for _ in range(MAX_MOVES):
+            app.on_key("Z")
+
+        assert app.state.phase == Phase.PLAYING
+        # Arrow keys should still scroll
+        result = app.on_key("ArrowDown")
+        assert result is not None
+        assert app.state.phase == Phase.PLAYING
+
+
+# ── Scroll + resize ──────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestMemDumpScrollResize:
+    def test_scroll_clamped_on_resize_larger(self):
+        """Scroll offset is clamped when terminal grows taller."""
+        app = _make_app()
+        app.on_start(80, 14)  # visible=4, max_scroll=12
+
+        # Scroll all the way down
+        for _ in range(20):
+            app.on_key("ArrowDown")
+        assert app.state.scroll_offset > 0
+
+        # Resize to a tall terminal where all rows fit
+        app.on_resize(80, 30)
+        assert app.state.scroll_offset == 0
+
+    def test_scroll_clamps_at_bottom(self):
+        """Scrolling down stops at the maximum offset."""
+        app = _make_app()
+        app.on_start(80, 14)  # visible=4
+
+        for _ in range(50):
+            app.on_key("ArrowDown")
+
+        # max_scroll = NUM_ROWS - visible
+        visible = app._visible_rows()
+        max_scroll = max(0, 16 - visible)
+        assert app.state.scroll_offset == max_scroll
+
+
+# ── Won/Lost exits ──────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestMemDumpEndStateExits:
+    def test_escape_exits_from_won(self):
+        app = _make_app()
+        app.on_start(80, 24)
+
+        for pattern in ["ROOT", "KEY", "EXEC"]:
+            for ch in pattern:
+                app.on_key(ch)
+            app.on_key("Enter")
+
+        assert app.state.phase == Phase.WON
+        assert app.on_key("Escape") is None
+
+    def test_escape_exits_from_lost(self):
+        app = _make_app()
+        app.on_start(80, 24)
+
+        for _ in range(MAX_MOVES):
+            app.on_key("Z")
+        app.on_key("Z")  # trigger deferred loss
+
+        assert app.state.phase == Phase.LOST
+        assert app.on_key("Escape") is None
+
+    def test_ctrl_c_exits_from_won(self):
+        app = _make_app()
+        app.on_start(80, 24)
+
+        for pattern in ["ROOT", "KEY", "EXEC"]:
+            for ch in pattern:
+                app.on_key(ch)
+            app.on_key("Enter")
+
+        assert app.on_key("C-c") is None
+
+    def test_confirm_already_found_pattern(self):
+        """Confirming a pattern that's already found says 'not a target'."""
+        app = _make_app()
+        app.on_start(80, 24)
+
+        # Find ROOT
+        for ch in "ROOT":
+            app.on_key(ch)
+        app.on_key("Enter")
+        assert app.state.patterns[0].found
+
+        # Try to confirm ROOT again — it's still in memory but already found
+        for ch in "ROOT":
+            app.on_key(ch)
+        app.on_key("Enter")
+        assert "not a target" in app.state.message.lower()
+
+
+# ── from_patterns validation ─────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestMemDumpFromPatternsValidation:
+    def test_out_of_bounds_raises(self):
+        with pytest.raises(ValueError, match="exceeds memory bounds"):
+            MemDumpState.from_patterns([("ROOT", MEM_SIZE - 1)])

@@ -42,16 +42,21 @@ class FsBrowseState:
     preview_truncated: bool = False
     message: str = ""
 
-    def refresh_entries(self) -> None:
-        """Reload children of the current directory, sorted dirs-first."""
-        children = self.app_service.list_directory(self.cwd_id)
+    @staticmethod
+    def _sorted_dir_first(children: list[FileNode]) -> list[FileNode]:
+        """Return *children* sorted directories-first, case-insensitive."""
         dirs = sorted(
             (c for c in children if c.type == "directory"), key=lambda n: n.name.lower()
         )
         files = sorted(
             (c for c in children if c.type == "file"), key=lambda n: n.name.lower()
         )
-        self.entries = dirs + files
+        return dirs + files
+
+    def refresh_entries(self) -> None:
+        """Reload children of the current directory, sorted dirs-first."""
+        children = self.app_service.list_directory(self.cwd_id)
+        self.entries = self._sorted_dir_first(children)
         self.cursor = min(self.cursor, max(0, len(self.entries) - 1))
         self.scroll_offset = 0
         self._update_preview()
@@ -71,19 +76,13 @@ class FsBrowseState:
 
         if node.type == "directory":
             children = self.app_service.list_directory(node.id)
+            sorted_children = self._sorted_dir_first(children)
             self.preview_lines = []
-            dirs = sorted(
-                (c for c in children if c.type == "directory"),
-                key=lambda n: n.name.lower(),
-            )
-            files = sorted(
-                (c for c in children if c.type == "file"),
-                key=lambda n: n.name.lower(),
-            )
-            for d in dirs:
-                self.preview_lines.append(f"{DIR_ICON} {d.name}/")
-            for f in files:
-                self.preview_lines.append(f"  {f.name}")
+            for child in sorted_children:
+                if child.type == "directory":
+                    self.preview_lines.append(f"{DIR_ICON} {child.name}/")
+                else:
+                    self.preview_lines.append(f"  {child.name}")
             self.preview_truncated = False
         else:
             content = node.content or ""
@@ -231,29 +230,32 @@ class FsBrowseApp:
         screen = ScreenBuffer.create(self.width, self.height)
         screen.cursor_visible = False
 
-        left_w = max(20, int(self.width * 0.4))
-        right_w = self.width - left_w - 1  # 1 col for separator
+        left_w = min(max(20, int(self.width * 0.4)), self.width - 2)
+        right_w = max(1, self.width - left_w - 1)  # 1 col for separator
 
         # Title bar
         path_display = self.state.current_path()
         title = f" FILE BROWSER \u2500 {path_display} "
         screen.set_line(0, f"{BOLD}{CYAN}{title:{self.width}}{RESET}")
 
-        # Column headers
-        screen.set_region(1, 0, left_w, f"{BOLD}{'  Name':{left_w}}{RESET}")
-        screen.set_region(1, left_w, 1, f"{DIM}\u2502{RESET}")
-        screen.set_region(
-            1, left_w + 1, right_w, f"{BOLD}{' Preview':{right_w}}{RESET}"
+        # Column headers — build full line to avoid ANSI truncation in set_region
+        hdr_left = f"{'  Name':{left_w}}"
+        hdr_right = f"{' Preview':{right_w}}"
+        screen.set_line(
+            1, f"{BOLD}{hdr_left}{RESET}{DIM}\u2502{RESET}{BOLD}{hdr_right}{RESET}"
         )
 
-        # Separator line
-        screen.set_region(2, 0, left_w, "\u2500" * left_w)
-        screen.set_region(2, left_w, 1, "\u253c")
-        screen.set_region(2, left_w + 1, right_w, "\u2500" * right_w)
+        # Separator line (no ANSI, safe for set_line)
+        hline = "\u2500"
+        screen.set_line(2, f"{hline * left_w}\u253c{hline * right_w}")
 
         # Content area (rows 3 to height-3)
         content_start = 3
-        content_rows = self.height - content_start - 2  # reserve 2 rows at bottom
+        content_rows = max(0, self.height - content_start - 2)  # reserve 2 rows
+
+        if content_rows == 0:
+            # Terminal too small — just show title
+            return screen
 
         # Scroll the directory listing
         if self.state.cursor < self.state.scroll_offset:
@@ -261,11 +263,12 @@ class FsBrowseApp:
         elif self.state.cursor >= self.state.scroll_offset + content_rows:
             self.state.scroll_offset = self.state.cursor - content_rows + 1
 
-        # Render directory entries (left pane)
+        # Render directory entries (left pane) + separator + preview (right pane)
         for i in range(content_rows):
             row = content_start + i
             idx = self.state.scroll_offset + i
 
+            # Left pane: directory entry
             if idx < len(self.state.entries):
                 entry = self.state.entries[idx]
                 is_selected = idx == self.state.cursor
@@ -281,42 +284,32 @@ class FsBrowseApp:
                     name_display = entry.name
                     style = "" if not is_selected else "\033[7m"
 
-                # Truncate name to fit left pane
+                # Build plain label, fit to left_w, then wrap with ANSI
                 label = f" {icon} {name_display}"
-                visible_len = len(label)
-                if visible_len > left_w:
+                if len(label) > left_w:
                     label = label[: left_w - 1] + "\u2026"
-
-                if is_selected:
-                    text = f"{style}{label:{left_w}}{RESET}"
-                else:
-                    text = f"{style}{label}{RESET}"
-
-                screen.set_region(row, 0, left_w, text)
+                plain_left = f"{label:{left_w}}"
+                left_part = f"{style}{plain_left}{RESET}" if style else plain_left
             else:
-                screen.set_region(row, 0, left_w, " " * left_w)
+                left_part = " " * left_w
 
             # Separator column
-            screen.set_region(row, left_w, 1, f"{DIM}\u2502{RESET}")
+            sep = f"{DIM}\u2502{RESET}"
 
-            # Preview pane (right side)
+            # Right pane: preview
             if i < len(self.state.preview_lines):
                 pline = self.state.preview_lines[i]
-                # Truncate to fit
                 if len(pline) > right_w - 1:
                     pline = pline[: right_w - 2] + "\u2026"
-                screen.set_region(row, left_w + 1, right_w, f" {pline}")
+                right_part = f" {pline}"
             elif i == len(self.state.preview_lines) and self.state.preview_truncated:
-                screen.set_region(
-                    row,
-                    left_w + 1,
-                    right_w,
-                    f" {DIM}... ({PREVIEW_MAX_LINES} lines shown){RESET}",
-                )
+                right_part = f" {DIM}... ({PREVIEW_MAX_LINES} lines shown){RESET}"
             elif i == 0 and not self.state.entries:
-                screen.set_region(
-                    row, left_w + 1, right_w, f" {DIM}(empty directory){RESET}"
-                )
+                right_part = f" {DIM}(empty directory){RESET}"
+            else:
+                right_part = ""
+
+            screen.set_line(row, f"{left_part}{sep}{right_part}")
 
         # Status bar
         status_row = self.height - 2
