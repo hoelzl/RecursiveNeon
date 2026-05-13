@@ -45,7 +45,11 @@ def container(mock_llm):
 def client(container):
     """A FastAPI TestClient with initialized container."""
     initialize_container(container)
-    return TestClient(app, raise_server_exceptions=False)
+    c = TestClient(app, raise_server_exceptions=False)
+    try:
+        yield c
+    finally:
+        c.close()
 
 
 # ============================================================================
