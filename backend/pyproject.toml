@@ -102,6 +102,7 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
     "ignore:Core Pydantic V1 functionality:UserWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 norecursedirs = [".git", ".tox", "dist", "build", "*.egg", "venv"]
 
