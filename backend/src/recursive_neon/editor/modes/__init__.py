@@ -124,7 +124,11 @@ defmode(
 
 # Extension → mode-name mapping (Emacs: auto-mode-alist).
 # Populated by language mode modules when they register.
-AUTO_MODE_ALIST: dict[str, str] = {}
+AUTO_MODE_ALIST: dict[str, str] = {
+    # Text files use text-mode in GNU Emacs.
+    ".txt": "text-mode",
+    ".text": "text-mode",
+}
 
 
 def detect_mode(filepath: str) -> str:

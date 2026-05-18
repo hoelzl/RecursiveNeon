@@ -17,8 +17,12 @@ Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ```bash
 # Backend setup (uses uv for fast dependency management)
-uv venv --python 3.14 .venv       # Create venv (from repo root)
+uv venv --python 3.13 .venv       # Create venv (from repo root)
 uv pip install -e "backend/.[dev]" # Install project + dev deps
+# Python note: 3.14 is the long-term target but the current pinned pydantic
+# (2.13.4, latest at time of writing) is incompatible with CPython 3.14.0rc2
+# — pydantic passes ``prefer_fwd_module`` to ``typing._eval_type`` which the
+# rc dropped. Use 3.13 until pydantic ships a 3.14-compatible release.
 
 # Run tests (from backend/)
 cd backend

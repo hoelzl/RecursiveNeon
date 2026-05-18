@@ -35,12 +35,15 @@ class TestViewRendering:
         assert screen.lines[0] == "hello"
         assert screen.lines[1] == "world"
 
-    def test_empty_lines_show_tilde(self):
+    def test_empty_lines_past_eob_are_blank(self):
         view = make_view("hello")
         screen = view.on_start(40, 10)
-        # text_height = 10 - 2 = 8, so lines 1-7 should be "~"
-        assert screen.lines[1] == "~"
-        assert screen.lines[7] == "~"
+        # text_height = 10 - 2 = 8, so lines 1-7 are past end of buffer.
+        # GNU Emacs leaves them blank on a TTY (no fringe indicator).
+        for row in range(1, 8):
+            assert screen.lines[row] == "", (
+                f"row {row} should be blank, got {screen.lines[row]!r}"
+            )
 
     def test_cursor_at_origin(self):
         view = make_view("hello")
@@ -84,13 +87,25 @@ class TestViewRendering:
         modeline = screen.lines[view.text_height]
         assert "Documents/notes.txt" in modeline
 
-    def test_modeline_shows_line_col(self):
+    def test_modeline_shows_line_number(self):
         view = make_view("hello\nworld")
         view.editor.buffer.point.line = 1
         view.editor.buffer.point.col = 3
         screen = view._render()
         modeline = screen.lines[view.text_height]
-        assert "L2:C3" in modeline
+        # Default is line-number-mode on, column-number-mode off, matching Emacs.
+        assert "L2" in modeline
+        assert "C3" not in modeline
+
+    def test_modeline_shows_column_when_column_number_mode(self):
+        view = make_view("hello\nworld")
+        view.editor.buffer.local_variables["column-number-mode"] = True
+        view.editor.buffer.point.line = 1
+        view.editor.buffer.point.col = 3
+        screen = view._render()
+        modeline = screen.lines[view.text_height]
+        assert "L2" in modeline
+        assert "C3" in modeline
 
     def test_message_line(self):
         view = make_view("hello")
