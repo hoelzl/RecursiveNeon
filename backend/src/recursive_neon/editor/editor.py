@@ -93,6 +93,13 @@ class Editor:
         # Signature: (partial_path) -> list[str].
         self.path_completer: Callable[[str], list[str]] | None = None
 
+        # Default directory — used to pre-fill the find-file minibuffer,
+        # matching GNU Emacs's ``default-directory`` semantics. Hosts (e.g.
+        # the shell ``edit`` program) should set this to the user's current
+        # working directory so ``C-x C-f`` opens with an editable path
+        # already typed in. Empty string disables the pre-fill.
+        self.default_directory: str = ""
+
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 
@@ -615,15 +622,22 @@ class Editor:
         keymap = self._resolve_keymap()
         target = keymap.lookup(key)
 
+        from recursive_neon.editor.default_commands import (
+            DESCRIBE_KEY_PROMPT,
+            _show_help_buffer,
+        )
+
         if isinstance(target, Keymap):
             # It's a prefix key — re-arm the session so the next key
-            # completes the two-key sequence.
+            # completes the two-key sequence. The echo-area prompt now
+            # shows what's been entered so far (Emacs renders this as
+            # ``Describe ... :  C-x-``).
             self._describe_key_session = _DescribeKeySession(
                 brief=False,
                 prefix=key,
                 prefix_map=target,
             )
-            self.message = f"Describe key: {key}-"
+            self.message = f"{DESCRIBE_KEY_PROMPT} {key}-"
             return
 
         # Check if we're completing a prefix sequence
@@ -642,9 +656,11 @@ class Editor:
                 "",
                 f"  {doc}" if doc else "",
             ]
-            from recursive_neon.editor.default_commands import _show_help_buffer
-
             _show_help_buffer(self, "\n".join(lines))
+            # Mirror the key sequence into the echo area, matching Emacs
+            # so the user can see what was looked up alongside the help
+            # buffer.
+            self.message = f"{DESCRIBE_KEY_PROMPT} {key_str}"
         elif len(key) == 1 and key.isprintable():
             self.message = f"{key_str} runs self-insert-command"
         else:
