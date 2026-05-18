@@ -122,6 +122,12 @@ defmode(
     doc="Major mode for ``*Help*`` buffers (read-only documentation).",
 )
 
+defmode(
+    "completion-list-mode",
+    doc="Major mode for ``*Completions*`` buffers; modeline reads ``(Completion List)``.",
+    indicator="Completion List",
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Auto-mode detection

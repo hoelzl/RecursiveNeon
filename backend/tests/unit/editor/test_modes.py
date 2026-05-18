@@ -263,8 +263,8 @@ class TestDescribeModeUpdated:
     def test_describe_mode_shows_major(self):
         h = make_harness("hello", width=80, height=24)
         h.send_keys("C-h", "m")
-        text = h.buffer_text()
-        assert "Major mode: fundamental-mode" in text
+        # *Help* is now displayed in the other window; check it by name.
+        assert "Major mode: fundamental-mode" in h.buffer_text_named("*Help*")
 
     def test_describe_mode_shows_minor(self):
         defmode("test-dm-minor-6g", is_major=False, doc="A test minor mode")
@@ -272,7 +272,7 @@ class TestDescribeModeUpdated:
             h = make_harness("hello", width=80, height=24)
             h.editor.toggle_minor_mode("test-dm-minor-6g")
             h.send_keys("C-h", "m")
-            text = h.buffer_text()
+            text = h.buffer_text_named("*Help*")
             assert "Minor modes:" in text
             assert "test-dm-minor-6g" in text
         finally:

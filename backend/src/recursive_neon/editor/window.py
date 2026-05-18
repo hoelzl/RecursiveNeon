@@ -85,6 +85,26 @@ class Window:
         self.buffer.point.move_to(self._point.line, self._point.col)
 
     # ------------------------------------------------------------------
+    # Buffer swap
+    # ------------------------------------------------------------------
+
+    def show_buffer(self, buf: Buffer) -> None:
+        """Switch this window to display ``buf``.
+
+        Detaches the current tracked point and creates a new one in
+        ``buf`` (so subsequent edits keep this window's cursor correct).
+        Resets the scroll position to top. No-op when the window already
+        shows ``buf``.
+        """
+        if self.buffer is buf:
+            return
+        self.detach()
+        self.buffer = buf
+        self._point = Mark(buf.point.line, buf.point.col, kind="right")
+        buf.track_mark(self._point)
+        self.scroll_top = 0
+
+    # ------------------------------------------------------------------
     # Scroll helpers
     # ------------------------------------------------------------------
 

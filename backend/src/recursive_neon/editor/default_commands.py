@@ -1738,19 +1738,92 @@ def help_tutorial(ed: Editor, prefix: int | None) -> None:
     ed.buffer.modified = False
 
 
-def _show_help_buffer(ed: Editor, text: str) -> None:
-    """Show text in a read-only ``*Help*`` buffer (``help-mode``)."""
-    if not ed.switch_to_buffer("*Help*"):
-        ed.create_buffer(name="*Help*")
+def _show_popup_buffer(
+    ed: Editor, *, name: str, text: str, major_mode: str
+) -> None:
+    """Populate a read-only popup buffer and show it in the other window.
+
+    Generalises the ``*Help*`` / ``*Completions*`` flow. The active window
+    keeps its current buffer and focus; the popup lives in the next sibling
+    window (creating a horizontal split if there's only one window so far).
+    When no window system is attached (unit tests using ``Editor`` directly),
+    falls back to making the popup the active buffer so callers still see
+    its content via ``ed.buffer``.
+    """
+    previous = ed.buffer
+
+    if not ed.switch_to_buffer(name):
+        ed.create_buffer(name=name)
     buf = ed.buffer
     buf.read_only = False
     buf.lines = text.split("\n")
     buf.point.move_to(0, 0)
     buf.modified = False
     buf.read_only = True
-    # Tag the buffer with ``help-mode`` so the modeline reads ``(Help)``,
-    # matching Emacs's convention for documentation buffers.
-    ed.set_major_mode("help-mode")
+    ed.set_major_mode(major_mode)
+
+    if ed._window_tree is not None:
+        for i, b in enumerate(ed._buffers):
+            if b is previous:
+                ed._current_index = i
+                break
+        ed.display_buffer_other_window(name)
+
+
+def _show_help_buffer(ed: Editor, text: str) -> None:
+    """Show ``text`` in a read-only ``*Help*`` buffer (``help-mode``).
+
+    Displayed in the *other* window so the active window keeps focus,
+    matching GNU Emacs's default ``help-window-select`` of nil. The
+    echo-area hint tells the user how to dismiss the popup (``q`` is
+    bound in ``help-mode``).
+    """
+    _show_popup_buffer(ed, name="*Help*", text=text, major_mode="help-mode")
+    ed.message = "Type q in help window to delete it"
+
+
+def _format_completions(candidates: list[str], *, width: int) -> str:
+    """Format completion candidates the way Emacs's ``*Completions*`` does.
+
+    Emacs lays the (sorted) candidates out row-major in as many columns
+    as the window width allows, preceded by a short instruction block
+    and a "<N> possible completions:" header. We reproduce that shape.
+    """
+    sorted_c = sorted(candidates)
+    n = len(sorted_c)
+    max_w = max((len(c) for c in sorted_c), default=0)
+    col_w = max(max_w + 2, 4)
+    cols = max(1, width // col_w)
+    rows = (n + cols - 1) // cols
+
+    out: list[str] = [
+        "In this buffer, type RET to select the completion near point.",
+        "",
+        f"{n} possible completions:",
+    ]
+    for r in range(rows):
+        chunks: list[str] = []
+        for c in range(cols):
+            i = r * cols + c
+            if i < n:
+                chunks.append(sorted_c[i].ljust(max_w))
+            else:
+                break
+        out.append("  ".join(chunks).rstrip())
+    return "\n".join(out)
+
+
+def _show_completions_buffer(ed: Editor, candidates: list[str]) -> None:
+    """Pop up the ``*Completions*`` buffer for the current minibuffer."""
+    width = 80
+    if ed._window_tree is not None:
+        # Use the active window's width if available — gives a sensible
+        # column count even on narrow frames.
+        width = max(20, ed._window_tree.active._width or 80)
+    text = _format_completions(candidates, width=width)
+    _show_popup_buffer(
+        ed, name="*Completions*", text=text, major_mode="completion-list-mode"
+    )
 
 
 @defcommand(
@@ -2054,6 +2127,28 @@ def delete_window(ed: Editor, prefix: int | None) -> None:
 
 
 @defcommand(
+    "quit-window",
+    "Quit the current window (q in *Help* / *Completions*).",
+)
+def quit_window(ed: Editor, prefix: int | None) -> None:
+    """Dismiss a popup window without disturbing the others.
+
+    Behaves like Emacs's ``quit-window``: if the current window can be
+    deleted (there is more than one), do so and the previously-active
+    window regains focus. When this is the only window, silently no-op
+    (don't error like ``delete-window`` does) so the binding feels safe
+    to press anywhere.
+    """
+    tree = ed._window_tree
+    if tree is None or tree.is_single():
+        return
+    tree.active.sync_from_buffer()
+    new = tree.delete_window()
+    if new is not None:
+        _switch_to_window(ed, new)
+
+
+@defcommand(
     "delete-other-windows",
     "Make the current window fill the frame (C-x 1).",
 )
@@ -2257,5 +2352,14 @@ def build_default_keymap() -> Keymap:
     cx4.bind("C-f", "find-file-other-window")
     cx.bind("4", cx4)
     km.bind("C-x", cx)
+
+    # Mode-local keymap: ``help-mode`` binds ``q`` to quit the window.
+    # The major-mode keymap delegates to ``km`` for every other key, so
+    # navigation (C-n, C-v, etc.) still works inside *Help*.
+    from recursive_neon.editor.modes import MODES
+
+    help_km = Keymap("help-mode", parent=km)
+    help_km.bind("q", "quit-window")
+    MODES["help-mode"].keymap = help_km
 
     return km

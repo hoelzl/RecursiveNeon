@@ -87,6 +87,18 @@ class EditorHarness:
         """Return the full buffer text."""
         return self.editor.buffer.text
 
+    def buffer_text_named(self, name: str) -> str:
+        """Return the text of a buffer looked up by name.
+
+        Useful for inspecting popup buffers like ``*Help*`` and
+        ``*Completions*``, which now live in the "other" window and
+        therefore aren't ``editor.buffer``.
+        """
+        for b in self.editor.buffers:
+            if b.name == name:
+                return b.text
+        raise AssertionError(f"No buffer named {name!r}")
+
     def point(self) -> tuple[int, int]:
         """Return ``(line, col)`` of the buffer point."""
         p = self.editor.buffer.point
