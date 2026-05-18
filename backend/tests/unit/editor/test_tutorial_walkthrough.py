@@ -436,22 +436,28 @@ class TestChapter8FilesAndBuffers:
 class TestChapter9GettingHelp:
     """C-h k / C-h a / C-h t / C-h b (new)."""
 
+    @staticmethod
+    def _buf(h, name: str) -> object:
+        return next(b for b in h.editor.buffers if b.name == name)
+
     def test_describe_key(self) -> None:
         h = make_harness("hello")
         h.send_keys("C-h", "k", "C-f")
-        assert h.editor.buffer.name == "*Help*"
-        assert "forward-char" in h.editor.buffer.text
+        # *Help* is shown in the other window; original buffer keeps focus.
+        assert "forward-char" in self._buf(h, "*Help*").text
 
     def test_command_apropos(self) -> None:
         h = make_harness("hello")
         h.send_keys("C-h", "a")
         h.type_string("forward")
         h.send_keys("Enter")
-        assert h.editor.buffer.name == "*Help*"
-        assert "forward-char" in h.editor.buffer.text
-        assert "forward-word" in h.editor.buffer.text
+        text = self._buf(h, "*Help*").text
+        assert "forward-char" in text
+        assert "forward-word" in text
 
     def test_help_tutorial(self) -> None:
+        # The tutorial loads as a real editable buffer (not *Help*), so
+        # focus moves there as before.
         h = make_harness("hello")
         h.send_keys("C-h", "t")
         assert h.editor.buffer.name == "TUTORIAL.txt"
@@ -461,8 +467,7 @@ class TestChapter9GettingHelp:
         """C-h b lists every keybinding (Phase 6k addition)."""
         h = make_harness("hello")
         h.send_keys("C-h", "b")
-        assert h.editor.buffer.name == "*Help*"
-        text = h.editor.buffer.text
+        text = self._buf(h, "*Help*").text
         assert "Global bindings" in text
         assert "forward-char" in text
         assert "C-x C-s" in text  # nested prefix expanded
@@ -738,7 +743,8 @@ class TestQuickReferenceConsistency:
     def test_all_advertised_commands_present(self) -> None:
         h = make_harness("hello")
         h.send_keys("C-h", "b")
-        bindings_text = h.editor.buffer.text
+        # *Help* lives in the other window; look it up by name.
+        bindings_text = h.buffer_text_named("*Help*")
         # A representative sample spanning every feature category
         expected_commands = [
             "forward-char",

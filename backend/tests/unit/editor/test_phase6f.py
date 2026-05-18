@@ -91,22 +91,30 @@ class TestDescribeKeyBriefly:
 
 
 class TestDescribeMode:
+    # Help buffers are shown in the *other* window now (Emacs default).
+    # The harness's active buffer therefore stays on the original buffer
+    # after ``C-h m``; we look ``*Help*`` up by name in the buffer list.
+
+    @staticmethod
+    def _help(h) -> object:
+        return next(b for b in h.editor.buffers if b.name == "*Help*")
+
     def test_opens_help_buffer(self) -> None:
         h = make_harness("test", width=60, height=20)
         h.send_keys("C-h", "m")
-        assert h.editor.buffer.name == "*Help*"
+        assert any(b.name == "*Help*" for b in h.editor.buffers)
 
     def test_contains_bindings(self) -> None:
         h = make_harness("test", width=60, height=20)
         h.send_keys("C-h", "m")
-        text = h.buffer_text()
+        text = self._help(h).text
         assert "forward-char" in text
         assert "C-f" in text
 
     def test_help_buffer_is_readonly(self) -> None:
         h = make_harness("test", width=60, height=20)
         h.send_keys("C-h", "m")
-        assert h.editor.buffer.read_only is True
+        assert self._help(h).read_only is True
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -607,7 +607,9 @@ class EditorView:
 
         # Mode indicator (major + minor).
         if buf.major_mode:
-            display = buf.major_mode.name.removesuffix("-mode").capitalize()
+            display = buf.major_mode.indicator or (
+                buf.major_mode.name.removesuffix("-mode").capitalize()
+            )
         else:
             display = "Fundamental"
         minor_indicators = "".join(

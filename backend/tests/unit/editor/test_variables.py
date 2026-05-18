@@ -206,7 +206,7 @@ class TestDescribeVariable:
         h.send_keys("C-h", "v")
         h.type_string("fill-column")
         h.send_keys("Enter")
-        text = h.buffer_text()
+        text = h.buffer_text_named("*Help*")
         assert "fill-column" in text
         assert "70" in text
         assert "int" in text
@@ -224,7 +224,7 @@ class TestDescribeVariable:
         h.send_keys("C-h", "v")
         h.type_string("fill-column")
         h.send_keys("Enter")
-        text = h.buffer_text()
+        text = h.buffer_text_named("*Help*")
         assert "120" in text
         assert "Buffer-local" in text
 

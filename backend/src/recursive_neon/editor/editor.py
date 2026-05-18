@@ -254,6 +254,81 @@ class Editor:
                 return True
         return False
 
+    def _completions_visible(self) -> bool:
+        """Return True if a ``*Completions*`` popup window is currently up."""
+        tree = self._window_tree
+        if tree is None or tree.is_single():
+            return False
+        return any(w.buffer.name == "*Completions*" for w in tree.windows())
+
+    def _dismiss_completions_window(self) -> None:
+        """Delete the window showing ``*Completions*`` if one exists.
+
+        Called when the minibuffer closes (or the user typed a key that
+        cleared the "Complete, but not unique" status). Looks through the
+        window tree for the ``*Completions*`` window and removes it,
+        leaving the original layout intact.
+        """
+        tree = self._window_tree
+        if tree is None or tree.is_single():
+            return
+        for win in tree.windows():
+            if win.buffer.name == "*Completions*":
+                # Activate it briefly so ``delete_window`` removes the
+                # right node, then restore the previously-active window.
+                prev_active = tree.active
+                tree.active = win
+                tree.delete_window()
+                # ``delete_window`` already picks a new active — but we
+                # want the user's original window, not whatever it picked.
+                if prev_active in tree.windows():
+                    tree.active = prev_active
+                return
+
+    def display_buffer_other_window(self, name: str) -> bool:
+        """Display the named buffer in a window other than the active one.
+
+        Implements the part of GNU Emacs's ``display-buffer`` that we need
+        for popup buffers (``*Help*``, ``*Completions*``):
+
+        * If there's no window system (``_window_tree`` is unset, as in
+          unit tests that drive the editor without a TUI), fall back to
+          :meth:`switch_to_buffer` so callers get the buffer in *some*
+          visible place.
+        * If only one window exists, split it horizontally and show
+          the buffer in the new (bottom) window.
+        * Otherwise, reuse the next sibling window.
+
+        Focus stays on the originally-active window (matches Emacs's
+        default ``help-window-select`` of nil). Returns True if the
+        buffer was found.
+        """
+        buf = next((b for b in self._buffers if b.name == name), None)
+        if buf is None:
+            return False
+
+        tree = self._window_tree
+        if tree is None:
+            return self.switch_to_buffer(name)
+
+        from recursive_neon.editor.window import SplitDirection
+
+        if tree.is_single():
+            tree.active.sync_from_buffer()
+            target = tree.split(SplitDirection.HORIZONTAL)
+        else:
+            target = tree.other_window()
+            if target is None:
+                return self.switch_to_buffer(name)
+
+        target.show_buffer(buf)
+        if buf.on_focus is not None:
+            # Run the on-focus hook even though focus stays on the
+            # original window — some buffers (e.g. *Buffer List*)
+            # repopulate themselves here.
+            buf.on_focus()
+        return True
+
     # ------------------------------------------------------------------
     # Key processing
     # ------------------------------------------------------------------
@@ -339,7 +414,36 @@ class Editor:
         # Route to minibuffer if active
         if self.minibuffer is not None:
             old_mb = self.minibuffer
+            popup_was_visible = self._completions_visible()
             still_active = old_mb.process_key(key)
+            # *Completions* popup lifecycle:
+            #   * Shown when a TAB lands at the longest common prefix
+            #     (minibuffer sets ``completion_status`` to "Complete,
+            #     but not unique").
+            #   * Dismissed when any non-TAB key fires while the popup
+            #     is on screen — Emacs's behaviour when the user types
+            #     a disambiguating character.
+            #   * Always dismissed when the minibuffer itself closes
+            #     (handled below in the ``not still_active`` branch).
+            #
+            # When the popup is shown we clear the inline
+            # ``[Complete, but not unique]`` suffix from the minibuffer
+            # so the prompt row matches Emacs's bare-prompt look.
+            if old_mb.completion_status == "Complete, but not unique":
+                if self._window_tree is not None:
+                    if not popup_was_visible:
+                        from recursive_neon.editor.default_commands import (
+                            _show_completions_buffer,
+                        )
+
+                        _show_completions_buffer(self, old_mb.last_completions)
+                    # Popup is now the visible signal — drop the inline
+                    # ``[Complete, but not unique]`` suffix. When the
+                    # editor has no window system (unit tests), keep the
+                    # suffix as the only way to surface the status.
+                    old_mb.completion_status = ""
+            elif popup_was_visible and key != "Tab":
+                self._dismiss_completions_window()
             if not still_active:
                 replay = old_mb.replay_key
                 if old_mb.cancelled:
@@ -349,6 +453,9 @@ class Editor:
                     # that opened the minibuffer already consumed any
                     # prefix keymap / prefix-arg state.
                     self.message = "Quit"
+                # When the minibuffer dismisses, also tear down the
+                # *Completions* popup if we have one.
+                self._dismiss_completions_window()
                 # Only clear if the callback didn't start a new minibuffer
                 if self.minibuffer is old_mb:
                     self.minibuffer = None
@@ -657,10 +764,8 @@ class Editor:
                 f"  {doc}" if doc else "",
             ]
             _show_help_buffer(self, "\n".join(lines))
-            # Mirror the key sequence into the echo area, matching Emacs
-            # so the user can see what was looked up alongside the help
-            # buffer.
-            self.message = f"{DESCRIBE_KEY_PROMPT} {key_str}"
+            # ``_show_help_buffer`` sets the echo-area hint
+            # ("Type q in help window to delete it"), matching Emacs.
         elif len(key) == 1 and key.isprintable():
             self.message = f"{key_str} runs self-insert-command"
         else:

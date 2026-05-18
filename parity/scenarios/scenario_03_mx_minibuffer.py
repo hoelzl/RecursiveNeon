@@ -29,9 +29,24 @@ def run() -> ScenarioResult:
     ) as f:
         emacs, neon = make_targets(f)
 
-        # We launch both targets once and snapshot at three checkpoints in
+        # We launch both targets once and snapshot at four checkpoints in
         # the same session — completion state is path-dependent.
-        labels = ["after-M-x", "after-typing-for", "after-TAB"]
+        #
+        # Note on the two TAB checkpoints: Emacs and neon-edit have very
+        # different command sets (Emacs ships hundreds of commands; neon-
+        # edit's ``forward-*`` family is just three commands). After one
+        # TAB neon-edit's input extends to ``forward-`` (longest common
+        # prefix of its own matches) while Emacs's stays at ``for`` (no
+        # further common prefix). The popup therefore appears after the
+        # *second* TAB in neon-edit but the *first* TAB in Emacs. The
+        # ``after-TAB-TAB`` step lets both editors converge on the
+        # "popup is visible" state for a meaningful comparison.
+        labels = [
+            "after-M-x",
+            "after-typing-for",
+            "after-TAB",
+            "after-TAB-TAB",
+        ]
         snapshots: dict[str, list] = {}
         for target in (emacs, neon):
             with target.launch() as driver:
@@ -45,6 +60,9 @@ def run() -> ScenarioResult:
                 driver.send("TAB")
                 driver.settle(settle_ms=900)
                 taken.append(driver.snapshot("after-TAB"))
+                driver.send("TAB")
+                driver.settle(settle_ms=900)
+                taken.append(driver.snapshot("after-TAB-TAB"))
                 snapshots[target.name] = taken
 
         for i, label in enumerate(labels):
