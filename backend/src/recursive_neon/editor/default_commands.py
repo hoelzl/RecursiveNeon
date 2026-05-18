@@ -533,7 +533,12 @@ def find_file(ed: Editor, prefix: int | None) -> None:
         _auto_detect_mode(ed, path)
         ed.message = f"Opened {path}" if content else f"(New file) {path}"
 
-    ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
+    initial = ed.default_directory
+    if initial and not initial.endswith("/"):
+        initial += "/"
+    ed.start_minibuffer(
+        "Find file: ", callback, completer=ed.path_completer, initial=initial
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1463,12 +1468,17 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 
+DESCRIBE_KEY_PROMPT = (
+    "Describe the following key, mouse click, or menu item: "
+)
+
+
 @defcommand("describe-key", "Show what command a key is bound to (C-h k).")
 def describe_key(ed: Editor, prefix: int | None) -> None:
     """Enter a key-reading mode: the next keystroke is described."""
     from recursive_neon.editor.editor import _DescribeKeySession
 
-    ed.message = "Describe key: "
+    ed.message = DESCRIBE_KEY_PROMPT
     ed._describe_key_session = _DescribeKeySession(brief=False)
 
 
@@ -1729,7 +1739,7 @@ def help_tutorial(ed: Editor, prefix: int | None) -> None:
 
 
 def _show_help_buffer(ed: Editor, text: str) -> None:
-    """Show text in a read-only *Help* buffer."""
+    """Show text in a read-only ``*Help*`` buffer (``help-mode``)."""
     if not ed.switch_to_buffer("*Help*"):
         ed.create_buffer(name="*Help*")
     buf = ed.buffer
@@ -1738,6 +1748,9 @@ def _show_help_buffer(ed: Editor, text: str) -> None:
     buf.point.move_to(0, 0)
     buf.modified = False
     buf.read_only = True
+    # Tag the buffer with ``help-mode`` so the modeline reads ``(Help)``,
+    # matching Emacs's convention for documentation buffers.
+    ed.set_major_mode("help-mode")
 
 
 @defcommand(

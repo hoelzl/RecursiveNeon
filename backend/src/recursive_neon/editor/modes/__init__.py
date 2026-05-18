@@ -117,6 +117,11 @@ defmode(
     indicator="Fill",
 )
 
+defmode(
+    "help-mode",
+    doc="Major mode for ``*Help*`` buffers (read-only documentation).",
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Auto-mode detection

@@ -144,6 +144,15 @@ async def _run_edit(ctx: ProgramContext) -> int:
 
     view.editor.path_completer = path_completer
 
+    # Hand the editor the user's current directory so ``C-x C-f`` opens
+    # with the path pre-filled (matches Emacs's ``default-directory``).
+    from recursive_neon.shell.path_resolver import get_node_path
+
+    try:
+        view.editor.default_directory = get_node_path(ctx.cwd_id, app_service)
+    except Exception:
+        view.editor.default_directory = ""
+
     # Wire up shell factory for M-x shell
     data_dir = ctx.env.get("_data_dir")
 
