@@ -588,7 +588,11 @@ class TestChapter12TextFilling:
         assert "auto-fill-mode" in minor_names
 
     def test_auto_fill_modeline_indicator(self) -> None:
-        h = make_harness()
+        # The harness defaults to 40 columns. That width can't fit the
+        # full Emacs-style modeline (prefix + name + position + mode list)
+        # so the minor-mode indicator gets clipped. Use a realistic 80-col
+        # window — this is what users will see.
+        h = make_harness(width=80)
         h.send_keys("M-x")
         h.type_string("auto-fill-mode")
         h.send_keys("Enter")

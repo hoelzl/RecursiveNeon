@@ -26,9 +26,10 @@ class TestSingleWindowCompat:
         assert h.screen_text(0) == "hello"
         assert h.screen_text(1) == "world"
 
-    def test_tilde_for_empty_lines(self):
+    def test_empty_lines_past_eob_are_blank(self):
+        # GNU Emacs leaves rows past end of buffer blank on TTY.
         h = make_harness("hello", width=40, height=10)
-        assert h.screen_text(1) == "~"
+        assert h.screen_text(1) == ""
 
     def test_modeline_present(self):
         h = make_harness("hello", width=40, height=10)

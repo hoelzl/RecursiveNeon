@@ -86,9 +86,19 @@ class TestMajorMode:
         finally:
             del MODES["test-exit-6g"]
 
-    def test_mode_message(self):
+    def test_set_major_mode_is_silent_by_default(self):
+        # Match GNU Emacs: automatic and interactive mode switches do not
+        # announce the new mode in the echo area.
         ed = self._make_editor()
+        ed.message = ""
         ed.set_major_mode("text-mode")
+        assert ed.message == ""
+
+    def test_set_major_mode_verbose_emits_name(self):
+        # ``verbose=True`` opts into the legacy "(<mode>)" message — useful
+        # for debugging but off by default.
+        ed = self._make_editor()
+        ed.set_major_mode("text-mode", verbose=True)
         assert "(text-mode)" in ed.message
 
 

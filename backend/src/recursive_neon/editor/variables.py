@@ -106,3 +106,17 @@ defvar(
     "folding for that session.",
     var_type=bool,
 )
+defvar(
+    "line-number-mode",
+    True,
+    "If True, the modeline shows the current line number (``L<n>``). "
+    "Matches GNU Emacs's default.",
+    var_type=bool,
+)
+defvar(
+    "column-number-mode",
+    False,
+    "If True, the modeline shows the current column (``C<n>``) in "
+    "addition to the line number. Off by default, matching GNU Emacs.",
+    var_type=bool,
+)

@@ -725,11 +725,16 @@ class Editor:
     # Mode switching
     # ------------------------------------------------------------------
 
-    def set_major_mode(self, mode_name: str) -> bool:
+    def set_major_mode(self, mode_name: str, *, verbose: bool = False) -> bool:
         """Set the major mode on the current buffer.
 
         Calls ``on_exit`` on the old mode and ``on_enter`` on the new one.
         Returns False if the mode is not found.
+
+        Silent by default — GNU Emacs does not announce the new mode in the
+        echo area, neither on automatic file-open detection nor when the
+        user runs ``M-x text-mode``. Pass ``verbose=True`` to surface the
+        mode name as a one-shot message (mostly useful for debugging).
         """
         mode = MODES.get(mode_name)
         if mode is None or not mode.is_major:
@@ -743,7 +748,8 @@ class Editor:
         # Enter new mode
         if mode.on_enter is not None:
             mode.on_enter(self)
-        self.message = f"({mode.name})"
+        if verbose:
+            self.message = f"({mode.name})"
         return True
 
     def toggle_minor_mode(self, mode_name: str) -> bool:

@@ -278,14 +278,17 @@ class EditorView:
         # Use set_region for sub-regions (vertical splits), set_line otherwise
         full_width = win._left == 0 and win._width == self._width
 
-        # Render text lines
+        # Render text lines.
+        # Rows past end of buffer are left blank, matching GNU Emacs's TTY
+        # default (``indicate-empty-lines`` is nil; the fringe variant only
+        # applies in graphical frames anyway).
         for row in range(text_h):
             line_idx = win.scroll_top + row
             screen_row = win._top + row
             if line_idx < buf.line_count:
                 text = buf.lines[line_idx][: win._width]
             else:
-                text = "~"
+                text = ""
             if full_width:
                 screen.set_line(screen_row, text)
             else:
@@ -554,13 +557,55 @@ class EditorView:
 
         ANSI styling is applied later by ``_style_modeline_rows`` so that
         ``set_region`` width calculations are not thrown off by escape codes.
+
+        Layout (matches GNU Emacs's TTY default):
+
+            -UU-:<mod>  F1  <name>   <pos>   L<line>[  C<col>]     (<Mode>) ---
+
+        where ``<mod>`` is ``---`` for an unmodified writable buffer,
+        ``**-`` for modified, ``%%-`` for read-only, ``%*-`` for both;
+        ``<pos>`` is ``All`` / ``Top`` / ``Bot`` / ``<nn>%`` depending on
+        which part of the buffer is visible; and the ``C<col>`` segment
+        only appears when ``column-number-mode`` is enabled.
         """
         buf = win.buffer
-        modified = "**" if buf.modified else "--"
+        ed = self.editor
+
+        # Modified / read-only mnemonic. The leading ``-UU-:`` is fixed
+        # (we don't track per-buffer coding system or end-of-line style;
+        # ``UU`` is Emacs's mnemonic for input+output coding both UTF-8).
+        read_only = bool(getattr(buf, "read_only", False))
+        if read_only:
+            mod = "%*-" if buf.modified else "%%-"
+        else:
+            mod = "**-" if buf.modified else "---"
+
         name = buf.filepath if buf.filepath else buf.name
+
+        # Position percent: which slice of the buffer is on screen.
+        total = max(1, buf.line_count)
+        th = win.text_height
+        top = win.scroll_top
+        if total <= th:
+            pos = "All"
+        elif top == 0:
+            pos = "Top"
+        elif top + th >= total:
+            pos = "Bot"
+        else:
+            pct = int(round(100 * (top + th) / total))
+            pos = f"{pct}%"
+
+        # Line / column readout (line-number-mode on by default).
         pt = win._point
-        line_col = f"L{pt.line + 1}:C{pt.col}"
-        # Mode indicator
+        parts: list[str] = []
+        if bool(ed.get_variable("line-number-mode")):
+            parts.append(f"L{pt.line + 1}")
+        if bool(ed.get_variable("column-number-mode")):
+            parts.append(f"C{pt.col}")
+        pos_line = "  ".join(parts)
+
+        # Mode indicator (major + minor).
         if buf.major_mode:
             display = buf.major_mode.name.removesuffix("-mode").capitalize()
         else:
@@ -570,18 +615,18 @@ class EditorView:
             for m in buf.minor_modes
         )
         mode_str = f"({display}{minor_indicators})"
-        # Assemble
-        left = f" {modified} {name}  "
-        right = f"  {mode_str} ({line_col}) "
-        total = len(left) + len(right)
+
+        # Assemble. The trailing dashes fill the row out to the window width,
+        # matching the look of Emacs's ``mode-line-end-spaces`` padding.
+        head = f"-UU-:{mod}  F1  {name}   {pos}"
+        if pos_line:
+            head += f"   {pos_line}"
+        head += f"     {mode_str} "
+
         w = win._width
-        if total <= w:
-            padding = w - total
-            ml_text = left + "-" * padding + right
-        else:
-            avail = max(4, w - len(right))
-            ml_text = left[:avail] + right
-        return ml_text[:w]
+        if len(head) < w:
+            return head + "-" * (w - len(head))
+        return head[:w]
 
     def _render_dividers(self, node: WindowNode, screen: ScreenBuffer) -> None:
         """Draw vertical divider columns for vertical splits."""
