@@ -42,12 +42,37 @@ def backward_char(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("next-line", "Move point to the next line.")
 def next_line(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.forward_line(prefix if prefix is not None else 1)
+    _line_move(ed, prefix if prefix is not None else 1)
 
 
 @defcommand("previous-line", "Move point to the previous line.")
 def previous_line(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.backward_line(prefix if prefix is not None else 1)
+    _line_move(ed, -(prefix if prefix is not None else 1))
+
+
+def _line_move(ed: Editor, n: int) -> None:
+    """Vertical motion shared by ``next-line`` and ``previous-line``.
+
+    When the requested motion would carry point past the buffer's first or
+    last line, point lands at ``point-min`` (column 0 of line 0) or
+    ``point-max`` (end of last line) respectively, and the echo area shows
+    ``Beginning of buffer`` / ``End of buffer`` — matching GNU Emacs.
+    """
+    buf = ed.buffer
+    before_line = buf.point.line
+    buf.forward_line(n)
+    actually_moved = buf.point.line - before_line
+    if actually_moved == n:
+        return
+    if n > 0:
+        last = buf.line_count - 1
+        buf.point.line = last
+        buf.point.col = len(buf.lines[last])
+        ed.message = "End of buffer"
+    else:
+        buf.point.line = 0
+        buf.point.col = 0
+        ed.message = "Beginning of buffer"
 
 
 @defcommand("beginning-of-line", "Move point to the beginning of the line.")

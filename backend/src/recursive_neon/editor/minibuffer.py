@@ -6,7 +6,10 @@ C-x C-w (write file), C-x b (switch buffer), and incremental search.
 
 It supports:
 - Basic text editing (insert, backspace, C-a/C-e, C-k)
-- Tab completion (cycles through candidates)
+- Tab completion: expand to the longest common prefix of all matches,
+  matching GNU Emacs's ``minibuffer-complete``. The full candidate list
+  is kept in ``last_completions`` so a future ``*Completions*`` popup
+  can render it.
 - A callback invoked on Enter
 - C-g cancels
 
@@ -40,8 +43,11 @@ class Minibuffer:
         self.on_change = on_change  # called on each keystroke (for isearch)
         self.text = initial
         self.cursor: int = len(initial)
-        self._completions: list[str] = []
-        self._completion_index: int = -1
+        # Last completion attempt's candidate list and a transient status
+        # message (e.g. "No match", "Complete, but not unique"). Cleared
+        # on the next non-TAB key.
+        self.last_completions: list[str] = []
+        self.completion_status: str = ""
         self._cancelled: bool = False
         # When set, the Editor should re-dispatch this key after closing
         self.replay_key: str | None = None
@@ -54,8 +60,14 @@ class Minibuffer:
 
     @property
     def display(self) -> str:
-        """The full display string (prompt + input text)."""
-        return self.prompt + self.text
+        """The full display string (prompt + input text + status).
+
+        Appends ``" [<status>]"`` when a TAB completion produced a
+        transient message — Emacs's TTY puts this hint in the echo area
+        alongside the minibuffer; we glue it to the same row.
+        """
+        suffix = f" [{self.completion_status}]" if self.completion_status else ""
+        return self.prompt + self.text + suffix
 
     def process_key(self, key: str) -> bool:
         """Process a keystroke.
@@ -64,8 +76,10 @@ class Minibuffer:
         should be dismissed (Enter or C-g).
         """
         if key != "Tab":
-            self._completions = []
-            self._completion_index = -1
+            # Any non-TAB key clears the post-completion status hint and
+            # discards the previous candidate list.
+            self.last_completions = []
+            self.completion_status = ""
 
         # Per-session key handlers (e.g., C-s for isearch-repeat)
         if key in self.key_handlers:
@@ -137,22 +151,57 @@ class Minibuffer:
         return True
 
     def _complete(self) -> None:
-        """Cycle through tab completions."""
+        """Complete to the longest common prefix of matching candidates.
+
+        GNU Emacs's ``minibuffer-complete`` semantics:
+
+        * 0 matches → status ``"No match"``; text unchanged.
+        * 1 match  → replace text with the match.
+        * 1+ matches sharing a prefix longer than the current text →
+          extend text to that prefix.
+        * 1+ matches with no further common prefix → status
+          ``"Complete, but not unique"``; the full candidate list is kept
+          on ``last_completions`` so a future ``*Completions*`` popup can
+          render it.
+        """
         if self.completer is None:
             return
-
-        if not self._completions:
-            self._completions = self.completer(self.text)
-            self._completion_index = -1
-
-        if not self._completions:
+        matches = self.completer(self.text)
+        if not matches:
+            self.last_completions = []
+            self.completion_status = "No match"
             return
-
-        self._completion_index = (self._completion_index + 1) % len(self._completions)
-        self.text = self._completions[self._completion_index]
-        self.cursor = len(self.text)
+        if len(matches) == 1:
+            self.text = matches[0]
+            self.cursor = len(self.text)
+            self.last_completions = []
+            self.completion_status = ""
+            return
+        common = _common_prefix(matches)
+        if len(common) > len(self.text):
+            self.text = common
+            self.cursor = len(self.text)
+            self.last_completions = matches
+            self.completion_status = ""
+        else:
+            # Already at the common prefix.
+            self.last_completions = matches
+            self.completion_status = "Complete, but not unique"
 
     def _notify_change(self) -> None:
         """Call the on_change callback if set."""
         if self.on_change is not None:
             self.on_change(self.text)
+
+
+def _common_prefix(strings: list[str]) -> str:
+    """Longest common prefix of a non-empty list of strings."""
+    if not strings:
+        return ""
+    s_min = min(strings)
+    s_max = max(strings)
+    i = 0
+    n = min(len(s_min), len(s_max))
+    while i < n and s_min[i] == s_max[i]:
+        i += 1
+    return s_min[:i]
