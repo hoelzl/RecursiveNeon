@@ -95,31 +95,62 @@ class TestMinibufferEnterCancel:
 
 
 class TestMinibufferCompletion:
-    def test_tab_completes(self):
+    def test_tab_expands_to_common_prefix(self):
+        # GNU Emacs's ``minibuffer-complete`` expands the input to the
+        # longest common prefix of all matches — it does NOT cycle.
         def completer(text: str) -> list[str]:
-            options = ["forward-char", "forward-word", "find-file"]
+            options = ["forward-char", "forward-word", "forward-sentence"]
             return [o for o in options if o.startswith(text)]
 
         mb = Minibuffer("M-x ", lambda s: None, completer=completer)
         mb.process_key("f")
         mb.process_key("Tab")
-        assert mb.text in ["forward-char", "forward-word", "find-file"]
+        assert mb.text == "forward-"
+        assert mb.cursor == len("forward-")
+        assert mb.completion_status == ""
 
-    def test_tab_cycles(self):
-        options = ["alpha", "beta"]
+    def test_tab_completes_unique_match(self):
+        mb = Minibuffer(
+            "M-x ",
+            lambda s: None,
+            completer=lambda t: ["find-file"] if "find".startswith(t) else [],
+        )
+        mb.process_key("f")
+        mb.process_key("Tab")
+        assert mb.text == "find-file"
+
+    def test_tab_at_common_prefix_sets_status(self):
+        # Already at the common prefix → status hint, candidates preserved
+        # for a future *Completions* popup.
+        options = ["forward-char", "forward-word"]
         mb = Minibuffer("M-x ", lambda s: None, completer=lambda t: options)
-        mb.process_key("Tab")
-        first = mb.text
-        mb.process_key("Tab")
-        second = mb.text
-        assert first != second
-        assert {first, second} == {"alpha", "beta"}
+        mb.process_key("f")
+        mb.process_key("o")
+        mb.process_key("r")
+        mb.process_key("w")
+        mb.process_key("a")
+        mb.process_key("r")
+        mb.process_key("d")
+        mb.process_key("-")
+        mb.process_key("Tab")  # text == "forward-", common prefix
+        assert mb.text == "forward-"
+        assert mb.completion_status == "Complete, but not unique"
+        assert sorted(mb.last_completions) == sorted(options)
 
-    def test_tab_no_completions(self):
+    def test_tab_no_completions_sets_status(self):
         mb = Minibuffer("M-x ", lambda s: None, completer=lambda t: [])
         mb.process_key("x")
         mb.process_key("Tab")
         assert mb.text == "x"
+        assert mb.completion_status == "No match"
+
+    def test_status_clears_on_next_key(self):
+        mb = Minibuffer("M-x ", lambda s: None, completer=lambda t: [])
+        mb.process_key("x")
+        mb.process_key("Tab")
+        assert mb.completion_status == "No match"
+        mb.process_key("y")
+        assert mb.completion_status == ""
 
     def test_no_completer(self):
         mb = Minibuffer("M-x ", lambda s: None)
@@ -370,26 +401,39 @@ class TestFileOperations:
         assert not ed.buffer.modified
 
     def test_find_file_tab_completion(self):
-        """find-file should support tab completion via path_completer."""
+        """find-file's TAB expands to the longest common prefix of paths."""
         ed = make_editor("original")
         ed.path_completer = lambda partial: ["Documents/", "Downloads/"]
         ed.process_key("C-x")
         ed.process_key("C-f")
         assert ed.minibuffer is not None
         ed.process_key("Tab")
-        assert ed.minibuffer.text == "Documents/"
+        # Two matches, "Documents/" and "Downloads/", share prefix "Do".
+        assert ed.minibuffer.text == "Do"
+        # A second TAB at the common prefix announces "but not unique".
         ed.process_key("Tab")
-        assert ed.minibuffer.text == "Downloads/"
+        assert ed.minibuffer.text == "Do"
+        assert ed.minibuffer.completion_status == "Complete, but not unique"
 
     def test_write_file_tab_completion(self):
-        """write-file should support tab completion via path_completer."""
+        """write-file's TAB expands to the common prefix; user keeps typing."""
         ed = make_editor("text")
-        ed.path_completer = lambda partial: ["readme.txt", "readme.md"]
+        # Real path_completer filters by the partial input — model that
+        # so TAB after a disambiguating char unique-completes.
+        def fake_completer(partial: str) -> list[str]:
+            return [p for p in ("readme.txt", "readme.md") if p.startswith(partial)]
+
+        ed.path_completer = fake_completer
         ed.process_key("C-x")
         ed.process_key("C-w")
         assert ed.minibuffer is not None
         for ch in "read":
             ed.process_key(ch)
+        ed.process_key("Tab")
+        # Common prefix is "readme." — the divergent extension begins after
+        # the dot. The user is expected to type "t" or "m" to disambiguate.
+        assert ed.minibuffer.text == "readme."
+        ed.process_key("t")
         ed.process_key("Tab")
         assert ed.minibuffer.text == "readme.txt"
 

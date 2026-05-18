@@ -111,23 +111,27 @@ def shell_quote(text: str) -> str:
 
 
 def write_file_via_echo(remote_path: str, text: str) -> list[str]:
-    """Build setup lines that produce ``text`` at ``remote_path`` using echo.
+    """Build neon-edit shell commands that produce ``text`` at ``remote_path``.
 
-    Splits on newlines; the first line uses ``>`` and the rest use ``>>``.
-    A trailing newline in ``text`` is preserved by appending an empty echo.
+    Uses ``echo`` (which appends ``\\n``) for all lines except the last;
+    the last line uses ``echo -n`` if and only if ``text`` does not end
+    with ``\\n``. The result is byte-for-byte identical to writing ``text``
+    to disk with Python's ``Path.write_text``.
     """
-    if "\n" not in text:
-        return [f"echo -n {shell_quote(text)} > {remote_path}"]
+    if text == "":
+        return [f": > {remote_path}"]
+
+    has_trailing_newline = text.endswith("\n")
     lines = text.split("\n")
-    has_trailing_newline = lines[-1] == ""
     if has_trailing_newline:
+        # ``"a\nb\n".split("\n")`` → ``["a", "b", ""]``; drop the empty tail.
         lines = lines[:-1]
-    out = [f"echo {shell_quote(lines[0])} > {remote_path}"]
-    for line in lines[1:]:
-        out.append(f"echo {shell_quote(line)} >> {remote_path}")
-    if not has_trailing_newline and lines:
-        # Strip the final newline our last echo added.
-        # neon-edit's echo always appends \n, so we'd need a different
-        # primitive to suppress it. For now, document and accept.
-        pass
+
+    out: list[str] = []
+    redirect = ">"
+    for i, line in enumerate(lines):
+        is_last = i == len(lines) - 1
+        prefix = "echo -n" if is_last and not has_trailing_newline else "echo"
+        out.append(f"{prefix} {shell_quote(line)} {redirect} {remote_path}")
+        redirect = ">>"
     return out
