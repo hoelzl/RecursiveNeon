@@ -759,6 +759,17 @@ class EditorView:
             screen.cursor_row = message_row
             screen.cursor_col = min(len(mb.prompt) + mb.cursor, self._width - 1)
             screen.cursor_visible = True
+        elif self.editor._describe_key_session is not None:
+            # While ``C-h k`` is waiting for a follow-up key, Emacs parks
+            # the cursor at the end of the prompt in the echo area
+            # (rather than leaving it in the buffer). Mirror that — it's
+            # a small thing but it makes the editor feel less inert
+            # during the prompt.
+            message = self.editor.message
+            screen.set_line(message_row, message[: self._width])
+            screen.cursor_row = message_row
+            screen.cursor_col = min(len(message), self._width - 1)
+            screen.cursor_visible = True
         else:
             screen.set_line(message_row, self.editor.message[: self._width])
             # Cursor in active window
