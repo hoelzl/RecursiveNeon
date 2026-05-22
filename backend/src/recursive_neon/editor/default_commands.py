@@ -345,6 +345,21 @@ def set_mark_command(ed: Editor, prefix: int | None) -> None:
     ed.message = "Mark set"
 
 
+@defcommand(
+    "exchange-point-and-mark",
+    "Swap point and mark, leaving the region intact (C-x C-x).",
+)
+def exchange_point_and_mark(ed: Editor, prefix: int | None) -> None:
+    buf = ed.buffer
+    if buf.mark is None:
+        ed.message = "No mark set in this buffer"
+        return
+    mark_line, mark_col = buf.mark.line, buf.mark.col
+    point_line, point_col = buf.point.line, buf.point.col
+    buf.set_mark(point_line, point_col)
+    buf.point.move_to(mark_line, mark_col)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Editor control
 # ═══════════════════════════════════════════════════════════════════════
@@ -2415,6 +2430,7 @@ def build_default_keymap() -> Keymap:
     # C-x prefix map
     cx = Keymap("C-x prefix")
     cx.bind("C-s", "save-buffer")
+    cx.bind("C-x", "exchange-point-and-mark")
     cx.bind("s", "save-some-buffers")
     cx.bind("C-w", "write-file")
     cx.bind("C-f", "find-file")
