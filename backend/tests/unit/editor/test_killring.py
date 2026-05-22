@@ -202,8 +202,10 @@ class TestKillWordForward:
         b = Buffer.from_text("hello\nworld")
         b.point.col = 5
         killed = b.kill_word_forward()
-        # At end of line, should cross to next line
-        assert killed == "\n"
+        # ``M-d`` follows ``forward-word``: skip the newline, then
+        # consume the next word — matches GNU Emacs's ``kill-word``.
+        assert killed == "\nworld"
+        assert b.text == "hello"
 
     def test_kill_word_at_end_of_buffer(self):
         b = Buffer.from_text("hello")

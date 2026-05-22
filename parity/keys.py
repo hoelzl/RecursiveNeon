@@ -81,6 +81,16 @@ def _token_bytes(token: str) -> bytes:
             rest = rest[2:]
         else:
             break
+    # ``C-SPC`` (set-mark-command) maps to NUL on a real terminal — the
+    # named-key path above hands us ``b" "`` for SPC, but we need the
+    # ctrl-encoded byte. Handle it (and ``C-RET``, ``C-TAB``) explicitly
+    # before the general C- handler so the "C-modifier on named key"
+    # error doesn't fire.
+    if ctrl and rest == "SPC":
+        base = b"\x00"
+        if meta:
+            base = b"\x1b" + base
+        return base
     if rest in _NAMED:
         base = _NAMED[rest]
     elif len(rest) == 1:

@@ -288,9 +288,30 @@ def kill_sentence(ed: Editor, prefix: int | None) -> None:
         ed.buffer.kill_sentence()
 
 
+@defcommand(
+    "kill-ring-save",
+    "Copy the region to the kill ring (no buffer mutation, M-w).",
+)
+def kill_ring_save(ed: Editor, prefix: int | None) -> None:
+    buf = ed.buffer
+    if buf.mark is None:
+        ed.message = "The mark is not set now, so there is no region"
+        return
+    buf.kill_ring_save()
+
+
 @defcommand("yank", "Yank (paste) the most recent kill.", coalesce_key="yank")
 def yank(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.yank()
+    buf = ed.buffer
+    # GNU Emacs's ``yank`` pushes a mark at the start of the inserted
+    # text so the user can immediately act on the region (e.g. C-w to
+    # un-yank, M-w to copy elsewhere). ``push-mark`` itself announces
+    # ``Mark set`` in the echo area.
+    buf.set_mark(buf.point.line, buf.point.col)
+    if buf.yank() is None:
+        ed.message = "Kill ring is empty"
+        return
+    ed.message = "Mark set"
 
 
 @defcommand(
@@ -2284,6 +2305,7 @@ def build_default_keymap() -> Keymap:
     # Kill / Yank
     km.bind("C-k", "kill-line")
     km.bind("C-w", "kill-region")
+    km.bind("M-w", "kill-ring-save")
     km.bind("M-d", "kill-word")
     km.bind("M-Backspace", "kill-backward-word")
     km.bind("C-y", "yank")
