@@ -1076,6 +1076,27 @@ class Buffer:
         self.last_command_type = "kill"
         return killed
 
+    def kill_ring_save(self) -> str:
+        """Copy the region to the kill ring without modifying the buffer (M-w).
+
+        Returns the copied text, or empty string if no mark. After the
+        save the mark is cleared (region deactivated), matching the
+        behaviour Emacs gets from ``transient-mark-mode``.
+        """
+        if self.mark is None:
+            return ""
+        text = self.region_text or ""
+        self.clear_mark()
+        if text:
+            if self.last_command_type == "kill":
+                self.kill_ring.append_to_top(text)
+            else:
+                self.kill_ring.push(text)
+        # Note: do *not* set ``last_command_type`` to ``"kill"`` here —
+        # kill-ring-save doesn't chain with subsequent kills the way
+        # consecutive ``C-k`` invocations do.
+        return text
+
     def kill_sentence(self) -> str:
         """Kill from point to end of current sentence (M-k).
 
@@ -1191,24 +1212,35 @@ class Buffer:
         return moved
 
     def _move_word_forward(self) -> bool:
-        """Move point forward by one word.  Returns True if moved."""
+        """Move point forward by one word (M-f), matching GNU Emacs.
+
+        Skips through non-word characters (including newlines, blank
+        lines, and punctuation), then advances over the next run of word
+        characters, ending after the word. ``forward-word`` in Emacs
+        always lands *after* the word it crossed; previously this
+        method stopped at the *start* of a word when crossing a line
+        break, which made it feel half a step short.
+        """
         start = self.point.to_tuple()
-        # Skip non-word characters
-        while self.point.col < len(self.lines[self.point.line]):
-            ch = self.lines[self.point.line][self.point.col]
-            if ch.isalnum() or ch == "_":
-                break
-            self.point.col += 1
-        else:
-            # Reached end of line — cross to next if possible
+        # Phase 1: skip non-word characters, crossing line breaks.
+        while True:
+            line = self.lines[self.point.line]
+            if self.point.col < len(line):
+                ch = line[self.point.col]
+                if ch.isalnum() or ch == "_":
+                    break
+                self.point.col += 1
+                continue
             if self.point.line < len(self.lines) - 1:
                 self.point.line += 1
                 self.point.col = 0
-                return True
+                continue
+            # End of buffer with no word found.
             return self.point.to_tuple() != start
-        # Skip word characters
-        while self.point.col < len(self.lines[self.point.line]):
-            ch = self.lines[self.point.line][self.point.col]
+        # Phase 2: skip word characters until non-word or EOL.
+        line = self.lines[self.point.line]
+        while self.point.col < len(line):
+            ch = line[self.point.col]
             if not (ch.isalnum() or ch == "_"):
                 break
             self.point.col += 1

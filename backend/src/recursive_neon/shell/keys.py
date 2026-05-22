@@ -42,6 +42,9 @@ ANSI_SEQUENCES: dict[str, str] = {
 }
 
 CTRL_KEYS: dict[str, str] = {
+    # ``C-SPC`` (set-mark-command) arrives as NUL on every Unix terminal;
+    # name it ``C-space`` so it lines up with the editor's keymap binding.
+    "\x00": "C-space",
     "\r": "Enter",
     "\n": "Enter",
     "\t": "Tab",
