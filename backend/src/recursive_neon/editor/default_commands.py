@@ -699,6 +699,52 @@ def isearch_backward(ed: Editor, prefix: int | None) -> None:
     _start_isearch(ed, forward=False)
 
 
+def _activate_isearch_mode(ed: Editor) -> None:
+    """Turn on ``isearch-mode`` as a minor mode for the current buffer."""
+    from recursive_neon.editor.modes import MODES
+
+    mode = MODES.get("isearch-mode")
+    if mode is None:
+        return
+    minor = ed.buffer.minor_modes
+    if mode not in minor:
+        minor.append(mode)
+
+
+def _deactivate_isearch_mode(ed: Editor) -> None:
+    """Drop ``isearch-mode`` from the current buffer's minor-mode list."""
+    from recursive_neon.editor.modes import MODES
+
+    mode = MODES.get("isearch-mode")
+    if mode is None:
+        return
+    minor = ed.buffer.minor_modes
+    if mode in minor:
+        minor.remove(mode)
+
+
+def _isearch_set_point(buf, match_line: int, match_col: int, text: str, *, forward: bool) -> None:
+    """Place point relative to a match the way GNU Emacs's isearch does.
+
+    Forward search leaves point *after* the match (so the user can
+    immediately type or perform a region op against just-found text).
+    Backward search leaves point at the start of the match. ``text`` is
+    the search string; for multi-line strings (M-RET in isearch),
+    end-of-match is computed across the embedded newlines.
+    """
+    if not forward:
+        buf.point.move_to(match_line, match_col)
+        return
+    if "\n" in text:
+        parts = text.split("\n")
+        end_line = match_line + len(parts) - 1
+        end_col = len(parts[-1])
+    else:
+        end_line = match_line
+        end_col = match_col + len(text)
+    buf.point.move_to(end_line, end_col)
+
+
 def _start_isearch(ed: Editor, *, forward: bool) -> None:
     """True incremental search with highlighting, wrap, M-c, M-Enter.
 
@@ -747,13 +793,14 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
             parts.append("Wrapped ")
         elif s.failing:
             parts.append("Failing ")
+        # GNU Emacs spells out the case state when folding is off (either
+        # because the user explicitly disabled it with M-c, or because
+        # smart-case noticed an uppercase character in the search text):
+        # the prompt reads ``Failing case-sensitive I-search: ...``.
+        effective_fold = _effective_case_fold(s.text)
+        if not effective_fold:
+            parts.append("case-sensitive ")
         parts.append("I-search" if s.direction else "I-search backward")
-        # Case-fold indicator: only shown when the user overrode via M-c,
-        # to avoid noise in the common (smart-default) case.
-        if explicit_case_fold[0] is False:
-            parts.append(" (case)")
-        elif explicit_case_fold[0] is True:
-            parts.append(" (fold)")
         ed.minibuffer.prompt = "".join(parts) + ": "
 
     def _update_highlight() -> None:
@@ -811,7 +858,7 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
             pos = buf.find_backward(text, from_line, from_col + 1, case_fold=case_fold)
 
         if pos is not None:
-            buf.point.move_to(pos[0], pos[1])
+            _isearch_set_point(buf, pos[0], pos[1], text, forward=direction)
             state_stack.append(
                 _IsearchState(
                     text=text,
@@ -855,7 +902,7 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
                 last_col = len(buf.lines[last_line]) + 1
                 pos = buf.find_backward(text, last_line, last_col, case_fold=case_fold)
             if pos is not None:
-                buf.point.move_to(pos[0], pos[1])
+                _isearch_set_point(buf, pos[0], pos[1], text, forward=direction)
                 state_stack.append(
                     _IsearchState(
                         text=text,
@@ -885,7 +932,7 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
             else:
                 pos = buf.find_backward(text, prev.line, prev.col, case_fold=case_fold)
             if pos is not None:
-                buf.point.move_to(pos[0], pos[1])
+                _isearch_set_point(buf, pos[0], pos[1], text, forward=direction)
                 state_stack.append(
                     _IsearchState(
                         text=text,
@@ -942,12 +989,20 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
         # Exiting normally — clear highlight, leave point at the match.
         ed.highlight_term = None
         ed.highlight_case_fold = False
+        _deactivate_isearch_mode(ed)
+        # GNU Emacs pushes a mark at the original search start so
+        # ``C-x C-x`` can return to where the search began, and
+        # announces it via the echo area.
+        if buf.point.line != start_line or buf.point.col != start_col:
+            buf.set_mark(start_line, start_col)
+            ed.message = "Mark saved where search started"
 
     def on_cancel() -> None:
         # C-g / Escape: restore original point, clear highlight.
         buf.point.move_to(start_line, start_col)
         ed.highlight_term = None
         ed.highlight_case_fold = False
+        _deactivate_isearch_mode(ed)
 
     def on_backspace() -> None:
         """Pop one state off the stack, restore text + position."""
@@ -963,7 +1018,10 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
             return
         state_stack.pop()
         s = _current()
-        buf.point.move_to(s.line, s.col)
+        # The state's line/col is the match-start; restore the visible
+        # point to the corresponding match end (forward) or start
+        # (backward), matching what the original step produced.
+        _isearch_set_point(buf, s.line, s.col, s.text, forward=s.direction)
         if ed.minibuffer is not None:
             ed.minibuffer.text = s.text
             ed.minibuffer.cursor = len(s.text)
@@ -971,6 +1029,9 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
         _update_prompt()
 
     prompt_prefix = "I-search" if forward else "I-search backward"
+    # Activate ``isearch-mode`` as a minor mode so the modeline reads
+    # ``(... Isearch)`` while the search is alive — matches Emacs.
+    _activate_isearch_mode(ed)
     ed.start_minibuffer(
         f"{prompt_prefix}: ",
         on_confirm,

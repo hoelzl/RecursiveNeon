@@ -133,20 +133,22 @@ class TestIsearchWrap:
         assert "Wrapped" not in ed.minibuffer.prompt
 
     def test_second_cs_after_failure_wraps(self):
+        # Forward isearch lands point *after* the match (Emacs), so the
+        # X at col 4 leaves point at col 5; the second X at col 10 ends
+        # at col 11.
         ed = make_editor("foo X bar X baz")
-        # Start at col 0, search for X, advance twice, then wrap
         ed.process_key("C-s")
         ed.process_key("X")
-        assert ed.buffer.point.col == 4
+        assert ed.buffer.point.col == 5
         ed.process_key("C-s")
-        assert ed.buffer.point.col == 10
+        assert ed.buffer.point.col == 11
         ed.process_key("C-s")
         assert ed.minibuffer is not None
         assert "Failing" in ed.minibuffer.prompt
         # Now wrap
         ed.process_key("C-s")
         assert "Wrapped" in ed.minibuffer.prompt
-        assert ed.buffer.point.col == 4  # back to first match
+        assert ed.buffer.point.col == 5  # back to first match (end of X)
 
     def test_backward_wrap_from_bob_to_eob(self):
         # Start with point at (0, 0) over a non-X character so there's no
@@ -181,14 +183,14 @@ class TestIsearchWrap:
 
 class TestIsearchCaseFold:
     def test_lowercase_search_folds_by_default(self):
-        # Smart case: all-lowercase term ⇒ case-insensitive
+        # Smart case: all-lowercase term ⇒ case-insensitive. Forward
+        # isearch leaves point after the match — "Foo" ends at col 3.
         ed = make_editor("Foo and foo")
         ed.process_key("C-s")
         ed.process_key("f")
         ed.process_key("o")
         ed.process_key("o")
-        # Should match "Foo" at (0, 0) because folding is active
-        assert ed.buffer.point.col == 0
+        assert ed.buffer.point.col == 3
         assert ed.highlight_case_fold is True
 
     def test_uppercase_char_disables_smart_fold(self):
@@ -197,26 +199,31 @@ class TestIsearchCaseFold:
         ed.process_key("F")
         ed.process_key("o")
         ed.process_key("o")
-        # Capital F disables folding; should match "Foo" at (0, 0) only
-        assert ed.buffer.point.col == 0
+        # Capital F disables folding; should match "Foo" → point at col 3.
+        assert ed.buffer.point.col == 3
         assert ed.highlight_case_fold is False
         # Next C-s should NOT find "foo" (case sensitive)
         ed.process_key("C-s")
         assert "Failing" in (ed.minibuffer.prompt if ed.minibuffer else "")
 
     def test_mc_toggle_forces_case_sensitive(self):
+        # Emacs renders the case state inline: ``case-sensitive I-search:``
+        # when folding is off (either via M-c or because smart-case
+        # noticed an uppercase character).
         ed = make_editor("Foo and foo")
         ed.process_key("C-s")
         ed.process_key("f")
         ed.process_key("o")
         ed.process_key("o")
-        assert ed.buffer.point.col == 0  # matched "Foo" via fold
+        assert ed.buffer.point.col == 3  # matched "Foo" via fold, point at end
         ed.process_key("M-c")  # toggle off fold
         assert ed.highlight_case_fold is False
         assert ed.minibuffer is not None
-        assert "(case)" in ed.minibuffer.prompt
+        assert "case-sensitive I-search:" in ed.minibuffer.prompt
 
     def test_mc_toggle_forces_fold(self):
+        # When the user re-enables folding, the ``case-sensitive`` prefix
+        # disappears — Emacs leaves the prompt bare for the default case.
         ed = make_editor("Foo and foo")
         ed.process_key("C-s")
         ed.process_key("F")
@@ -226,7 +233,7 @@ class TestIsearchCaseFold:
         ed.process_key("M-c")  # toggle on fold
         assert ed.highlight_case_fold is True
         assert ed.minibuffer is not None
-        assert "(fold)" in ed.minibuffer.prompt
+        assert "case-sensitive" not in ed.minibuffer.prompt
 
     def test_case_fold_search_variable_false_disables_smart_fold(self):
         ed = make_editor("Foo and foo")
@@ -254,17 +261,18 @@ class TestIsearchCaseFold:
 
 class TestIsearchStateStack:
     def test_backspace_shortens_search_and_restores_previous_position(self):
+        # Forward isearch leaves point after the match. "foo" ends at
+        # col 3 (first occurrence) and col 11 (repeated occurrence).
         ed = make_editor("foo bar foo baz")
         ed.process_key("C-s")
         ed.process_key("f")
         ed.process_key("o")
         ed.process_key("o")
-        assert ed.buffer.point.col == 0
+        assert ed.buffer.point.col == 3
         ed.process_key("C-s")  # repeat forward
-        assert ed.buffer.point.col == 8  # second "foo"
+        assert ed.buffer.point.col == 11  # end of second "foo"
         ed.process_key("Backspace")  # pop the repeat
-        # Should go back to the first match
-        assert ed.buffer.point.col == 0
+        assert ed.buffer.point.col == 3  # back to first match's end
         assert ed.minibuffer is not None
         assert ed.minibuffer.text == "foo"  # text unchanged
 
@@ -296,15 +304,17 @@ class TestIsearchStateStack:
         assert ed.buffer.point.col == 3
 
     def test_backspace_across_wrap_preserves_prior_state(self):
+        # Forward isearch leaves point after each X match (cols 1, 7, 13
+        # for the three Xs). Wrap brings point back to the first match's
+        # end at col 1.
         ed = make_editor("X foo X bar X")
         ed.process_key("C-s")
         ed.process_key("X")
-        # (0, 0)
-        ed.process_key("C-s")  # (0, 6)
-        ed.process_key("C-s")  # (0, 12)
+        ed.process_key("C-s")
+        ed.process_key("C-s")
         ed.process_key("C-s")  # failing
-        ed.process_key("C-s")  # wrap to (0, 0)
-        assert ed.buffer.point.col == 0
+        ed.process_key("C-s")  # wrap to first X
+        assert ed.buffer.point.col == 1
         assert "Wrapped" in ed.minibuffer.prompt if ed.minibuffer else ""
         ed.process_key("Backspace")  # pop the wrap
         # Should restore the failing state right before the wrap
@@ -319,6 +329,8 @@ class TestIsearchStateStack:
 
 class TestIsearchMultiLine:
     def test_m_enter_inserts_newline_into_search_term(self):
+        # "c\nd" matches starting at (0, 2). With forward-isearch's
+        # "point after match" rule, point lands on line 1 at col 1.
         ed = make_editor("abc\ndef")
         ed.process_key("C-s")
         ed.process_key("c")
@@ -326,11 +338,12 @@ class TestIsearchMultiLine:
         ed.process_key("d")
         assert ed.minibuffer is not None
         assert ed.minibuffer.text == "c\nd"
-        # Match found crossing line boundary
-        assert ed.buffer.point.line == 0
-        assert ed.buffer.point.col == 2
+        assert ed.buffer.point.line == 1
+        assert ed.buffer.point.col == 1
 
     def test_multi_line_search_finds_cross_line_match(self):
+        # "oo\nba" matches starting at (0, 1); point lands after the
+        # match on line 1 at col 2.
         ed = make_editor("foo\nbar\nbaz")
         ed.process_key("C-s")
         ed.process_key("o")
@@ -338,9 +351,8 @@ class TestIsearchMultiLine:
         ed.process_key("M-Enter")
         ed.process_key("b")
         ed.process_key("a")
-        # "oo\nba" should match at (0, 1)
-        assert ed.buffer.point.line == 0
-        assert ed.buffer.point.col == 1
+        assert ed.buffer.point.line == 1
+        assert ed.buffer.point.col == 2
 
 
 # ═══════════════════════════════════════════════════════════════════════
