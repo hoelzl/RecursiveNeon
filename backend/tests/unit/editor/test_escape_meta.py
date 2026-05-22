@@ -375,7 +375,8 @@ class TestEscapeInIsearch:
         ed.buffer.point.move_to(0, 0)
         ed.process_key("C-s")
         ed.process_key("w")
-        assert ed.buffer.point.col == 6
+        # Forward isearch lands point after the match (col 7).
+        assert ed.buffer.point.col == 7
         assert ed.minibuffer is not None
         ed.process_key("Escape")
         ed.process_key("Escape")

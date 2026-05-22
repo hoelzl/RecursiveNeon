@@ -490,7 +490,13 @@ class EditorView:
                 break
 
             # Is this the current match (the one point is on)?
-            is_current = m_line == point_line and m_col == point_col
+            # Emacs convention: forward isearch lands point *after* the
+            # match. Recognize either boundary so the highlight survives
+            # the new ``_isearch_set_point`` placement.
+            is_current = (
+                (m_line == point_line and m_col == point_col)
+                or (end_line == point_line and end_col == point_col)
+            )
 
             # Emit per-line sub-spans for the match.
             if m_line == end_line:
@@ -756,8 +762,24 @@ class EditorView:
         if self.editor.minibuffer is not None:
             mb = self.editor.minibuffer
             screen.set_line(message_row, mb.display[: self._width])
-            screen.cursor_row = message_row
-            screen.cursor_col = min(len(mb.prompt) + mb.cursor, self._width - 1)
+            # Isearch is a minibuffer-driven mode in our model, but Emacs
+            # keeps the cursor on the *match position* in the buffer
+            # (and only shows the prompt in the echo area). Detect the
+            # isearch session by checking whether the buffer's minor
+            # modes include ``isearch-mode`` — that's set by
+            # ``_start_isearch`` and cleared on confirm/cancel.
+            in_isearch = any(
+                m.name == "isearch-mode" for m in win.buffer.minor_modes
+            )
+            if in_isearch:
+                pt = win._point
+                screen.cursor_row = win._top + (pt.line - win.scroll_top)
+                screen.cursor_col = win._left + min(pt.col, win._width - 1)
+            else:
+                screen.cursor_row = message_row
+                screen.cursor_col = min(
+                    len(mb.prompt) + mb.cursor, self._width - 1
+                )
             screen.cursor_visible = True
         elif self.editor._describe_key_session is not None:
             # While ``C-h k`` is waiting for a follow-up key, Emacs parks

@@ -187,11 +187,14 @@ class TestIsearchForward:
         assert "I-search" in ed.minibuffer.prompt
 
     def test_typing_moves_point_to_match(self):
+        # GNU Emacs's isearch leaves point *after* a forward match, so
+        # ``hello world`` + ``C-s wo`` ends with point at col 8 (just
+        # past the matched "wo"), not at col 6 (the match start).
         ed = make_editor("hello world")
         ed.process_key("C-s")
         ed.process_key("w")
         ed.process_key("o")
-        assert ed.buffer.point.col == 6  # "world" starts at 6
+        assert ed.buffer.point.col == 8
 
     def test_enter_exits_at_match(self):
         ed = make_editor("hello world")
@@ -200,7 +203,7 @@ class TestIsearchForward:
         ed.process_key("o")
         ed.process_key("Enter")
         assert ed.minibuffer is None
-        assert ed.buffer.point.col == 6
+        assert ed.buffer.point.col == 8  # end of "wo"
 
     def test_c_g_restores_original_position(self):
         ed = make_editor("hello world")
@@ -208,10 +211,10 @@ class TestIsearchForward:
         ed.process_key("C-s")
         ed.process_key("w")
         ed.process_key("o")
-        assert ed.buffer.point.col == 6  # found match
+        assert ed.buffer.point.col == 8  # end of "wo"
         ed.process_key("C-g")
         assert ed.minibuffer is None
-        assert ed.buffer.point.col == 2  # restored
+        assert ed.buffer.point.col == 2  # restored to where C-s started
 
     def test_c_s_repeats_search(self):
         ed = make_editor("aaa bbb aaa ccc")
@@ -219,9 +222,9 @@ class TestIsearchForward:
         ed.process_key("a")
         ed.process_key("a")
         ed.process_key("a")
-        assert ed.buffer.point.col == 0  # first "aaa"
+        assert ed.buffer.point.col == 3  # end of first "aaa"
         ed.process_key("C-s")  # repeat
-        assert ed.buffer.point.col == 8  # second "aaa"
+        assert ed.buffer.point.col == 11  # end of second "aaa"
 
     def test_no_match_shows_failing(self):
         ed = make_editor("hello")
@@ -235,7 +238,7 @@ class TestIsearchForward:
         ed.process_key("C-s")
         ed.process_key("w")
         ed.process_key("o")
-        assert ed.buffer.point.col == 6  # at "world"
+        assert ed.buffer.point.col == 8  # just past "wo"
         # C-n is not a minibuffer key — should exit isearch and move down
         ed.process_key("C-n")
         assert ed.minibuffer is None

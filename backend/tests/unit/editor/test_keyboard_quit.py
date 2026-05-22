@@ -251,7 +251,9 @@ class TestQuitIsearch:
         ed.buffer.point.move_to(0, 0)
         ed.process_key("C-s")
         ed.process_key("w")
-        assert ed.buffer.point.col == 6  # found "w" in "world"
+        # Forward isearch leaves point *after* the match (col 7),
+        # matching GNU Emacs.
+        assert ed.buffer.point.col == 7
 
         ed.process_key("C-g")
 

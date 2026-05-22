@@ -123,6 +123,13 @@ defmode(
 )
 
 defmode(
+    "isearch-mode",
+    is_major=False,
+    doc="Minor mode that's active while incremental search is running.",
+    indicator="Isearch",
+)
+
+defmode(
     "completion-list-mode",
     doc="Major mode for ``*Completions*`` buffers; modeline reads ``(Completion List)``.",
     indicator="Completion List",
