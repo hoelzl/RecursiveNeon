@@ -37,6 +37,7 @@ parity/
     scenario_08_region.py
     scenario_09_undo_redo.py
     scenario_10_buffer_switching.py
+    scenario_11_fill_paragraph.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -206,7 +207,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(10 scenarios, 36 checkpoints. 26 are pixel-perfect; the 10 remaining
+(11 scenarios, 38 checkpoints. 28 are pixel-perfect; the 10 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -221,6 +222,7 @@ diffs are content/semantic differences explained below.)
 | 08 | region | `C-SPC`, `M-f` extension, `C-x C-x` swap |
 | 09 | undo / redo | `C-/` grouping, history walk-back, exhaustion, `C-f`+`C-/` redo, `Undo`/`Redo` echo |
 | 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
+| 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
 
 ## Known intentional divergences
 
@@ -316,10 +318,21 @@ Each is sized for one session if the divergences turn out moderate.
    table + buffer model); and `C-x k`'s confirm-if-modified flow ("Buffer
    X modified; kill anyway? (yes or no)"), which neon-edit lacks.
 
-3. **`scenario_11_indentation_and_auto_fill`**: TAB behaviour in
-   `python-mode` vs `text-mode` vs `fundamental-mode`. `M-q`
-   (fill-paragraph) on a wrapped paragraph. `auto-fill-mode` insertion
-   at fill-column.
+3. ~~**`scenario_11_indentation_and_auto_fill`**~~ → split. **DONE:
+   `scenario_11_fill_paragraph`** — `M-q` re-wraps to fill-column (70),
+   is now *silent* on success and on a no-op re-fill (was "Filled
+   paragraph" / "Paragraph unchanged"), and leaves point at the paragraph
+   start (was trailing to the end of the insert). Both checkpoints
+   pixel-perfect. Note: with single-spaced input Emacs does *not* create
+   two-space sentence breaks (it only preserves existing ones), so no
+   double-space divergence arose. **Still TODO in their own scenarios:**
+   - **TAB / `indent-for-tab-command`** — neon-edit binds no TAB in text
+     buffers (TAB is "undefined" everywhere); Emacs runs `indent-relative`
+     / `tab-to-tab-stop` in fundamental/text-mode (TAB on the empty first
+     line inserts a real tab → column 8) and syntactic, cycling indent in
+     `python-mode`. A large, mode-specific feature.
+   - **`auto-fill-mode` insertion** — break-on-space past fill-column; has
+     its own mode-enable echo and ` Fill` modeline indicator to diff.
 
 4. **`scenario_12_modeline_state_flags`**: Watch the modified mnemonic
    transition `---` → `**-` after the first edit; flip read-only with

@@ -118,11 +118,13 @@ class TestFillParagraph:
         h.send_keys("M-q")
         assert "read-only" in h.message_line()
 
-    def test_fill_unchanged_paragraph(self) -> None:
+    def test_fill_unchanged_paragraph_is_silent(self) -> None:
+        # GNU Emacs's M-q on an already-filled paragraph is a silent no-op.
         h = make_harness("short", width=80)
         h.editor.buffer.set_variable_local("fill-column", 70)
         h.send_keys("M-q")
-        assert "unchanged" in h.message_line().lower()
+        assert h.buffer_text() == "short"
+        assert h.message_line().strip() == ""
 
     def test_fill_undoable(self) -> None:
         text = "the quick brown fox jumps over the lazy dog"
@@ -133,11 +135,15 @@ class TestFillParagraph:
         h.send_keys("C-/")
         assert h.buffer_text() == text
 
-    def test_fill_message(self) -> None:
+    def test_fill_silent_and_point_at_start(self) -> None:
+        # Emacs's M-q is silent on success and leaves point at the start of
+        # the filled paragraph (it does not trail to the end of the insert).
         h = make_harness("a b c d e f g h i j k l", width=80)
         h.editor.buffer.set_variable_local("fill-column", 10)
         h.send_keys("M-q")
-        assert "Filled" in h.message_line()
+        assert h.buffer_text() == "a b c d e\nf g h i j\nk l"
+        assert h.message_line().strip() == ""
+        assert h.point() == (0, 0)
 
 
 # ═══════════════════════════════════════════════════════════════════════
