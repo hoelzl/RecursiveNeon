@@ -18,8 +18,11 @@ code).
 parity/
   keys.py                    Emacs-style key descriptions → pty bytes
                              (e.g. "C-x C-s", "M-x", "RET", "<up>")
-  harness.py                 Driver (pexpect + pyte), Snapshot, TargetSpec
-  targets.py                 make_emacs_target / make_neon_target builders
+  harness.py                 Driver (pexpect + pyte), Snapshot, TargetSpec;
+                             Driver.wait_for (wait for a readiness condition
+                             on screen, not just an output-silence window)
+  targets.py                 make_emacs_target / make_neon_target builders;
+                             NEON_PARITY_PYTHON env override for the neon venv
   fixtures.py                staged_file context manager + make_targets pair
   report.py                  side-by-side diff renderer
   run.py                     python -m parity.run [--list] [pattern]
@@ -197,8 +200,9 @@ Three flavours:
   loosened it.
 - Run **all** scenarios to make sure no other scenario regressed.
 - Commit per logical group (one scenario + the fixes its
-  divergences forced is a fine commit boundary). Push to
-  `claude/emacs-behavior-parity-bwoWL`.
+  divergences forced is a fine commit boundary), then push and open a
+  PR right away — see "Branch and PR workflow" below. No need to ask
+  first.
 
 ## Current scenario coverage
 
@@ -386,7 +390,7 @@ Each is sized for one session if the divergences turn out moderate.
 
 ## Commit conventions
 
-Past commits on this branch all follow a similar template:
+Past parity commits all follow a similar template:
 
 ```
 <type>: <scenario or area> + <Emacs-shaped fix>
@@ -401,8 +405,35 @@ Scenario NN: <K>/<K> checkpoints pixel-perfect parity.
 That format is easy to grep for and tells the next reader exactly what
 changed in editor semantics vs. what's just test bookkeeping.
 
-## Branch
+## Branch and PR workflow
 
-All work lives on `claude/emacs-behavior-parity-bwoWL`. Push as you
-go (`git push -u origin claude/emacs-behavior-parity-bwoWL`); the user
-will review and merge from there. Don't create PRs unless asked.
+Each scenario lands on its **own branch** named `claude/parity-scenario-NN`
+and gets its **own PR**. Both are created as soon as the scenario is done —
+**push and open the PR without pausing to ask for confirmation.**
+
+When a scenario is complete — written, run, every divergence fixed or
+documented, tests updated, and **the full backend suite + all parity
+scenarios green** (ruff / ruff-format / mypy clean, pre-commit hooks
+passing):
+
+1. **Branch.** Off `master`: `git checkout -b claude/parity-scenario-NN`.
+   If the work builds on a still-unmerged earlier scenario branch (e.g. its
+   `PARITY_HARNESS.md` edits stack on the previous scenario's), branch off
+   *that* branch instead so the diffs stay clean.
+2. **Commit** per logical group (one scenario + the fixes its divergences
+   forced; see Commit conventions above). End commit messages with the
+   `Co-Authored-By` trailer.
+3. **Push immediately** — don't wait to be asked:
+   `git push -u origin claude/parity-scenario-NN`.
+4. **Open a PR immediately** — don't wait to be asked:
+   `gh pr create --base <base> --head claude/parity-scenario-NN --title … --body-file -`.
+   `<base>` is `master` normally; for a branch stacked on an unmerged
+   earlier scenario, use `--base claude/parity-scenario-<earlier>` so the
+   PR shows only this scenario's diff (GitHub retargets it to `master`
+   automatically once the parent merges — call out the dependency in the PR
+   body). End the PR body with the Claude Code attribution line.
+
+The user reviews and merges the PRs. (Historical note: scenarios 01–08
+once lived on a single `claude/emacs-behavior-parity-bwoWL` branch; it has
+since diverged from `master` and is no longer the integration point — the
+per-scenario branches above supersede it.)
