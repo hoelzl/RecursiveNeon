@@ -411,29 +411,45 @@ Each scenario lands on its **own branch** named `claude/parity-scenario-NN`
 and gets its **own PR**. Both are created as soon as the scenario is done —
 **push and open the PR without pausing to ask for confirmation.**
 
+**Always branch off `origin/master`; never stack one scenario branch on
+another.** This repo merges PRs with *rebase-and-merge* / *squash-and-merge*
+(merge commits are disabled), and both rewrite history: when a PR merges its
+commits land on `master` under *new* SHAs. A branch stacked on that parent
+still carries the parent's *old*-SHA commit, so the moment the parent merges
+the child conflicts on every file the parent touched and needs a
+`git rebase --onto origin/master <old-parent-tip>` to drop the now-duplicated
+commit. Branching each scenario straight off `master` avoids this entirely —
+the branch has only its own commit, so there is nothing to duplicate.
+
+To keep even the `PARITY_HARNESS.md` edits conflict-free, **let each
+scenario's PR merge before starting the next**: the fresh `master` then
+already has the prior scenario's doc edits, and yours stack on them cleanly.
+If you must start the next scenario before the previous one merges, keep the
+doc edits append-only and don't *both* rewrite the aggregate count line under
+"Current scenario coverage" — that single line is the only place concurrent
+scenario branches collide.
+
 When a scenario is complete — written, run, every divergence fixed or
 documented, tests updated, and **the full backend suite + all parity
 scenarios green** (ruff / ruff-format / mypy clean, pre-commit hooks
 passing):
 
-1. **Branch.** Off `master`: `git checkout -b claude/parity-scenario-NN`.
-   If the work builds on a still-unmerged earlier scenario branch (e.g. its
-   `PARITY_HARNESS.md` edits stack on the previous scenario's), branch off
-   *that* branch instead so the diffs stay clean.
+1. **Branch off the latest master.**
+   `git fetch origin && git checkout -b claude/parity-scenario-NN origin/master`.
 2. **Commit** per logical group (one scenario + the fixes its divergences
    forced; see Commit conventions above). End commit messages with the
    `Co-Authored-By` trailer.
 3. **Push immediately** — don't wait to be asked:
    `git push -u origin claude/parity-scenario-NN`.
-4. **Open a PR immediately** — don't wait to be asked:
-   `gh pr create --base <base> --head claude/parity-scenario-NN --title … --body-file -`.
-   `<base>` is `master` normally; for a branch stacked on an unmerged
-   earlier scenario, use `--base claude/parity-scenario-<earlier>` so the
-   PR shows only this scenario's diff (GitHub retargets it to `master`
-   automatically once the parent merges — call out the dependency in the PR
-   body). End the PR body with the Claude Code attribution line.
+4. **Open a PR immediately against `master`** — don't wait to be asked:
+   `gh pr create --base master --head claude/parity-scenario-NN --title … --body-file -`.
+   End the PR body with the Claude Code attribution line.
 
-The user reviews and merges the PRs. (Historical note: scenarios 01–08
-once lived on a single `claude/emacs-behavior-parity-bwoWL` branch; it has
-since diverged from `master` and is no longer the integration point — the
-per-scenario branches above supersede it.)
+If `master` has advanced since you branched, `git fetch origin && git rebase
+origin/master` before pushing so GitHub shows the PR mergeable.
+
+The user reviews and merges the PRs. (Historical note: scenarios 01–08 once
+lived on a single `claude/emacs-behavior-parity-bwoWL` branch, later
+replaced by stacked per-scenario branches; both are superseded by the
+branch-off-`master` rule above, which is what keeps PRs conflict-free under
+rebase/squash merging.)
