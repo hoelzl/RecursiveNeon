@@ -418,6 +418,7 @@ class TestFileOperations:
     def test_write_file_tab_completion(self):
         """write-file's TAB expands to the common prefix; user keeps typing."""
         ed = make_editor("text")
+
         # Real path_completer filters by the partial input — model that
         # so TAB after a disambiguating char unique-completes.
         def fake_completer(partial: str) -> list[str]:

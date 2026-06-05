@@ -25,7 +25,7 @@ from recursive_neon.editor.variables import VARIABLES
 if TYPE_CHECKING:
     from recursive_neon.editor.default_commands import _QueryReplaceSession
     from recursive_neon.editor.viewport import Viewport
-    from recursive_neon.editor.window import WindowTree
+    from recursive_neon.editor.window import Window, WindowTree
 
 
 @dataclass
@@ -313,13 +313,15 @@ class Editor:
 
         from recursive_neon.editor.window import SplitDirection
 
+        target: Window
         if tree.is_single():
             tree.active.sync_from_buffer()
             target = tree.split(SplitDirection.HORIZONTAL)
         else:
-            target = tree.other_window()
-            if target is None:
+            other = tree.other_window()
+            if other is None:
                 return self.switch_to_buffer(name)
+            target = other
 
         target.show_buffer(buf)
         if buf.on_focus is not None:
