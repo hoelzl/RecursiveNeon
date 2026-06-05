@@ -98,7 +98,10 @@ class TestViewRendering:
         assert "C3" not in modeline
 
     def test_modeline_shows_column_when_column_number_mode(self):
-        view = make_view("hello\nworld")
+        # Wider than the 40-col default: the *scratch* buffer name is now
+        # padded to a 12-col minimum (Emacs %12b), which pushes the column
+        # readout past column 40 (Emacs truncates there too).
+        view = make_view("hello\nworld", width=60)
         view.editor.buffer.local_variables["column-number-mode"] = True
         view.editor.buffer.point.line = 1
         view.editor.buffer.point.col = 3
@@ -106,6 +109,45 @@ class TestViewRendering:
         modeline = screen.lines[view.text_height]
         assert "L2" in modeline
         assert "C3" in modeline
+
+    def test_modeline_no_file_buffer_uses_uuu_prefix(self):
+        # Emacs widens the coding mnemonic to -UUU: for a buffer not
+        # visiting a file (e.g. *scratch*); file buffers keep -UU-:.
+        view = make_view("x", width=60)
+        view.editor.buffer.filepath = None  # *scratch* has no file
+        modeline = view._render().lines[view.text_height]
+        assert "-UUU:" in modeline
+        assert "-UU-:" not in modeline
+
+    def test_modeline_file_buffer_uses_uu_dash_prefix(self):
+        view = make_view("x", width=60)
+        view.editor.buffer.filepath = "notes.txt"
+        modeline = view._render().lines[view.text_height]
+        assert "-UU-:" in modeline
+        assert "-UUU:" not in modeline
+
+    def test_modeline_pads_short_name_to_12(self):
+        # Emacs %12b: the name occupies a 12-column minimum before the
+        # 3-space gap and the position field.
+        view = make_view("x", width=60)
+        view.editor.buffer.name = "ab"
+        view.editor.buffer.filepath = None
+        modeline = view._render().lines[view.text_height]
+        assert f"F1  {'ab'.ljust(12)}   All" in modeline
+
+    def test_c_x_c_q_toggles_read_only_and_mnemonic(self):
+        view = make_view("x", width=60)
+        ed = view.editor
+        assert ed.buffer.read_only is False
+        ed.process_key("C-x")
+        ed.process_key("C-q")
+        assert ed.buffer.read_only is True
+        assert ed.message == "Read-Only mode enabled in current buffer"
+        assert "%%-" in view._render().lines[view.text_height]
+        ed.process_key("C-x")
+        ed.process_key("C-q")
+        assert ed.buffer.read_only is False
+        assert ed.message == "Read-Only mode disabled in current buffer"
 
     def test_message_line(self):
         view = make_view("hello")

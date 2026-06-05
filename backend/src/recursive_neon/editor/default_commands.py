@@ -2131,6 +2131,20 @@ def auto_fill_mode(ed: Editor, prefix: int | None) -> None:
     ed.toggle_minor_mode("auto-fill-mode")
 
 
+@defcommand(
+    "read-only-mode",
+    "Toggle the buffer's read-only state (C-x C-q).",
+)
+def read_only_mode(ed: Editor, prefix: int | None) -> None:
+    # Emacs's read-only-mode flips buffer-read-only-p and echoes the
+    # minor-mode toggle message. (A prefix arg would force a direction in
+    # Emacs; a plain toggle covers the interactive C-x C-q case.)
+    buf = ed.buffer
+    buf.read_only = not buf.read_only
+    state = "enabled" if buf.read_only else "disabled"
+    ed.message = f"Read-Only mode {state} in current buffer"
+
+
 @defcommand("save-buffer", "Save the current buffer to its file.")
 def save_buffer(ed: Editor, prefix: int | None) -> None:
     buf = ed.buffer
@@ -2462,6 +2476,7 @@ def build_default_keymap() -> Keymap:
     cx.bind("C-c", "quit-editor")
     cx.bind("u", "undo")
     cx.bind("f", "set-fill-column")
+    cx.bind("C-q", "read-only-mode")
     # Window commands
     cx.bind("2", "split-window-below")
     cx.bind("3", "split-window-right")
