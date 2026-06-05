@@ -32,6 +32,7 @@ parity/
     scenario_06_kill_and_yank.py
     scenario_07_isearch.py
     scenario_08_region.py
+    scenario_09_undo_redo.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -50,6 +51,42 @@ CPython 3.14.0rc2 dropped the `prefer_fwd_module` kwarg that the pinned
 pydantic 2.13.4 still passes to `typing._eval_type`. Use 3.13 until
 pydantic ships a 3.14-compatible release. The CLAUDE.md and the
 `.venv` bootstrap already note this.
+
+### Running the harness from a Windows checkout via WSL
+
+The harness is pty-based (pexpect/pyte) and Unix-only, but it runs fine
+against a Windows checkout driven through WSL (emacs-nox + a Linux Python
+live in WSL; the repo lives on `/mnt/c/...`). Two host-specific wrinkles:
+
+1. **Separate Linux venv.** On a Windows checkout, `<repo>/.venv` is a
+   *Windows* venv (`Scripts/python.exe`, no `bin/python`), so it can't run
+   the pty harness. Create a Linux venv outside the repo and point the
+   harness at it with `NEON_PARITY_PYTHON`:
+
+   ```bash
+   uv venv --python 3.13 ~/parity-venv
+   uv pip install --python ~/parity-venv/bin/python \
+       -e /mnt/c/.../RecursiveNeon/backend[dev] pexpect pyte
+   export NEON_PARITY_PYTHON=~/parity-venv/bin/python   # read by parity/targets.py
+   cd /mnt/c/.../RecursiveNeon && ~/parity-venv/bin/python -m parity.run 09
+   ```
+
+   `parity/targets.py` falls back to `<repo>/.venv/bin/python` when the env
+   var is unset, so a native Linux checkout needs no change.
+
+2. **Slow cold start.** Importing neon-edit's source over `/mnt/c` takes
+   several seconds of *silence*. A pure-silence `settle()` would return
+   before the shell prompt (or editor) has painted, so the neon launch now
+   waits for a readiness *condition* via `Driver.wait_for` (the shell
+   prompt `neon-proxy:`, then the editor modeline) instead of a fixed
+   silence window. This is host-independent and harmless on fast hosts.
+
+   Driving `wsl bash` from Windows git-bash has two traps worth knowing:
+   git-bash path-mangles a bare `/mnt/...` *argument* (e.g. `wsl bash
+   /mnt/c/x.sh` → `C:/Program Files/Git/mnt/c/x.sh`), and `$VAR` inside
+   `wsl bash -lc '...'` gets double-evaluated. Both are avoided by putting
+   the work in a **script file** and invoking it with the path *inside*
+   quotes: `wsl bash -lc 'bash /mnt/c/.../run.sh 09'`.
 
 ## Running scenarios
 
@@ -164,7 +201,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(8 scenarios, 26 checkpoints. 21 are pixel-perfect; the 5 remaining
+(9 scenarios, 31 checkpoints. 23 are pixel-perfect; the 8 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -177,6 +214,7 @@ diffs are content/semantic differences explained below.)
 | 06 | kill / yank | `C-k`, `C-y` (sets mark), `M-w`, `C-w`, `M-y` |
 | 07 | isearch | `C-s` prompt + match cursor + case-sensitive + Mark saved |
 | 08 | region | `C-SPC`, `M-f` extension, `C-x C-x` swap |
+| 09 | undo / redo | `C-/` grouping, history walk-back, exhaustion, `C-f`+`C-/` redo, `Undo`/`Redo` echo |
 
 ## Known intentional divergences
 
@@ -201,6 +239,26 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   generated `defcommand` docstring, so it scrolls past the window
   height. Content-dependent; behaviour matches.
 
+- **09 modeline `--` vs `**` after undo-to-saved** (checkpoints
+  `after-undo-AB`, `after-undo-exhausted`). Emacs clears the modified
+  mnemonic once undo brings the buffer back to its saved-on-disk content;
+  neon-edit keeps it modified. This is save-state-through-undo tracking
+  (Emacs records `(t . TIME)` undo entries) and belongs to the proposed
+  `scenario_12` (modeline state flags), where the modified/read-only
+  mnemonics are handled together — not to the undo scenario. **When you
+  build scenario 12, fix this there.**
+
+- **09 redo cursor `col 0` vs `col 2`** (checkpoint `after-redo`). Emacs's
+  `primitive-undo` encodes per operation where point should land when a
+  deletion record is reinserted (via the sign of the recorded position),
+  so a *redone* insertion leaves point at the start of the reinserted
+  text; neon-edit's coarser undo-record model leaves point at the end.
+  Matching exactly would mean threading point intent through
+  `Buffer.undo`'s reverse-entry construction and would churn scenario 06 +
+  the undo test suite — disproportionate for a one-cell difference. The
+  echo-area feedback (`Undo`/`Redo`), buffer content, and the cursor on
+  every *forward* undo all match.
+
 ## Cosmetic items not yet polished
 
 These are real divergences but low-impact:
@@ -224,11 +282,14 @@ These are real divergences but low-impact:
 
 Each is sized for one session if the divergences turn out moderate.
 
-1. **`scenario_09_undo_redo`**: `C-/` undo grouping (consecutive
-   typing collapses into one undo unit; coalescing across kill
-   commands; `C-g C-/` for redo). Likely to surface gaps in how
-   neon-edit chunks edits into undo groups vs Emacs's `command-loop`-
-   driven boundaries.
+1. ~~**`scenario_09_undo_redo`**~~ **DONE.** `C-/` grouping, history
+   walk-back, exhaustion, and `C-f`+`C-/` redo. Surfaced that neon-edit
+   was silent on a successful undo whereas Emacs echoes `Undo`/`Redo`;
+   fixed by tracking redo-ness on the undo boundary and echoing the same
+   words. Two residual diffs are documented deviations (modified mnemonic
+   after undo-to-saved → owned by scenario 12 below; redo cursor landing →
+   Emacs `primitive-undo` point-sign semantics). See "Known intentional
+   divergences".
 
 2. **`scenario_10_buffer_switching`**: `C-x b` (switch-to-buffer)
    completion + default suggestion (Emacs offers the
@@ -244,7 +305,10 @@ Each is sized for one session if the divergences turn out moderate.
 4. **`scenario_12_modeline_state_flags`**: Watch the modified mnemonic
    transition `---` → `**-` after the first edit; flip read-only with
    `C-x C-q` and confirm `%%-` shows up; line/column readout under
-   `column-number-mode` enabled.
+   `column-number-mode` enabled. **Also fold in the undo-to-saved
+   carry-over from scenario 09**: Emacs clears the modified mnemonic when
+   undo restores the saved-on-disk content (it records `(t . TIME)` undo
+   entries); neon-edit needs save-state tracking through undo for this.
 
 5. **`scenario_13_kill_ring_browse`**: `M-y` cycling across multiple
    kills. After several `C-k`, `C-y M-y M-y` should walk back through

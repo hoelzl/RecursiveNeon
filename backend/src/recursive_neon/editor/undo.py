@@ -64,9 +64,19 @@ class UndoBoundary:
 
     One undo invocation reverses everything back to the previous
     boundary (or the start of the undo list).
+
+    ``redo`` marks a boundary that ``undo()`` inserts in front of the
+    reverse entries it appends — i.e. the group *after* this boundary is
+    "redo material" (the inverse of a change that was just undone). When a
+    later undo consumes such a group it is performing a *redo* rather than
+    an undo, which the editor reports as ``Redo`` in the echo area (GNU
+    Emacs does the same). The flag is excluded from equality so two
+    boundaries still compare equal regardless of redo-ness — the
+    consecutive-boundary collapse and the structural undo-list tests rely
+    on ``UndoBoundary() == UndoBoundary()``.
     """
 
-    pass
+    redo: bool = field(default=False, compare=False)
 
 
 UndoEntry = UndoInsert | UndoDelete | UndoCursorMove | UndoBoundary
