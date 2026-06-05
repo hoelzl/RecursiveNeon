@@ -738,7 +738,9 @@ def _deactivate_isearch_mode(ed: Editor) -> None:
         minor.remove(mode)
 
 
-def _isearch_set_point(buf, match_line: int, match_col: int, text: str, *, forward: bool) -> None:
+def _isearch_set_point(
+    buf, match_line: int, match_col: int, text: str, *, forward: bool
+) -> None:
     """Place point relative to a match the way GNU Emacs's isearch does.
 
     Forward search leaves point *after* the match (so the user can
@@ -1565,9 +1567,7 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-DESCRIBE_KEY_PROMPT = (
-    "Describe the following key, mouse click, or menu item: "
-)
+DESCRIBE_KEY_PROMPT = "Describe the following key, mouse click, or menu item: "
 
 
 @defcommand("describe-key", "Show what command a key is bound to (C-h k).")
@@ -1835,9 +1835,7 @@ def help_tutorial(ed: Editor, prefix: int | None) -> None:
     ed.buffer.modified = False
 
 
-def _show_popup_buffer(
-    ed: Editor, *, name: str, text: str, major_mode: str
-) -> None:
+def _show_popup_buffer(ed: Editor, *, name: str, text: str, major_mode: str) -> None:
     """Populate a read-only popup buffer and show it in the other window.
 
     Generalises the ``*Help*`` / ``*Completions*`` flow. The active window
