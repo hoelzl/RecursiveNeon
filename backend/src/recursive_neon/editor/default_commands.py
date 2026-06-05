@@ -2094,17 +2094,19 @@ def fill_paragraph(ed: Editor, prefix: int | None) -> None:
     para_lines = buf.lines[start : end + 1]
     new_lines = _fill_lines(para_lines, fill_col)
     if new_lines == para_lines:
-        ed.message = "Paragraph unchanged"
+        # Already filled — GNU Emacs's M-q is a silent no-op here.
         return
-    # Replace the paragraph text
+    # Replace the paragraph text.
     buf.add_undo_boundary()
     start_mark = Mark(start, 0)
     end_mark = Mark(end, len(buf.lines[end]))
     buf.delete_region(start_mark, end_mark)
     buf.point.move_to(start, 0)
     buf.insert_string("\n".join(new_lines))
+    # Emacs leaves point at the start of the filled paragraph and prints no
+    # echo-area message on a successful fill; match both.
+    buf.point.move_to(start, 0)
     buf.add_undo_boundary()
-    ed.message = "Filled paragraph"
 
 
 @defcommand(
