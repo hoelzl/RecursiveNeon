@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.killring import KillRing
+from tests.unit.editor.harness import make_harness
 
 # ═══════════════════════════════════════════════════════════════════════
 # KillRing standalone
@@ -312,3 +313,92 @@ class TestKillUndoIntegration:
         assert b.text == "hello"
         b.undo()
         assert b.text == ""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Kill coalescing + yank-pop through the editor dispatch
+# ═══════════════════════════════════════════════════════════════════════
+#
+# The buffer-level tests above fake the "intervening command" by manually
+# resetting ``last_command_type`` (see ``test_non_consecutive_kills_separate``).
+# These editor-level tests drive the real dispatch path instead: the
+# dispatcher is what must reset the marker when a non-kill command breaks a
+# kill run. A regression here was that kills separated by a cursor move
+# wrongly merged into a single kill-ring entry (parity scenario 13).
+
+
+class TestKillCoalescingViaEditor:
+    def test_kills_separated_by_move_do_not_merge(self) -> None:
+        """C-k C-n C-k C-n C-k → three separate ring entries.
+
+        GNU Emacs starts a new kill-ring entry once a non-kill command
+        breaks the kill run; the C-n between kills is exactly such a
+        break. neon-edit's dispatch clears ``last_command_type`` on any
+        non-coalescing, non-undo command so the next kill pushes instead
+        of appending.
+        """
+        h = make_harness("one\ntwo\nthree\nfour\n")
+        h.send_keys("C-k", "C-n", "C-k", "C-n", "C-k")
+        # Newest first — not the merged "onetwothree" the bug produced.
+        assert h.editor.buffer.kill_ring.entries == ["three", "two", "one"]
+
+    def test_consecutive_kills_still_merge(self) -> None:
+        """Back-to-back C-k stay in one coalesce run and append.
+
+        The reset must only fire on the run *break*, not between
+        consecutive kills, or every kill would become its own entry.
+        """
+        h = make_harness("hello world\n")
+        h.send_keys("C-k", "C-k")  # kill "hello world", then the "\n"
+        assert h.editor.buffer.kill_ring.entries == ["hello world\n"]
+
+    def test_yank_pop_cycles_via_editor(self) -> None:
+        """C-y then repeated M-y walk the ring and wrap, in place."""
+        h = make_harness("one\ntwo\nthree\nfour\n")
+        h.send_keys("C-k", "C-n", "C-k", "C-n", "C-k")  # ring [three, two, one]
+        # Point sits on the (now empty) third line; yank lands there.
+        h.send_keys("C-y")
+        assert h.buffer_text() == "\n\nthree\nfour\n"
+        h.send_keys("M-y")
+        assert h.buffer_text() == "\n\ntwo\nfour\n"
+        h.send_keys("M-y")
+        assert h.buffer_text() == "\n\none\nfour\n"
+        h.send_keys("M-y")  # wraps back to the newest
+        assert h.buffer_text() == "\n\nthree\nfour\n"
+
+    def test_copy_after_move_pushes_new_entry_not_append(self) -> None:
+        """M-w after an intervening move PUSHES, it does not append.
+
+        kill-ring-save (M-w) inspects ``last_command_type`` to decide
+        append-vs-push, but needs a region — which means a mark-set/move
+        between the kill and the M-w. GNU Emacs breaks the kill-append
+        chain across that move, so the copied region becomes its own ring
+        entry. Verified pixel-perfect against Emacs via the parity harness
+        (the kill→C-n→region→M-w probe). This guards the dispatch reset for
+        the kill-ring-save path specifically, which has ``coalesce_key=None``
+        rather than ``"kill"``.
+        """
+        h = make_harness("alpha\nbeta\ngamma\n")
+        h.send_keys("C-k")  # kill "alpha"
+        h.send_keys("C-n")  # move to line 2 — breaks the kill chain
+        h.editor.buffer.set_mark(1, 0)
+        h.send_keys("M-f")  # select "beta"
+        h.send_keys("M-w")  # copy "beta"
+        # Two separate entries, not the merged "betaalpha"/"alphabeta".
+        assert h.editor.buffer.kill_ring.entries == ["beta", "alpha"]
+
+    def test_yank_pop_is_noop_when_not_after_yank(self) -> None:
+        """M-y only rotates immediately after a yank.
+
+        A C-b breaks the yank run, so the following M-y must not touch the
+        buffer. (GNU Emacs 29 instead opens a ``yank-from-kill-ring``
+        minibuffer here; neon-edit has no such picker, so it no-ops — see
+        parity scenario 13 / docs/PARITY_HARNESS.md.)
+        """
+        h = make_harness("one\ntwo\nthree\nfour\n")
+        h.send_keys("C-k", "C-n", "C-k", "C-n", "C-k")
+        h.send_keys("C-y")  # yank "three"
+        after_yank = h.buffer_text()
+        h.send_keys("C-b")  # break the yank run
+        h.send_keys("M-y")  # not after a yank → no rotation
+        assert h.buffer_text() == after_yank
