@@ -458,19 +458,28 @@ def execute_extended_command(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("switch-to-buffer", "Switch to a different buffer (C-x b).")
 def switch_to_buffer(ed: Editor, prefix: int | None) -> None:
+    default = ed.other_buffer_name()
+
     def completer(text: str) -> list[str]:
         return [b.name for b in ed.buffers if b.name.startswith(text)]
 
     def callback(name: str) -> None:
         name = name.strip()
         if not name:
-            return
+            # Empty input switches to the default (the MRU "other" buffer),
+            # matching GNU Emacs. With no other buffer there is nothing to do.
+            if default is None:
+                return
+            name = default
         if not ed.switch_to_buffer(name):
-            # Create a new empty buffer with that name
+            # No such buffer → create it. Emacs does this silently; the new
+            # empty buffer appearing on screen is the only feedback.
             ed.create_buffer(name=name)
-            ed.message = f"(New buffer {name})"
 
-    ed.start_minibuffer("Switch to buffer: ", callback, completer=completer)
+    prompt = (
+        f"Switch to buffer (default {default}): " if default else "Switch to buffer: "
+    )
+    ed.start_minibuffer(prompt, callback, completer=completer)
 
 
 @defcommand("list-buffers", "Show a list of all buffers (C-x C-b).")
@@ -499,7 +508,9 @@ def list_buffers(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("kill-buffer", "Kill (close) a buffer (C-x k).")
 def kill_buffer(ed: Editor, prefix: int | None) -> None:
-    current_name = ed.buffer.name
+    # Emacs's kill-buffer default is the current buffer, offered in the
+    # prompt rather than pre-filled into the editable input.
+    default = ed.buffer.name
 
     def completer(text: str) -> list[str]:
         return [b.name for b in ed.buffers if b.name.startswith(text)]
@@ -507,11 +518,15 @@ def kill_buffer(ed: Editor, prefix: int | None) -> None:
     def callback(name: str) -> None:
         name = name.strip()
         if not name:
-            return
-        ed.remove_buffer(name)
+            name = default
+        if ed.remove_buffer(name):
+            # Emacs's kill-buffer is silent on success (remove_buffer left a
+            # "Killed buffer" message — clear it to match). A failed kill
+            # keeps remove_buffer's "No buffer named …" message.
+            ed.message = ""
 
     ed.start_minibuffer(
-        "Kill buffer: ", callback, completer=completer, initial=current_name
+        f"Kill buffer (default {default}): ", callback, completer=completer
     )
 
 

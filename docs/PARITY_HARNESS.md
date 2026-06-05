@@ -33,6 +33,7 @@ parity/
     scenario_07_isearch.py
     scenario_08_region.py
     scenario_09_undo_redo.py
+    scenario_10_buffer_switching.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -201,7 +202,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(9 scenarios, 31 checkpoints. 23 are pixel-perfect; the 8 remaining
+(10 scenarios, 36 checkpoints. 26 are pixel-perfect; the 10 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -215,6 +216,7 @@ diffs are content/semantic differences explained below.)
 | 07 | isearch | `C-s` prompt + match cursor + case-sensitive + Mark saved |
 | 08 | region | `C-SPC`, `M-f` extension, `C-x C-x` swap |
 | 09 | undo / redo | `C-/` grouping, history walk-back, exhaustion, `C-f`+`C-/` redo, `Undo`/`Redo` echo |
+| 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
 
 ## Known intentional divergences
 
@@ -263,20 +265,26 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
 
 These are real divergences but low-impact:
 
-1. **Modeline prefix `-UUU:%%-` vs `-UU-:%%-`** for read-only special
-   buffers (`*Help*`, `*Completions*`). Emacs widens the coding-system
-   mnemonic to 3 chars for the special-buffer class. Single-character
-   fix in `view.py::_render_modeline` — detect `read_only` and emit
-   three U's.
+1. **Modeline prefix `-UUU:` vs `-UU-:`** for buffers *not visiting a
+   file*. Emacs widens the coding-system/EOL mnemonic to three `U`s when a
+   buffer has no associated file — this covers `*Help*`/`*Completions*`
+   *and* plain no-file buffers like the `second` buffer in scenario 10
+   (which is not read-only), so the trigger is "no file", not
+   "read-only". File-visiting buffers show `-UU-:` in both editors. Fix in
+   `view.py::_render_modeline` — key the third `U` off "buffer has no
+   filepath", not off `read_only`.
 
 2. **Split-window proportion when odd**. Emacs gives the *top* window
    the extra row when total height is odd; neon-edit gives it to the
    bottom. Fix is in the view's region computation for split nodes.
 
 3. **Buffer-name padding in modeline**. Emacs right-pads short buffer
-   names to a fixed width (`*Help*         `) so the position info
-   line up across consecutive renders. Currently we just emit the
-   name verbatim.
+   names to a fixed minimum width (`%12b` → 12 columns, e.g.
+   `*Help*      `, `second      `) so the position info lines up across
+   consecutive renders. Currently we just emit the name verbatim. Surfaces
+   in scenario 05 (`*Help*`) and scenario 10 (`second`); every parity
+   *file* buffer name is already ≥12 chars, so a min-width fix would not
+   disturb the existing file-buffer modeline checkpoints.
 
 ## Proposed next scenarios
 
@@ -291,11 +299,18 @@ Each is sized for one session if the divergences turn out moderate.
    Emacs `primitive-undo` point-sign semantics). See "Known intentional
    divergences".
 
-2. **`scenario_10_buffer_switching`**: `C-x b` (switch-to-buffer)
-   completion + default suggestion (Emacs offers the
-   most-recently-used as the default; neon-edit may not). `C-x C-b`
-   (list-buffers) modeline format. `C-x k` (kill-buffer) confirm-if-
-   modified flow.
+2. ~~**`scenario_10_buffer_switching`**~~ **DONE (switch-to-buffer +
+   kill-buffer defaults).** `C-x b` now offers the MRU "other" buffer as
+   the `(default …)` and switches to it on empty RET; `C-x k` offers the
+   current buffer as a prompt default instead of pre-filling it; buffer
+   create/kill are now silent like Emacs. Added `Editor.other_buffer_name`
+   + recency tracking. Residual: the no-file-buffer modeline cosmetics
+   (#1/#3 above). **Still TODO in a follow-up scenario:** `C-x C-b`
+   (list-buffers) — Emacs pops `*Buffer List*` in a *split* window with a
+   "CRM Buffer Size Mode File" table that also lists `*scratch*`/
+   `*Messages*` (neon-edit replaces the current window and has a different
+   table + buffer model); and `C-x k`'s confirm-if-modified flow ("Buffer
+   X modified; kill anyway? (yes or no)"), which neon-edit lacks.
 
 3. **`scenario_11_indentation_and_auto_fill`**: TAB behaviour in
    `python-mode` vs `text-mode` vs `fundamental-mode`. `M-q`
