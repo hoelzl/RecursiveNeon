@@ -551,6 +551,11 @@ class Editor:
             prefix = self._prefix_arg
             self._prefix_arg = None
             self.buffer.add_undo_boundary()
+            # Like the named-command dispatch, a direct callable is a command
+            # boundary: clear the kill/yank marker so a following kill starts a
+            # new ring entry and yank-pop's precondition fails (GNU Emacs
+            # resets last-command for every command, direct callables included).
+            self.buffer.last_command_type = ""
             target(self, prefix)
             self._last_command_name = ""
         elif not was_prefix and len(key) == 1 and key.isprintable():
@@ -653,6 +658,17 @@ class Editor:
         same_run = ckey is not None and ckey == self._last_coalesce_key
         if name != "undo" and not same_run:
             buf.add_undo_boundary()
+            # A fresh, non-coalescing command ends any kill/yank run: clear
+            # the buffer's last-command marker so the *next* kill pushes a new
+            # kill-ring entry (rather than appending to the previous kill) and
+            # so yank-pop's "previous command was a yank" precondition fails.
+            # This mirrors GNU Emacs resetting ``last-command`` on every
+            # command. ``add_undo_boundary`` only clears this field for the
+            # undo chain (and not at all when it collapses onto an existing
+            # boundary), so kills separated by a cursor move would otherwise
+            # wrongly coalesce. The ``undo`` chain manages the field itself,
+            # hence the ``name != "undo"`` guard above.
+            buf.last_command_type = ""
         self._last_coalesce_key = ckey
 
         # Stash the key for self-insert-command
@@ -692,6 +708,17 @@ class Editor:
         same_run = ckey is not None and ckey == self._last_coalesce_key
         if name != "undo" and not same_run:
             buf.add_undo_boundary()
+            # A fresh, non-coalescing command ends any kill/yank run: clear
+            # the buffer's last-command marker so the *next* kill pushes a new
+            # kill-ring entry (rather than appending to the previous kill) and
+            # so yank-pop's "previous command was a yank" precondition fails.
+            # This mirrors GNU Emacs resetting ``last-command`` on every
+            # command. ``add_undo_boundary`` only clears this field for the
+            # undo chain (and not at all when it collapses onto an existing
+            # boundary), so kills separated by a cursor move would otherwise
+            # wrongly coalesce. The ``undo`` chain manages the field itself,
+            # hence the ``name != "undo"`` guard above.
+            buf.last_command_type = ""
         self._last_coalesce_key = ckey
         buf._read_only_error = False
         cmd.function(self, prefix)

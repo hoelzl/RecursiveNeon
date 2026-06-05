@@ -39,6 +39,7 @@ parity/
     scenario_10_buffer_switching.py
     scenario_11_fill_paragraph.py
     scenario_12_modeline_state_flags.py
+    scenario_13_kill_ring_browse.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -208,7 +209,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(12 scenarios, 41 checkpoints. 33 are pixel-perfect; the 8 remaining
+(13 scenarios, 47 checkpoints. 38 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -225,6 +226,7 @@ diffs are content/semantic differences explained below.)
 | 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
 | 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
 | 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
+| 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
 
 ## Known intentional divergences
 
@@ -272,6 +274,19 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   the undo test suite — disproportionate for a one-cell difference. The
   echo-area feedback (`Undo`/`Redo`), buffer content, and the cursor on
   every *forward* undo all match.
+
+- **13 `M-y` not after a yank → `yank-from-kill-ring`** (checkpoint
+  `after-M-y-not-after-yank`). The buffer body matches (both leave it
+  untouched); only the minibuffer differs. GNU Emacs ≥28 rebinds `M-y` so
+  that, when the previous command was *not* a yank, it runs
+  `yank-from-kill-ring` — an interactive `Yank from kill-ring:` minibuffer
+  that lets you pick any ring entry (this *replaced* the pre-28 `Previous
+  command was not a yank` error). neon-edit has no such picker, so its
+  `yank-pop` is a silent no-op in that state. Implementing the picker
+  (minibuffer completion over the ring, multi-line entry display, M-n/M-p
+  navigation) is a feature in its own right — deferred to a future
+  `scenario_NN_yank_from_kill_ring` (see "Proposed next scenarios"). The
+  normal cycle (`C-y` then repeated `M-y`) is pixel-perfect.
 
 ## Cosmetic items not yet polished
 
@@ -347,9 +362,18 @@ Each is sized for one session if the divergences turn out moderate.
    (an undo-system feature, not modeline rendering — see "Known intentional
    divergences").
 
-5. **`scenario_13_kill_ring_browse`**: `M-y` cycling across multiple
-   kills. After several `C-k`, `C-y M-y M-y` should walk back through
-   the ring, replacing the just-yanked text in place.
+5. ~~**`scenario_13_kill_ring_browse`**~~ **DONE.** Built a three-entry
+   ring (`C-k C-n C-k C-n C-k`), then walked it with `C-y` + repeated
+   `M-y`, including the wrap-around. Surfaced a real bug: kills separated
+   by a non-kill command (the `C-n`) *coalesced* into one ring entry, so
+   `C-y` yanked `onetwothree` instead of `three`. Root cause: the dispatch
+   reset `last_command_type` only for the undo chain, so the marker stayed
+   `"kill"` across the move and the next kill appended. Fixed by clearing
+   it on any non-coalescing, non-undo command in `editor.py` (mirrors GNU
+   Emacs resetting `last-command` every command); checkpoints 1–5 are
+   pixel-perfect. The 6th checkpoint documents the Emacs-29
+   `yank-from-kill-ring` gap (see item 9 and "Known intentional
+   divergences").
 
 6. **`scenario_14_query_replace`**: `M-%` interactive replace —
    minibuffer flow (`Query replace: ` → `Replace string FOO with: `),
@@ -362,6 +386,16 @@ Each is sized for one session if the divergences turn out moderate.
 8. **`scenario_16_minibuffer_history`**: `M-p` / `M-n` in any
    minibuffer prompt to recall previous input. Common Emacs feature
    that's easy to overlook.
+
+9. **`scenario_NN_yank_from_kill_ring`** (deferred from scenario 13):
+   implement and verify `yank-from-kill-ring` — the command GNU Emacs ≥28
+   binds to `M-y` when the previous command was *not* a yank. It opens a
+   `Yank from kill-ring:` minibuffer with the ring entries as completion
+   candidates (multi-line entries shown with a separator), `M-n`/`M-p` to
+   navigate, `RET` to insert the chosen entry at point (and push a mark,
+   like yank). neon-edit currently no-ops `M-y` in that state. This is a
+   real feature, not a one-line fix, which is why scenario 13 left it as a
+   documented divergence rather than expanding scope.
 
 ## Tips and gotchas
 
