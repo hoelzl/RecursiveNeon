@@ -575,9 +575,11 @@ class EditorView:
         buf = win.buffer
         ed = self.editor
 
-        # Modified / read-only mnemonic. The leading ``-UU-:`` is fixed
-        # (we don't track per-buffer coding system or end-of-line style;
-        # ``UU`` is Emacs's mnemonic for input+output coding both UTF-8).
+        # Modified / read-only mnemonic. We don't track a per-buffer coding
+        # system or end-of-line style; ``UU`` is Emacs's mnemonic for
+        # input+output coding both UTF-8. (The coding-system *prefix* —
+        # ``-UU-:`` vs ``-UUU:`` — is chosen below from whether the buffer
+        # visits a file.)
         read_only = bool(getattr(buf, "read_only", False))
         if read_only:
             mod = "%*-" if buf.modified else "%%-"
@@ -622,9 +624,18 @@ class EditorView:
         )
         mode_str = f"({display}{minor_indicators})"
 
+        # Coding-system mnemonic: ``-UU-:`` for a file-visiting buffer;
+        # Emacs widens the third column to ``U`` (``-UUU:``) for a buffer
+        # with no associated file (``*scratch*``/``*Help*``/``*Completions*``
+        # or a fresh ``C-x b`` buffer).
+        mule = "-UU-:" if buf.filepath else "-UUU:"
+        # Emacs right-pads the buffer name to a 12-column minimum (``%12b``)
+        # so the position columns line up; long names are unaffected.
+        name_field = name.ljust(12)
+
         # Assemble. The trailing dashes fill the row out to the window width,
         # matching the look of Emacs's ``mode-line-end-spaces`` padding.
-        head = f"-UU-:{mod}  F1  {name}   {pos}"
+        head = f"{mule}{mod}  F1  {name_field}   {pos}"
         if pos_line:
             head += f"   {pos_line}"
         head += f"     {mode_str} "

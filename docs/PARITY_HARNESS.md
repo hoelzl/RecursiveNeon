@@ -38,6 +38,7 @@ parity/
     scenario_09_undo_redo.py
     scenario_10_buffer_switching.py
     scenario_11_fill_paragraph.py
+    scenario_12_modeline_state_flags.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -207,7 +208,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(11 scenarios, 38 checkpoints. 28 are pixel-perfect; the 10 remaining
+(12 scenarios, 41 checkpoints. 33 are pixel-perfect; the 8 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -223,6 +224,7 @@ diffs are content/semantic differences explained below.)
 | 09 | undo / redo | `C-/` grouping, history walk-back, exhaustion, `C-f`+`C-/` redo, `Undo`/`Redo` echo |
 | 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
 | 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
+| 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
 
 ## Known intentional divergences
 
@@ -245,16 +247,20 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
 - **05 modeline `Top` vs `All`**. Emacs's `*Help*` doc for
   `forward-char` is several lines longer than neon-edit's auto-
   generated `defcommand` docstring, so it scrolls past the window
-  height. Content-dependent; behaviour matches.
+  height. Content-dependent; behaviour matches. (The `-UUU:` prefix and
+  `*Help*` name padding that used to differ here were fixed in scenario
+  12; only this `Top`/`All` position indicator now differs.)
 
 - **09 modeline `--` vs `**` after undo-to-saved** (checkpoints
   `after-undo-AB`, `after-undo-exhausted`). Emacs clears the modified
   mnemonic once undo brings the buffer back to its saved-on-disk content;
-  neon-edit keeps it modified. This is save-state-through-undo tracking
-  (Emacs records `(t . TIME)` undo entries) and belongs to the proposed
-  `scenario_12` (modeline state flags), where the modified/read-only
-  mnemonics are handled together — not to the undo scenario. **When you
-  build scenario 12, fix this there.**
+  neon-edit keeps it modified. This was *expected* to land in scenario 12,
+  but it is **not** a modeline-rendering issue — it is save-state-through-
+  undo tracking (Emacs records the buffer-modified state in `(t . TIME)`
+  undo entries and `primitive-undo` restores it). Scenario 12 fixed the
+  pure-rendering mnemonics (`-UUU:`, padding, `C-x C-q`) but left this for
+  its own follow-up: neon-edit would need to record the undo-list position
+  at save time and clear `modified` when undo/redo returns to it.
 
 - **09 redo cursor `col 0` vs `col 2`** (checkpoint `after-redo`). Emacs's
   `primitive-undo` encodes per operation where point should land when a
@@ -271,26 +277,21 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
 
 These are real divergences but low-impact:
 
-1. **Modeline prefix `-UUU:` vs `-UU-:`** for buffers *not visiting a
-   file*. Emacs widens the coding-system/EOL mnemonic to three `U`s when a
-   buffer has no associated file — this covers `*Help*`/`*Completions*`
-   *and* plain no-file buffers like the `second` buffer in scenario 10
-   (which is not read-only), so the trigger is "no file", not
-   "read-only". File-visiting buffers show `-UU-:` in both editors. Fix in
-   `view.py::_render_modeline` — key the third `U` off "buffer has no
-   filepath", not off `read_only`.
+1. ~~**Modeline prefix `-UUU:` vs `-UU-:`** for buffers not visiting a
+   file.~~ **FIXED in scenario 12.** `view.py::_render_modeline` now keys
+   the third `U` off "buffer has no filepath". Cleared the no-file modeline
+   diffs in scenarios 10 (`second`, now pixel-perfect) and shrank 05
+   (`*Help*`) / 03 (`*Completions*`) to their content-only diffs.
 
 2. **Split-window proportion when odd**. Emacs gives the *top* window
    the extra row when total height is odd; neon-edit gives it to the
    bottom. Fix is in the view's region computation for split nodes.
 
-3. **Buffer-name padding in modeline**. Emacs right-pads short buffer
-   names to a fixed minimum width (`%12b` → 12 columns, e.g.
-   `*Help*      `, `second      `) so the position info lines up across
-   consecutive renders. Currently we just emit the name verbatim. Surfaces
-   in scenario 05 (`*Help*`) and scenario 10 (`second`); every parity
-   *file* buffer name is already ≥12 chars, so a min-width fix would not
-   disturb the existing file-buffer modeline checkpoints.
+3. ~~**Buffer-name padding in modeline** (`%12b`).~~ **FIXED in scenario
+   12.** `_render_modeline` now right-pads the name to a 12-column minimum.
+   Every parity *file* buffer name already exceeds 12 columns, so only the
+   short no-file names (`*Help*`, `second`, …) changed — no file-buffer
+   checkpoint was disturbed.
 
 ## Proposed next scenarios
 
@@ -310,8 +311,9 @@ Each is sized for one session if the divergences turn out moderate.
    the `(default …)` and switches to it on empty RET; `C-x k` offers the
    current buffer as a prompt default instead of pre-filling it; buffer
    create/kill are now silent like Emacs. Added `Editor.other_buffer_name`
-   + recency tracking. Residual: the no-file-buffer modeline cosmetics
-   (#1/#3 above). **Still TODO in a follow-up scenario:** `C-x C-b`
+   + recency tracking. (The residual no-file-buffer modeline cosmetics were
+   since fixed in scenario 12, so scenario 10 is now fully pixel-perfect.)
+   **Still TODO in a follow-up scenario:** `C-x C-b`
    (list-buffers) — Emacs pops `*Buffer List*` in a *split* window with a
    "CRM Buffer Size Mode File" table that also lists `*scratch*`/
    `*Messages*` (neon-edit replaces the current window and has a different
@@ -334,13 +336,16 @@ Each is sized for one session if the divergences turn out moderate.
    - **`auto-fill-mode` insertion** — break-on-space past fill-column; has
      its own mode-enable echo and ` Fill` modeline indicator to diff.
 
-4. **`scenario_12_modeline_state_flags`**: Watch the modified mnemonic
-   transition `---` → `**-` after the first edit; flip read-only with
-   `C-x C-q` and confirm `%%-` shows up; line/column readout under
-   `column-number-mode` enabled. **Also fold in the undo-to-saved
-   carry-over from scenario 09**: Emacs clears the modified mnemonic when
-   undo restores the saved-on-disk content (it records `(t . TIME)` undo
-   entries); neon-edit needs save-state tracking through undo for this.
+4. ~~**`scenario_12_modeline_state_flags`**~~ **DONE.** Modified mnemonic
+   `---`↔`**-` (already matched); added the no-file `-UUU:` mnemonic and
+   `%12b` name padding to `_render_modeline`; added a `read-only-mode`
+   command bound to `C-x C-q` (echoes `Read-Only mode enabled in current
+   buffer`, flips the mnemonic to `%%-`). All 3 checkpoints pixel-perfect,
+   and the fix resolved scenario 10's residual cosmetics and shrank 03/05.
+   **Still TODO in their own follow-ups:** `column-number-mode` position
+   format; and the undo-to-saved modified-flag carry-over from scenario 09
+   (an undo-system feature, not modeline rendering — see "Known intentional
+   divergences").
 
 5. **`scenario_13_kill_ring_browse`**: `M-y` cycling across multiple
    kills. After several `C-k`, `C-y M-y M-y` should walk back through
