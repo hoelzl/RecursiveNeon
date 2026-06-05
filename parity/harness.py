@@ -109,6 +109,49 @@ class Driver:
                 self.stream.feed(data)
                 last_change = time.time()
 
+    def wait_for(
+        self,
+        needle: str,
+        *,
+        row: int | None = None,
+        max_wait: float = 20.0,
+        settle_ms: int = 400,
+    ) -> bool:
+        """Drain output until ``needle`` appears on screen, then settle.
+
+        Unlike :meth:`settle` (which returns after a fixed window of
+        *silence*), this waits for a readiness *condition*. That matters on
+        hosts where a child has long silent gaps during startup — e.g. when
+        neon-edit's source is imported over a slow filesystem (a Windows
+        checkout driven through WSL), the ~4s cold-import produces no output
+        and a pure-silence settle would return before the shell is ready.
+
+        If ``row`` is given, only that screen row is searched (negative
+        indices allowed, e.g. ``-2`` for the modeline). Returns True if the
+        needle was found before ``max_wait`` elapsed. Either way, a short
+        trailing :meth:`settle` drains any remaining paint.
+        """
+        deadline = time.time() + max_wait
+        found = False
+        while time.time() < deadline:
+            try:
+                data = self.child.read_nonblocking(size=4096, timeout=0.1)
+            except pexpect.TIMEOUT:
+                data = b""
+            except pexpect.EOF:
+                break
+            if data:
+                self.stream.feed(data)
+            haystack = (
+                self.screen.display if row is None else [self.screen.display[row]]
+            )
+            if any(needle in r for r in haystack):
+                found = True
+                break
+        remaining = max(0.5, deadline - time.time())
+        self.settle(settle_ms=settle_ms, max_wait=remaining)
+        return found
+
     def send(self, keys: str) -> None:
         """Send an Emacs-style key description (see :mod:`parity.keys`)."""
         self.child.send(kbd(keys))

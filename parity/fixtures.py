@@ -62,6 +62,7 @@ def make_targets(
             fixture.basename, fixture.disk_path.read_text()
         ),
         edit_command=f"edit {fixture.basename}",
+        ready_marker=fixture.basename,
         cols=cols,
         rows=rows,
         settle_ms=settle_ms,

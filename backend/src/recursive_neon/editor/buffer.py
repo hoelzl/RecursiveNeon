@@ -187,6 +187,10 @@ class Buffer:
         # Cursor for consecutive undo: when set, undo scans backward
         # from this position (so reverse entries at the tail are skipped)
         self._undo_cursor: int = -1
+        # Whether the most recent successful ``undo()`` was actually a redo
+        # (undoing a previous undo). Drives the "Undo" vs "Redo" echo-area
+        # feedback in the ``undo`` command, matching GNU Emacs.
+        self.last_undo_was_redo: bool = False
 
         # Kill ring (shared across buffers in a real editor, but
         # per-buffer for now — the Editor class will share one instance)
@@ -908,7 +912,9 @@ class Buffer:
     # Undo
     # ------------------------------------------------------------------
 
-    def add_undo_boundary(self, *, break_undo_chain: bool = True) -> None:
+    def add_undo_boundary(
+        self, *, break_undo_chain: bool = True, redo: bool = False
+    ) -> None:
         """Insert an undo boundary.
 
         Call this between commands so that one ``undo()`` invocation
@@ -922,10 +928,15 @@ class Buffer:
         ongoing undo (see ``Buffer.undo``'s use): the boundary
         partitions the entries, but ``last_command_type`` and
         ``_undo_cursor`` are left alone so the chain survives.
+
+        ``redo=True`` tags the boundary as preceding redo material (see
+        :class:`UndoBoundary`); ``undo()`` sets this when it appends the
+        reverse entries for a plain undo so that re-undoing that group is
+        recognised as a redo.
         """
         if self.undo_list and isinstance(self.undo_list[-1], UndoBoundary):
             return
-        self.undo_list.append(UndoBoundary())
+        self.undo_list.append(UndoBoundary(redo=redo))
         if break_undo_chain:
             # Break undo chain — next undo() scans from the new end
             self._undo_cursor = -1
@@ -968,6 +979,15 @@ class Buffer:
             return False
 
         self._undo_cursor = cursor
+
+        # Is this a redo? The boundary that terminates the group we just
+        # collected tells us: undo() tags the boundary in front of its
+        # reverse entries with ``redo=True``, so consuming such a group
+        # means we are undoing a previous undo — which Emacs reports as
+        # "Redo". Original-edit groups stop at a plain boundary (or the
+        # start of the list), so they read as a normal undo.
+        terminating = self.undo_list[cursor - 1] if cursor > 0 else None
+        is_redo = bool(isinstance(terminating, UndoBoundary) and terminating.redo)
 
         # Process collected entries and build reverse entries
         reverse: list[UndoEntry] = []
@@ -1022,8 +1042,12 @@ class Buffer:
         # ``test_undo_chain.py``).  Pass ``break_undo_chain=False`` so
         # we don't clobber our own chain state mid-undo.
         if reverse:
-            self.add_undo_boundary(break_undo_chain=False)
+            # Tag the boundary so that re-undoing this reverse group is
+            # recognised as the opposite operation: the inverse of an undo
+            # is a redo, and the inverse of a redo is an undo.
+            self.add_undo_boundary(break_undo_chain=False, redo=not is_redo)
         self.undo_list.extend(reverse)
+        self.last_undo_was_redo = is_redo
         self.last_command_type = "undo"
         return True
 

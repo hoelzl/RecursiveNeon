@@ -309,3 +309,86 @@ class TestUndoGroupCoalescing:
         # C-e is a movement command with no undo entries, so this
         # reverts the first Backspace.
         assert h.buffer_text() == "abcde"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Echo-area feedback: "Undo" / "Redo" / "No further undo information"
+#
+# GNU Emacs echoes "Undo" on every successful undo and "Redo" when the
+# operation is undoing a previous undo (plain words, no exclamation mark —
+# the "Undo!" form is Emacs-20-era). Verified against Emacs 29 by the
+# parity harness (parity/scenarios/scenario_09_undo_redo.py).
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestUndoRedoEchoMessages:
+    def test_successful_undo_echoes_undo(self) -> None:
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""
+        assert h.editor.message == "Undo"
+        assert h.editor.buffer.last_undo_was_redo is False
+        # …and it actually renders on the echo-area line.
+        assert h.message_line().strip() == "Undo"
+
+    def test_consecutive_undos_each_echo_undo(self) -> None:
+        h = make_harness()
+        h.type_string("aaa")  # group 1
+        h.send_keys("C-e")
+        h.type_string("bbb")  # group 2
+        h.send_keys("C-/")
+        assert h.buffer_text() == "aaa"
+        assert h.editor.message == "Undo"
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""
+        # Still "Undo" — a chain of undos never flips to "Redo".
+        assert h.editor.message == "Undo"
+        assert h.editor.buffer.last_undo_was_redo is False
+
+    def test_exhausted_undo_echoes_no_further_information(self) -> None:
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""
+        # History is dry now; the next C-/ reports exhaustion.
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""
+        assert h.editor.message == "No further undo information"
+
+    def test_redo_echoes_redo(self) -> None:
+        """Break the undo run with a motion, then C-/ redoes → 'Redo'."""
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("C-/")
+        assert h.buffer_text() == ""
+        assert h.editor.message == "Undo"
+        # A non-undo command breaks the consecutive-undo chain.
+        h.send_keys("C-f")
+        h.send_keys("C-/")
+        assert h.buffer_text() == "abc"  # the undone typing is reapplied
+        assert h.editor.message == "Redo"
+        assert h.editor.buffer.last_undo_was_redo is True
+        assert h.message_line().strip() == "Redo"
+
+    def test_undo_redo_undo_alternates_message(self) -> None:
+        """Undo → (break) → Redo → (break) → Undo flips the label back."""
+        h = make_harness()
+        h.type_string("abc")
+        h.send_keys("C-/")  # Undo  -> ""
+        assert h.editor.message == "Undo"
+        h.send_keys("C-f")
+        h.send_keys("C-/")  # Redo  -> "abc"
+        assert h.buffer_text() == "abc"
+        assert h.editor.message == "Redo"
+        h.send_keys("C-f")
+        h.send_keys("C-/")  # Undo the redo -> ""
+        assert h.buffer_text() == ""
+        assert h.editor.message == "Undo"
+        assert h.editor.buffer.last_undo_was_redo is False
+
+    def test_redo_boundary_does_not_break_undo_list_equality(self) -> None:
+        """The redo flag is excluded from UndoBoundary equality so the
+        structural collapse/identity tests are unaffected."""
+        assert UndoBoundary() == UndoBoundary(redo=True)
+        assert UndoBoundary(redo=False) == UndoBoundary(redo=True)

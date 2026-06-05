@@ -28,7 +28,15 @@ from parity.harness import Driver, TargetSpec
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VENV_PY = REPO_ROOT / ".venv" / "bin" / "python"
+# The Python interpreter used to run neon-edit's shell. Defaults to the
+# project's POSIX virtualenv at ``<repo>/.venv/bin/python``. Override via
+# ``NEON_PARITY_PYTHON`` when the harness runs on a host where ``.venv`` is
+# not a POSIX venv — e.g. a Windows checkout driven through WSL, where
+# ``.venv`` is a Windows venv (``Scripts/python.exe``, no ``bin/python``)
+# and the Linux harness venv lives outside the repo.
+VENV_PY = Path(
+    os.environ.get("NEON_PARITY_PYTHON", str(REPO_ROOT / ".venv" / "bin" / "python"))
+)
 BACKEND_SRC = REPO_ROOT / "backend" / "src"
 
 
@@ -70,6 +78,7 @@ def make_neon_target(
     *,
     setup_lines: list[str],
     edit_command: str,
+    ready_marker: str | None = None,
     cols: int = 80,
     rows: int = 24,
     settle_ms: int = 1200,
@@ -79,6 +88,13 @@ def make_neon_target(
 
     Each entry of ``setup_lines`` is a shell command (sent verbatim plus a
     Return). ``edit_command`` is the full ``edit ...`` invocation.
+
+    ``ready_marker`` is a substring expected to appear in the editor's
+    modeline once the file is open (typically the file's basename). When
+    given, the launch waits for it rather than relying on output silence —
+    essential on hosts where neon-edit's cold import is slow enough that a
+    pure-silence settle would return before the shell prompt or editor has
+    painted (e.g. a Windows checkout driven through WSL).
     """
 
     env = {"PYTHONPATH": str(BACKEND_SRC)}
@@ -92,14 +108,24 @@ def make_neon_target(
             env=env,
             cwd=cwd,
         )
-        d.settle(settle_ms=settle_ms, max_wait=8.0)
+        # Wait for the shell prompt rather than a silence window: the cold
+        # import can be several seconds of total silence on a slow FS.
+        if not d.wait_for("neon-proxy:", max_wait=30.0, settle_ms=settle_ms):
+            d.settle(settle_ms=settle_ms, max_wait=8.0)
         for line in setup_lines:
             d.sendline(line)
             d.settle(settle_ms=500, max_wait=3.0)
         d.sendline(edit_command)
-        # First settle drains the shell prompt + "[entering raw mode]" handoff
-        # plus the editor's initial paint.
-        d.settle(settle_ms=settle_ms, max_wait=5.0)
+        # Wait for the editor to take over: its modeline (the second-to-last
+        # row) shows the file's basename once the buffer is open. Before that
+        # the row is blank, so this reliably distinguishes "editor up" from
+        # "still at the shell prompt" even though the basename also appears in
+        # the echo setup lines higher on the screen.
+        if ready_marker is not None:
+            d.wait_for(ready_marker, row=-2, max_wait=30.0, settle_ms=settle_ms)
+        else:
+            # Fallback: drain the shell→editor handoff plus the initial paint.
+            d.settle(settle_ms=settle_ms, max_wait=5.0)
         return d
 
     return TargetSpec(name="neon-edit", launch=launch)

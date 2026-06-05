@@ -330,7 +330,14 @@ def yank_pop(ed: Editor, prefix: int | None) -> None:
 
 @defcommand("undo", "Undo the last editing operation.")
 def undo(ed: Editor, prefix: int | None) -> None:
-    if not ed.buffer.undo():
+    if ed.buffer.undo():
+        # GNU Emacs echoes "Undo" on every successful undo and "Redo" when
+        # the operation is undoing a previous undo. Plain words, no
+        # exclamation mark — the "Undo!" form is Emacs-20-era and was
+        # dropped by modern Emacs (verified against Emacs 29 via the parity
+        # harness; see parity/scenarios/scenario_09_undo_redo.py).
+        ed.message = "Redo" if ed.buffer.last_undo_was_redo else "Undo"
+    else:
         ed.message = "No further undo information"
 
 
