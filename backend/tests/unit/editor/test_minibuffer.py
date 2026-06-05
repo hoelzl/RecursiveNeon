@@ -305,6 +305,49 @@ class TestBufferSwitching:
         assert ed.buffer.read_only
         assert "test.txt" in ed.buffer.text
 
+    def test_switch_prompt_offers_mru_default(self):
+        """C-x b offers the most-recently-used *other* buffer as default."""
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")  # current=buf-b, other=buf-a
+        ed.process_key("C-x")
+        ed.process_key("b")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Switch to buffer (default buf-a): "
+        assert ed.minibuffer.text == ""  # default is in the prompt, not pre-filled
+
+    def test_switch_empty_input_switches_to_default(self):
+        """RET on empty input switches to the default (Emacs behaviour)."""
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")  # current = buf-b
+        ed.process_key("C-x")
+        ed.process_key("b")
+        ed.process_key("Enter")  # empty → switch to default (buf-a)
+        assert ed.buffer.name == "buf-a"
+
+    def test_switch_default_follows_recency(self):
+        """The default is the most-recently-left buffer, not creation order."""
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")
+        ed.create_buffer(name="buf-c", text="ccc")
+        ed.switch_to_buffer("buf-a")  # left buf-c most recently → it is "other"
+        ed.process_key("C-x")
+        ed.process_key("b")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Switch to buffer (default buf-c): "
+
+    def test_switch_no_default_when_single_buffer(self):
+        """With only one buffer there is no other buffer to default to."""
+        ed = make_editor("only")
+        ed.buffer.name = "solo"
+        assert ed.other_buffer_name() is None
+        ed.process_key("C-x")
+        ed.process_key("b")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Switch to buffer: "
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # File operations
@@ -499,7 +542,25 @@ class TestKillBuffer:
         ed.process_key("C-x")
         ed.process_key("k")
         assert ed.minibuffer is not None
-        assert ed.minibuffer.text == "test.txt"  # defaults to current
+        # Emacs offers the current buffer as the default in the PROMPT,
+        # rather than pre-filling the editable input with it.
+        assert ed.minibuffer.text == ""
+        assert ed.minibuffer.prompt == "Kill buffer (default test.txt): "
+
+    def test_kill_buffer_default_in_prompt_empty_kills_current(self):
+        ed = make_editor("aaa")
+        ed.buffer.name = "buf-a"
+        ed.create_buffer(name="buf-b", text="bbb")  # current = buf-b
+        ed.process_key("C-x")
+        ed.process_key("k")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Kill buffer (default buf-b): "
+        assert ed.minibuffer.text == ""
+        ed.process_key("Enter")  # empty input → kill the default (buf-b)
+        assert ed.buffer.name == "buf-a"
+        assert "buf-b" not in [b.name for b in ed.buffers]
+        # Emacs is silent on a successful kill.
+        assert ed.message == ""
 
     def test_kill_current_buffer(self):
         ed = make_editor("aaa")

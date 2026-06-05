@@ -57,6 +57,9 @@ class Editor:
         # Buffer management
         self._buffers: list[Buffer] = []
         self._current_index: int = 0
+        # Buffer recency, most-recently-selected first (by name). Drives
+        # the "other buffer" default that GNU Emacs offers in C-x b / C-x k.
+        self._mru: list[str] = []
 
         # Shared kill ring across all buffers
         self.kill_ring = KillRing()
@@ -217,6 +220,7 @@ class Editor:
             buf.major_mode = fundamental
         self._buffers.append(buf)
         self._current_index = len(self._buffers) - 1
+        self._touch_mru(name)
         return buf
 
     def remove_buffer(self, name: str) -> bool:
@@ -229,6 +233,8 @@ class Editor:
         for i, buf in enumerate(self._buffers):
             if buf.name == name:
                 self._buffers.pop(i)
+                if name in self._mru:
+                    self._mru.remove(name)
                 if not self._buffers:
                     self.create_buffer()  # always keep at least one
                 elif self._current_index >= len(self._buffers):
@@ -249,10 +255,38 @@ class Editor:
         for i, buf in enumerate(self._buffers):
             if buf.name == name:
                 self._current_index = i
+                self._touch_mru(name)
                 if buf.on_focus is not None:
                     buf.on_focus()
                 return True
         return False
+
+    def _touch_mru(self, name: str) -> None:
+        """Record *name* as the most-recently-selected buffer."""
+        if name in self._mru:
+            self._mru.remove(name)
+        self._mru.insert(0, name)
+
+    def other_buffer_name(self) -> str | None:
+        """The buffer GNU Emacs would offer as the C-x b / C-x k default.
+
+        Emacs's ``other-buffer``: the most-recently-selected buffer other
+        than the current one. We approximate it with the recency list,
+        skipping the current buffer and any stale names, and fall back to
+        creation order so a default is always offered when another buffer
+        exists. Returns None when the current buffer is the only one.
+        """
+        if not self._buffers:
+            return None
+        current = self.buffer.name
+        existing = {b.name for b in self._buffers}
+        for nm in self._mru:
+            if nm != current and nm in existing:
+                return nm
+        for buf in self._buffers:
+            if buf.name != current:
+                return buf.name
+        return None
 
     def _completions_visible(self) -> bool:
         """Return True if a ``*Completions*`` popup window is currently up."""
