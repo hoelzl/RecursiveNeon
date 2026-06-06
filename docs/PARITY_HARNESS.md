@@ -41,6 +41,7 @@ parity/
     scenario_12_modeline_state_flags.py
     scenario_13_kill_ring_browse.py
     scenario_14_query_replace.py
+    scenario_15_register_basics.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -210,7 +211,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(14 scenarios, 53 checkpoints. 44 are pixel-perfect; the 9 remaining
+(15 scenarios, 58 checkpoints. 49 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -229,6 +230,7 @@ diffs are content/semantic differences explained below.)
 | 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
 | 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
 | 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
+| 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
 
 ## Known intentional divergences
 
@@ -390,9 +392,22 @@ Each is sized for one session if the divergences turn out moderate.
    `replace-string` formula). All 6 checkpoints pixel-perfect; the
    singular/plural forms were both verified against Emacs via the harness.
 
-7. **`scenario_15_register_basics`**: `C-x r SPC <letter>` to save
-   point in a register, `C-x r j <letter>` to jump back. Mostly a test
-   of whether the binding exists at all.
+7. ~~**`scenario_15_register_basics`**~~ **DONE.** neon-edit had *no*
+   register support, so this added point registers from scratch:
+   `point-to-register` (`C-x r SPC`) and `jump-to-register` (`C-x r j`),
+   each reading the next key as the register name (the describe-key
+   capture pattern), plus a `C-x r` prefix map. The prompts (`Point to
+   register: ` / `Jump to register: `) and the save/jump round-trip match
+   Emacs exactly. The scenario also surfaced that **`M-<` / `M->` and
+   `jump-to-register` push a mark** (`Mark set`) in Emacs — neon-edit
+   didn't — fixed by `_push_mark_for_big_motion` (push unless prefix arg /
+   active region) and an unconditional push in the jump. All 5 checkpoints
+   pixel-perfect. **Documented deviation:** neon-edit has no inactive-mark
+   concept, so a pushed mark is *active* (the region renders highlighted)
+   whereas Emacs's push-mark is inactive — invisible to the text-only
+   harness, noted next to the code. **Still TODO** (own scenarios): the
+   rest of the `C-x r` family — `copy-to-register` (`s`), `insert-register`
+   (`i`), number / rectangle / window registers, and the register preview.
 
 8. **`scenario_16_minibuffer_history`**: `M-p` / `M-n` in any
    minibuffer prompt to recall previous input. Common Emacs feature
