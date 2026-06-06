@@ -42,6 +42,7 @@ parity/
     scenario_13_kill_ring_browse.py
     scenario_14_query_replace.py
     scenario_15_register_basics.py
+    scenario_16_minibuffer_history.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -211,7 +212,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(15 scenarios, 58 checkpoints. 49 are pixel-perfect; the 9 remaining
+(16 scenarios, 63 checkpoints. 54 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -231,6 +232,7 @@ diffs are content/semantic differences explained below.)
 | 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
 | 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
 | 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
+| 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
 
 ## Known intentional divergences
 
@@ -409,9 +411,21 @@ Each is sized for one session if the divergences turn out moderate.
    rest of the `C-x r` family — `copy-to-register` (`s`), `insert-register`
    (`i`), number / rectangle / window registers, and the register preview.
 
-8. **`scenario_16_minibuffer_history`**: `M-p` / `M-n` in any
-   minibuffer prompt to recall previous input. Common Emacs feature
-   that's easy to overlook.
+8. ~~**`scenario_16_minibuffer_history`**~~ **DONE.** The `Minibuffer`
+   had no history at all, so this added per-prompt input history with
+   `M-p` (older) / `M-n` (newer) recall: `Editor._minibuffer_histories`
+   (keyed by a history name, shared by reference), submits prepend the
+   input, and the navigation preserves the typed input so `M-n` back to
+   the start restores it. Wired to `M-x` (`command`), `C-x b`
+   (`buffer-name`), and find-file (`file-name`); the M-x prompts match
+   Emacs exactly. Surfaced that **point lands at the *start* of a recalled
+   element** in Emacs's completing-read history (not the end) — fixed
+   (`cursor = 0` on recall, `len` on restore). All 5 checkpoints
+   pixel-perfect. **Deviations** (documented next to the code): the
+   history-boundary beeps (`Beginning of history; no preceding item` /
+   `End of history; no default available`) are silent no-ops — the
+   minibuffer has no echo-area channel; and history is wired to the three
+   common prompts so far (query-replace / other prompts are future work).
 
 9. **`scenario_NN_yank_from_kill_ring`** (deferred from scenario 13):
    implement and verify `yank-from-kill-ring` — the command GNU Emacs ≥28

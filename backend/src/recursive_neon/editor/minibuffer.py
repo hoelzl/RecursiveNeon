@@ -36,6 +36,7 @@ class Minibuffer:
         completer: CompleterFn | None = None,
         initial: str = "",
         on_change: Callable[[str], None] | None = None,
+        history: list[str] | None = None,
     ) -> None:
         self.prompt = prompt
         self.callback = callback
@@ -43,6 +44,15 @@ class Minibuffer:
         self.on_change = on_change  # called on each keystroke (for isearch)
         self.text = initial
         self.cursor: int = len(initial)
+        # Input history (newest first), shared with the Editor so submits
+        # accumulate across sessions. ``M-p`` / ``M-n`` walk it. ``_hist_pos``
+        # is the navigation position: 0 = the live (typed) input, 1..N = the
+        # history elements; ``_hist_saved`` preserves the typed input while
+        # navigating so ``M-n`` back to 0 restores it. ``None`` = no history
+        # for this prompt (M-p/M-n are no-ops).
+        self.history = history
+        self._hist_pos: int = 0
+        self._hist_saved: str = ""
         # Last completion attempt's candidate list and a transient status
         # message (e.g. "No match", "Complete, but not unique"). Cleared
         # on the next non-TAB key.
@@ -87,8 +97,28 @@ class Minibuffer:
             return True
 
         if key == "Enter":
+            # Record non-empty input on the shared history (newest first),
+            # like GNU Emacs adds to the prompt's history on RET — but skip
+            # the add when the input is ``equal`` to the most recent entry.
+            # (Emacs's minibuffer read does this in C, independent of
+            # ``history-delete-duplicates``, so recalling an item with M-p
+            # and submitting it does not create a duplicate.)
+            if (
+                self.history is not None
+                and self.text
+                and (not self.history or self.history[0] != self.text)
+            ):
+                self.history.insert(0, self.text)
             self.callback(self.text)
             return False
+
+        if key == "M-p":  # previous-history-element (older)
+            self._history_prev()
+            return True
+
+        if key == "M-n":  # next-history-element (newer)
+            self._history_next()
+            return True
 
         if key == "C-g" or key == "Escape":
             self._cancelled = True
@@ -187,6 +217,46 @@ class Minibuffer:
             # Already at the common prefix.
             self.last_completions = matches
             self.completion_status = "Complete, but not unique"
+
+    def _history_prev(self) -> None:
+        """``M-p`` — replace the input with an older history element.
+
+        At (or past) the oldest element this is a no-op. (GNU Emacs beeps
+        and shows "Beginning of history; no preceding item"; neon-edit
+        stops silently — the minibuffer has no echo-area channel of its
+        own. Documented in docs/PARITY_HARNESS.md.)
+        """
+        if self.history is None or self._hist_pos >= len(self.history):
+            return
+        if self._hist_pos == 0:
+            self._hist_saved = self.text
+        self._hist_pos += 1
+        self.text = self.history[self._hist_pos - 1]
+        # GNU Emacs leaves point at the *start* of the recalled element
+        # (verified against M-x via the parity harness — completing-read
+        # history positions point at the prompt end, not the input end).
+        self.cursor = 0
+        self._notify_change()
+
+    def _history_next(self) -> None:
+        """``M-n`` — replace the input with a newer history element.
+
+        Walking back to position 0 restores the input that was typed
+        before navigation began. At position 0 this is a no-op (Emacs
+        would show "End of history; no default available").
+        """
+        if self._hist_pos <= 0:
+            return
+        self._hist_pos -= 1
+        if self._hist_pos == 0:
+            # Restoring the input typed before navigation — point at its end.
+            self.text = self._hist_saved
+            self.cursor = len(self.text)
+        else:
+            # Another recalled element — point at its start, as with M-p.
+            self.text = self.history[self._hist_pos - 1]  # type: ignore[index]
+            self.cursor = 0
+        self._notify_change()
 
     def _notify_change(self) -> None:
         """Call the on_change callback if set."""

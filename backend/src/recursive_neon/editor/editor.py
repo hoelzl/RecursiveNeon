@@ -120,6 +120,13 @@ class Editor:
         # Minibuffer — active when not None
         self.minibuffer: Minibuffer | None = None
 
+        # Per-prompt minibuffer input histories, keyed by a history name
+        # (e.g. "command" for M-x, "buffer-name" for C-x b). Submitting a
+        # prompt prepends its input; ``M-p`` / ``M-n`` walk the list. Shared
+        # by reference with the active Minibuffer so entries persist across
+        # sessions. Matches Emacs's per-variable minibuffer histories.
+        self._minibuffer_histories: dict[str, list[str]] = {}
+
         # Describe-key capture session.  When non-None, the next
         # keystroke is consumed and described instead of being
         # dispatched.  Holds brief/full flag plus any mid-two-key
@@ -792,14 +799,26 @@ class Editor:
         completer: CompleterFn | None = None,
         initial: str = "",
         on_change: Callable[[str], None] | None = None,
+        history: str | None = None,
     ) -> None:
-        """Activate the minibuffer with the given prompt and callback."""
+        """Activate the minibuffer with the given prompt and callback.
+
+        ``history`` names a per-prompt input history (e.g. ``"command"``);
+        the list is shared by reference so submits accumulate and ``M-p`` /
+        ``M-n`` can recall earlier input.
+        """
+        hist_list = (
+            self._minibuffer_histories.setdefault(history, [])
+            if history is not None
+            else None
+        )
         self.minibuffer = Minibuffer(
             prompt,
             callback,
             completer=completer,
             initial=initial,
             on_change=on_change,
+            history=hist_list,
         )
 
     def _do_describe_key(self, key: str, session: _DescribeKeySession) -> None:
