@@ -471,7 +471,7 @@ def execute_extended_command(ed: Editor, prefix: int | None) -> None:
         if not ed.execute_command(name, prefix):
             ed.message = f"Unknown command: {name}"
 
-    ed.start_minibuffer("M-x ", callback, completer=completer)
+    ed.start_minibuffer("M-x ", callback, completer=completer, history="command")
 
 
 @defcommand("switch-to-buffer", "Switch to a different buffer (C-x b).")
@@ -497,7 +497,7 @@ def switch_to_buffer(ed: Editor, prefix: int | None) -> None:
     prompt = (
         f"Switch to buffer (default {default}): " if default else "Switch to buffer: "
     )
-    ed.start_minibuffer(prompt, callback, completer=completer)
+    ed.start_minibuffer(prompt, callback, completer=completer, history="buffer-name")
 
 
 @defcommand("list-buffers", "Show a list of all buffers (C-x C-b).")
@@ -613,7 +613,11 @@ def find_file(ed: Editor, prefix: int | None) -> None:
     if initial and not initial.endswith("/"):
         initial += "/"
     ed.start_minibuffer(
-        "Find file: ", callback, completer=ed.path_completer, initial=initial
+        "Find file: ",
+        callback,
+        completer=ed.path_completer,
+        initial=initial,
+        history="file-name",
     )
 
 
