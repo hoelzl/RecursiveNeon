@@ -8,8 +8,14 @@ to it in ``AUTO_MODE_ALIST``.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
-from recursive_neon.editor.modes import AUTO_MODE_ALIST, SyntaxRule, defmode
+from recursive_neon.editor.mark import Mark
+from recursive_neon.editor.modes import AUTO_MODE_ALIST, MODES, SyntaxRule, defmode
+
+if TYPE_CHECKING:
+    from recursive_neon.editor.buffer import Buffer
+    from recursive_neon.editor.editor import Editor
 
 # ── Syntax rules (order matters: first match on a character wins) ────
 
@@ -61,10 +67,78 @@ _RULES: list[SyntaxRule] = [
     SyntaxRule(re.compile(r"(?<=\bclass\s)\w+"), "type"),
 ]
 
+# ── Indentation (Emacs's python-indent-line) ────────────────────────
+
+_INDENT = 4  # python-indent-offset
+
+
+def _python_indent_levels(buf: Buffer) -> list[int]:
+    """Candidate indentation columns for the current line, deepest first.
+
+    A simplified ``python-indent-calculate-levels``: the deepest level is the
+    nearest previous non-blank line's indent + 4 when it ends with ``:``
+    (opening a block), else that line's own indent; the cycle then dedents by
+    4 down to 0. The full Emacs heuristics (brackets, continuation lines,
+    dedenting keywords like ``else``/``except``) are **not** replicated, so
+    repeated TAB after a non-``:`` line is best-effort — see the module note.
+    """
+    cur = buf.point.line
+    prev_indent = 0
+    opens_block = False
+    for ln in range(cur - 1, -1, -1):
+        line = buf.lines[ln]
+        if line.strip():
+            prev_indent = len(line) - len(line.lstrip(" "))
+            opens_block = line.rstrip().endswith(":")
+            break
+    calculated = prev_indent + _INDENT if opens_block else prev_indent
+    return list(range(calculated, -1, -_INDENT))
+
+
+def python_indent_line(ed: Editor) -> None:
+    """python-mode TAB: indent to the calculated level, cycling through the
+    candidates on repeated TAB (GNU Emacs's ``python-indent-line``)."""
+    buf = ed.buffer
+    levels = _python_indent_levels(buf)
+    cur = buf.point.line
+    line = buf.lines[cur]
+    cur_indent = len(line) - len(line.lstrip(" "))
+    # A fresh TAB indents to the deepest (calculated) level; a repeated TAB
+    # (the previous command was also this one) cycles to the next candidate.
+    if ed._last_command_name == "indent-for-tab-command" and cur_indent in levels:
+        target = levels[(levels.index(cur_indent) + 1) % len(levels)]
+    else:
+        target = levels[0]
+    if target != cur_indent:
+        buf.delete_region(Mark(cur, 0), Mark(cur, cur_indent))
+        buf.point.move_to(cur, 0)
+        if target:
+            buf.insert_string(" " * target)
+    buf.point.move_to(cur, target)
+
+
+def _python_on_enter(ed: Editor) -> None:
+    """Activate the ElDoc lighter, like GNU Emacs's python-mode."""
+    eldoc = MODES.get("eldoc-mode")
+    buf = ed.buffer
+    if eldoc is not None and not any(m.name == "eldoc-mode" for m in buf.minor_modes):
+        buf.minor_modes.append(eldoc)
+
+
+def _python_on_exit(ed: Editor) -> None:
+    """Drop the ElDoc lighter when leaving python-mode, so it doesn't leak
+    into the next major mode's modeline."""
+    buf = ed.buffer
+    buf.minor_modes[:] = [m for m in buf.minor_modes if m.name != "eldoc-mode"]
+
+
 python_mode = defmode(
     "python-mode",
     doc="Major mode for editing Python source files.",
     syntax_rules=_RULES,
+    on_enter=_python_on_enter,
+    on_exit=_python_on_exit,
+    indent_line_function=python_indent_line,
 )
 
 AUTO_MODE_ALIST[".py"] = "python-mode"

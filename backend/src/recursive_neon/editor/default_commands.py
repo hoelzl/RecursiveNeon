@@ -275,16 +275,20 @@ def _indent_relative_target(ed: Editor, start_col: int) -> int:
     "Indent the current line (TAB) — text-mode indent-relative.",
 )
 def indent_for_tab_command(ed: Editor, prefix: int | None) -> None:
-    """GNU Emacs's TAB. In text / fundamental buffers this is
-    ``indent-relative``: line up with the previous line's words, falling
-    back to ``tab-to-tab-stop`` past the last one (or on the first line).
+    """GNU Emacs's TAB. Dispatches to the major mode's indent-line-function
+    when it has one (e.g. python-mode's syntactic, cycling indentation);
+    otherwise the text / fundamental default ``indent-relative``: line up
+    with the previous line's words, falling back to ``tab-to-tab-stop`` past
+    the last one (or on the first line).
 
-    Deviations (documented): we insert spaces rather than the tab/space mix
-    Emacs uses under ``indent-tabs-mode`` — the on-screen result is
-    identical. python-mode's syntactic indentation is not implemented yet
-    (future work; see docs/PARITY_HARNESS.md).
+    Deviation (documented): we insert spaces rather than the tab/space mix
+    Emacs uses under ``indent-tabs-mode`` — the on-screen result is identical.
     """
     buf = ed.buffer
+    mode = buf.major_mode
+    if mode is not None and mode.indent_line_function is not None:
+        mode.indent_line_function(ed)
+        return
     start_col = buf.point.col
     target = _indent_relative_target(ed, start_col)
     if target > start_col:
