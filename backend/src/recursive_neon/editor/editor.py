@@ -50,6 +50,20 @@ class _DescribeKeySession:
     """Keymap mid-two-key, used to resolve the follow-up keystroke."""
 
 
+@dataclass
+class _RegisterSession:
+    """Capture-mode state for register commands that read a register name.
+
+    Installed by ``point-to-register`` / ``jump-to-register``; the next
+    keystroke is consumed by :meth:`Editor.process_key` as the register
+    *name* (any character) instead of being dispatched normally. Mirrors
+    ``_DescribeKeySession`` — registers, like ``C-h k``, read one more key.
+    """
+
+    action: str
+    """``"point"`` (save point) or ``"jump"`` (restore point)."""
+
+
 class Editor:
     """Top-level editor state and command dispatch."""
 
@@ -121,6 +135,17 @@ class Editor:
         # exit or by ``_reset_transient_state``.  The type is forward-
         # referenced to avoid a circular import with ``default_commands``.
         self._query_replace_session: _QueryReplaceSession | None = None
+
+        # Registers (Emacs ``C-x r``).  ``_registers`` maps a register
+        # name (a single character) to a saved point location ``(line,
+        # col)``.  ``_register_session`` is set while ``point-to-register``
+        # / ``jump-to-register`` wait for the next key (the register name);
+        # the next keystroke is consumed as that name.  Cleared by
+        # ``_reset_transient_state``.  Note: we store a static ``(line,
+        # col)`` in the current buffer rather than an edit-tracking marker
+        # in a specific buffer — enough for point save/jump basics.
+        self._registers: dict[str, tuple[int, int]] = {}
+        self._register_session: _RegisterSession | None = None
 
         # ESC-as-Meta state machine.  A bare Escape keystroke sets
         # ``_meta_pending``; the next non-ESC key is then rewritten as
@@ -391,6 +416,17 @@ class Editor:
                 self._do_describe_key_briefly(key, session)
             else:
                 self._do_describe_key(key, session)
+            return
+
+        # Register capture: the key after ``C-x r SPC`` / ``C-x r j`` is the
+        # register *name* (any character), not a command. Runs before the
+        # ESC machine so ``C-g`` cancels (matching Emacs's read-key quit).
+        if self._register_session is not None:
+            session_r = self._register_session
+            self._register_session = None
+            from recursive_neon.editor.default_commands import _do_register_action
+
+            _do_register_action(self, key, session_r)
             return
 
         # Query-replace capture (6l-4): runs BEFORE the ESC state
@@ -1003,6 +1039,8 @@ class Editor:
         self._describe_key_session = None
         # Clear query-replace capture session (6l-4)
         self._query_replace_session = None
+        # Clear pending register-name read (C-x r SPC / C-x r j)
+        self._register_session = None
         # Clear ESC-as-Meta state machine
         self._meta_pending = False
         self._escape_quit_pending = False

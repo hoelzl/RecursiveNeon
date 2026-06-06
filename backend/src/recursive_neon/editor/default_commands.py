@@ -17,7 +17,7 @@ from recursive_neon.editor.mark import Mark
 
 if TYPE_CHECKING:
     from recursive_neon.editor.buffer import Buffer
-    from recursive_neon.editor.editor import Editor
+    from recursive_neon.editor.editor import Editor, _RegisterSession
     from recursive_neon.editor.window import Window
 
 _TUTORIAL_PATH = (
@@ -160,13 +160,31 @@ def recenter(ed: Editor, prefix: int | None) -> None:
         vp.scroll_to(cursor_line - vp.text_height + 1)
 
 
+def _push_mark_for_big_motion(ed: Editor, prefix: int | None) -> None:
+    """Push a mark before a buffer-spanning motion, GNU Emacs style.
+
+    ``beginning-of-buffer`` / ``end-of-buffer`` set the mark (so the user
+    can jump back) unless a prefix arg was given or the region is already
+    active; ``push-mark`` itself echoes ``Mark set``. (Deviation: neon-edit
+    has no inactive-mark concept, so the pushed mark is *active* — the
+    region renders highlighted, whereas Emacs's push-mark is inactive. This
+    is invisible to the text-only parity harness; see docs/PARITY_HARNESS.md.)
+    """
+    buf = ed.buffer
+    if prefix is None and not buf.region_active:
+        buf.set_mark()
+        ed.message = "Mark set"
+
+
 @defcommand("beginning-of-buffer", "Move point to the beginning of the buffer.")
 def beginning_of_buffer(ed: Editor, prefix: int | None) -> None:
+    _push_mark_for_big_motion(ed, prefix)
     ed.buffer.beginning_of_buffer()
 
 
 @defcommand("end-of-buffer", "Move point to the end of the buffer.")
 def end_of_buffer(ed: Editor, prefix: int | None) -> None:
+    _push_mark_for_big_motion(ed, prefix)
     ed.buffer.end_of_buffer()
 
 
@@ -1622,6 +1640,81 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Registers (C-x r) — point save/jump basics
+#
+# ``point-to-register`` (C-x r SPC) and ``jump-to-register`` (C-x r j)
+# each read one more key — the register *name* — the same way describe-key
+# (C-h k) reads a key. The command installs an ``Editor._register_session``;
+# ``Editor.process_key`` consumes the next keystroke as the name and calls
+# ``_do_register_action`` to finish.
+#
+# Deviations from Emacs (documented):
+# - We store a static ``(line, col)`` in the current buffer, not an
+#   edit-tracking marker into a specific buffer. Point save/jump without
+#   intervening edits (the common case) is faithful; a jump after the saved
+#   text moved would land at the stale position rather than following it.
+# - Only point registers are implemented. copy-to-register (C-x r s),
+#   insert-register (C-x r i), number/rectangle/window registers, and the
+#   register preview are not bound. See docs/PARITY_HARNESS.md.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@defcommand(
+    "point-to-register",
+    "Save the current point location in a register (C-x r SPC).",
+)
+def point_to_register(ed: Editor, prefix: int | None) -> None:
+    """Prompt for a register name; the next key is read as that name."""
+    from recursive_neon.editor.editor import _RegisterSession
+
+    ed._register_session = _RegisterSession(action="point")
+    ed.message = "Point to register: "
+
+
+@defcommand(
+    "jump-to-register",
+    "Jump to a point location saved in a register (C-x r j).",
+)
+def jump_to_register(ed: Editor, prefix: int | None) -> None:
+    """Prompt for a register name; the next key is read as that name."""
+    from recursive_neon.editor.editor import _RegisterSession
+
+    ed._register_session = _RegisterSession(action="jump")
+    ed.message = "Jump to register: "
+
+
+def _do_register_action(ed: Editor, key: str, session: _RegisterSession) -> None:
+    """Complete a register command once the register name has been read.
+
+    ``key`` is the register name (any single character). ``C-g`` cancels
+    the read with ``Quit``, matching Emacs's ``read-key`` quit.
+    """
+    if key == "C-g":
+        ed.message = "Quit"
+        return
+    name = key
+    buf = ed.buffer
+    if session.action == "point":
+        ed._registers[name] = (buf.point.line, buf.point.col)
+        ed.message = ""
+    else:  # "jump"
+        loc = ed._registers.get(name)
+        if loc is None:
+            ed.message = f"Register {name} is empty"
+            return
+        line, col = loc
+        # Clamp defensively in case the buffer shrank since the save.
+        line = max(0, min(line, buf.line_count - 1))
+        col = max(0, min(col, len(buf.lines[line])))
+        # GNU Emacs pushes a mark at the old point before jumping (so the
+        # user can return) and echoes "Mark set". Same active-mark deviation
+        # as the big-motion commands above.
+        buf.set_mark()
+        buf.point.move_to(line, col)
+        ed.message = "Mark set"
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Help
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -2524,6 +2617,11 @@ def build_default_keymap() -> Keymap:
     cx4 = Keymap("C-x 4 prefix")
     cx4.bind("C-f", "find-file-other-window")
     cx.bind("4", cx4)
+    # C-x r prefix map (registers): SPC saves point, j jumps to it.
+    cxr = Keymap("C-x r prefix")
+    cxr.bind(" ", "point-to-register")
+    cxr.bind("j", "jump-to-register")
+    cx.bind("r", cxr)
     km.bind("C-x", cx)
 
     # Mode-local keymap: ``help-mode`` binds ``q`` to quit the window.
