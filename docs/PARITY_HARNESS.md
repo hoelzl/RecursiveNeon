@@ -44,6 +44,7 @@ parity/
     scenario_15_register_basics.py
     scenario_16_minibuffer_history.py
     scenario_17_tab_indent.py
+    scenario_18_query_replace_defaults.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -213,7 +214,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(17 scenarios, 67 checkpoints. 58 are pixel-perfect; the 9 remaining
+(18 scenarios, 71 checkpoints. 62 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -235,6 +236,7 @@ diffs are content/semantic differences explained below.)
 | 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
 | 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
 | 17 | TAB indent | `indent-for-tab-command`: indent-relative to previous-line words, tab-to-tab-stop fallback, first-line tab |
+| 18 | query-replace defaults | `M-%` `(default foo → bar)` prompt, RET-reuse of the pair, combined `M-p` history (`foo → bar` then individual) |
 
 ## Known intentional divergences
 
@@ -449,17 +451,17 @@ Each is sized for one session if the divergences turn out moderate.
    real feature, not a one-line fix, which is why scenario 13 left it as a
    documented divergence rather than expanding scope.
 
-10. **`scenario_NN_query_replace_defaults`** (deferred while extending
-    scenario 16's history): `M-%` / `replace-string` history is not a plain
-    string history. GNU Emacs keeps `query-replace-defaults` (the last
-    `(from . to)` pair) and shows it in the prompt —
-    `Query replace (default foo → bar): ` — with `RET` on empty input
-    reusing the pair, and `M-p` recalling the *combined* `foo → bar` entry
-    before the individual strings. Implementing it means a defaults store,
-    the `(default … → …)` prompt, the combined-entry history, and
-    default-on-empty submission. neon-edit currently shows a bare
-    `Query replace: ` with no history on those prompts (verified divergent
-    against Emacs via a throwaway probe).
+10. ~~**`scenario_18_query_replace_defaults`**~~ **DONE.** `M-%` now keeps
+    `query-replace-defaults` (the last `(from . to)` pair): a later prompt
+    reads `Query replace (default foo → bar): `; submitting the from-input
+    empty reuses the pair (skipping the with-prompt); and the from-prompt's
+    `M-p` offers the combined `foo → bar` entry ahead of the individual
+    from/to history (and splits it on submit). Added
+    `Editor._query_replace_defaults`, a `history_list` param to
+    `start_minibuffer` (transient `[default-pair] + history` navigation),
+    and `_qr_push_history`. All 4 checkpoints pixel-perfect. **Still TODO:**
+    wire `replace-string` to the same shared `query-replace-history`
+    (it remains unwired).
 
 ## Tips and gotchas
 
