@@ -46,6 +46,7 @@ parity/
     scenario_17_tab_indent.py
     scenario_18_query_replace_defaults.py
     scenario_19_auto_fill_mode.py
+    scenario_20_python_indent.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -215,7 +216,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(19 scenarios, 74 checkpoints. 65 are pixel-perfect; the 9 remaining
+(20 scenarios, 78 checkpoints. 69 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -239,6 +240,7 @@ diffs are content/semantic differences explained below.)
 | 17 | TAB indent | `indent-for-tab-command`: indent-relative to previous-line words, tab-to-tab-stop fallback, first-line tab |
 | 18 | query-replace defaults | `M-%` `(default foo → bar)` prompt, RET-reuse of the pair, combined `M-p` history (`foo → bar` then individual) |
 | 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
+| 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
 
 ## Known intentional divergences
 
@@ -370,8 +372,16 @@ Each is sized for one session if the divergences turn out moderate.
      fallback (and on the first line, e.g. TAB at col 0 → col 8). All 4
      checkpoints pixel-perfect. **Deviation:** neon indents with spaces,
      not Emacs's `indent-tabs-mode` tab/space mix — identical on screen.
-     **Still TODO:** `python-mode` syntactic / cycling indentation (a
-     separate, larger mode-specific feature).
+     ~~**`python-mode` syntactic / cycling indentation**~~ **DONE** —
+     `scenario_20_python_indent`. `indent-for-tab-command` now dispatches to
+     a per-mode `indent_line_function`; python-mode's `python-indent-line`
+     indents to the syntactic level (prev-line indent + 4 after a `:`
+     header) and cycles `[calc, calc-4, …, 0]` on repeated TAB. Also added
+     the `(Python ElDoc)` modeline lighter (Emacs runs eldoc in python-mode;
+     the echo-area docs themselves are a future gap). **Still TODO:** the
+     full `python-indent-calculate-levels` (brackets, continuation lines,
+     dedenting keywords, the after-a-plain-statement cycle) — only the
+     `:`-header / simple-dedent case is replicated.
    - ~~**`auto-fill-mode` insertion**~~ **DONE** — `scenario_19_auto_fill_mode`.
      `M-x auto-fill-mode` toggles the minor mode with the Emacs message
      (`Auto-Fill mode enabled in current buffer`, derived in

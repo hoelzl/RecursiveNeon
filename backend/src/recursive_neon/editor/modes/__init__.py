@@ -61,6 +61,10 @@ class Mode:
     doc: str = ""
     indicator: str = ""  # short modeline string; falls back to name if empty
     syntax_rules: list[SyntaxRule] = field(default_factory=list)
+    # Per-mode TAB behaviour (Emacs's ``indent-line-function``). When set,
+    # ``indent-for-tab-command`` calls it instead of the text-mode default
+    # (``indent-relative``). python-mode uses it for syntactic indentation.
+    indent_line_function: Callable[[Editor], None] | None = None
 
 
 # Global registry: mode name -> Mode
@@ -78,6 +82,7 @@ def defmode(
     doc: str = "",
     indicator: str = "",
     syntax_rules: list[SyntaxRule] | None = None,
+    indent_line_function: Callable[[Editor], None] | None = None,
 ) -> Mode:
     """Register a new mode and return it."""
     mode = Mode(
@@ -90,6 +95,7 @@ def defmode(
         doc=doc,
         indicator=indicator,
         syntax_rules=syntax_rules or [],
+        indent_line_function=indent_line_function,
     )
     MODES[name] = mode
     return mode
@@ -130,6 +136,17 @@ defmode(
     is_major=False,
     doc="Minor mode that's active while incremental search is running.",
     indicator="Isearch",
+)
+
+defmode(
+    "eldoc-mode",
+    is_major=False,
+    doc=(
+        "Minor-mode lighter for ElDoc. GNU Emacs enables eldoc-mode in "
+        "python-mode (modeline reads ``(Python ElDoc)``); neon-edit shows the "
+        "lighter but does not yet implement the echo-area documentation."
+    ),
+    indicator="ElDoc",
 )
 
 defmode(
