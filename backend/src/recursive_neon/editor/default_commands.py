@@ -1166,9 +1166,12 @@ class _QueryReplaceSession:
     # Session entry point — where to restore on C-g / U.
     start_line: int
     start_col: int
-    # Current match end (exclusive).  ``None`` once we've run out of
-    # matches or before the first match is found.  Start of the match
-    # is always ``ed.buffer.point`` while a match is on deck.
+    # Current match start and end (exclusive).  ``None`` once we've run
+    # out of matches or before the first match is found.  While a match
+    # is on deck GNU Emacs leaves point at the match *end*, so we record
+    # the start explicitly rather than reading it off ``ed.buffer.point``.
+    current_start_line: int | None = None
+    current_start_col: int | None = None
     current_end_line: int | None = None
     current_end_col: int | None = None
     # Applied-replacement stack (LIFO) for u / U.
@@ -1180,7 +1183,7 @@ class _QueryReplaceSession:
     replaced_count: int = 0
 
     def has_current(self) -> bool:
-        """Is a match currently on deck (point is at its start)?"""
+        """Is a match currently on deck (point is at its end)?"""
         return self.current_end_line is not None
 
 
@@ -1209,13 +1212,18 @@ def _qr_advance_to_next_match(ed: Editor, session: _QueryReplaceSession) -> None
         case_fold=session.case_fold,
     )
     if pos is None:
+        session.current_start_line = None
+        session.current_start_col = None
         session.current_end_line = None
         session.current_end_col = None
         return
-    buf.point.move_to(pos[0], pos[1])
     end_line, end_col = _qr_match_end(session.from_text, pos[0], pos[1])
+    session.current_start_line = pos[0]
+    session.current_start_col = pos[1]
     session.current_end_line = end_line
     session.current_end_col = end_col
+    # GNU Emacs prompts with point at the match *end*, not the start.
+    buf.point.move_to(end_line, end_col)
 
 
 def _qr_prompt(session: _QueryReplaceSession) -> str:
@@ -1223,20 +1231,37 @@ def _qr_prompt(session: _QueryReplaceSession) -> str:
     return f"Query replacing {session.from_text} with {session.to_text}: (? for help)"
 
 
+def _qr_replaced_message(count: int) -> str:
+    """The closing summary, pluralised the way GNU Emacs does.
+
+    Emacs reports ``Replaced N occurrence`` for ``N == 1`` and
+    ``Replaced N occurrences`` otherwise (including ``N == 0``) — the
+    ``occurrence%s`` formula from ``perform-replace``. Verified against
+    Emacs via the parity harness; see ``scenario_14_query_replace.py``.
+    Matches the existing ``replace-string`` summary.
+    """
+    return f"Replaced {count} occurrence{'s' if count != 1 else ''}"
+
+
 def _qr_replace_current(ed: Editor, session: _QueryReplaceSession) -> None:
     """Replace the current match with ``session.to_text``.  Records
     the replacement on the stack.  Leaves point just past the inserted
     replacement text so the next ``find_forward`` advances naturally.
 
-    Precondition: ``session.has_current()`` is True and ``ed.buffer.point``
-    is at the start of the match.
+    Precondition: ``session.has_current()`` is True. The match bounds are
+    read from ``session.current_start_*`` / ``current_end_*`` — point
+    itself sits at the match *end* on deck (Emacs's convention), not the
+    start.
     """
     assert session.has_current(), "replace_current with no current match"
     buf = ed.buffer
-    start_line = buf.point.line
-    start_col = buf.point.col
+    # Point sits at the match end while on deck, so take the start from
+    # the session rather than from point.
+    start_line = session.current_start_line
+    start_col = session.current_start_col
     end_line = session.current_end_line
     end_col = session.current_end_col
+    assert start_line is not None and start_col is not None
     assert end_line is not None and end_col is not None
 
     # Snapshot the original text for the undo stack.
@@ -1260,6 +1285,8 @@ def _qr_replace_current(ed: Editor, session: _QueryReplaceSession) -> None:
     )
     session.replaced_count += 1
     # Current match is consumed.
+    session.current_start_line = None
+    session.current_start_col = None
     session.current_end_line = None
     session.current_end_col = None
 
@@ -1281,12 +1308,15 @@ def _qr_undo_one(ed: Editor, session: _QueryReplaceSession) -> bool:
     )
     buf.point.move_to(r.line, r.col)
     buf.insert_string(r.from_text)
-    # Move point back to the start of the reverted match and re-install
-    # it as the current match so the prompt re-asks.
-    buf.point.move_to(r.line, r.col)
+    # Re-install the reverted match as the current one so the prompt
+    # re-asks. Leave point at the match end, matching the on-deck
+    # convention (Emacs prompts with point past the match).
     from_end_line, from_end_col = _qr_match_end(r.from_text, r.line, r.col)
+    session.current_start_line = r.line
+    session.current_start_col = r.col
     session.current_end_line = from_end_line
     session.current_end_col = from_end_col
+    buf.point.move_to(from_end_line, from_end_col)
     session.replaced_count -= 1
     return True
 
@@ -1360,7 +1390,7 @@ def _qr_key_replace(ed: Editor, session: _QueryReplaceSession) -> None:
         _qr_exit(
             ed,
             session,
-            message=f"Replaced {session.replaced_count} occurrence(s)",
+            message=_qr_replaced_message(session.replaced_count),
         )
         return
     _qr_replace_current(ed, session)
@@ -1371,7 +1401,7 @@ def _qr_key_replace(ed: Editor, session: _QueryReplaceSession) -> None:
         _qr_exit(
             ed,
             session,
-            message=f"Replaced {session.replaced_count} occurrence(s)",
+            message=_qr_replaced_message(session.replaced_count),
         )
 
 
@@ -1381,7 +1411,7 @@ def _qr_key_skip(ed: Editor, session: _QueryReplaceSession) -> None:
         _qr_exit(
             ed,
             session,
-            message=f"Replaced {session.replaced_count} occurrence(s)",
+            message=_qr_replaced_message(session.replaced_count),
         )
         return
     # Advance point past the current match so find_forward doesn't
@@ -1390,7 +1420,11 @@ def _qr_key_skip(ed: Editor, session: _QueryReplaceSession) -> None:
     end_line = session.current_end_line
     end_col = session.current_end_col
     assert end_line is not None and end_col is not None
+    # Point is already at the match end (on-deck convention); look past
+    # it for the next match.
     buf.point.move_to(end_line, end_col)
+    session.current_start_line = None
+    session.current_start_col = None
     session.current_end_line = None
     session.current_end_col = None
     _qr_advance_to_next_match(ed, session)
@@ -1400,7 +1434,7 @@ def _qr_key_skip(ed: Editor, session: _QueryReplaceSession) -> None:
         _qr_exit(
             ed,
             session,
-            message=f"Replaced {session.replaced_count} occurrence(s)",
+            message=_qr_replaced_message(session.replaced_count),
         )
 
 
@@ -1409,7 +1443,7 @@ def _qr_key_exit(ed: Editor, session: _QueryReplaceSession) -> None:
     _qr_exit(
         ed,
         session,
-        message=f"Replaced {session.replaced_count} occurrence(s)",
+        message=_qr_replaced_message(session.replaced_count),
     )
 
 
@@ -1420,7 +1454,7 @@ def _qr_key_replace_once_and_exit(ed: Editor, session: _QueryReplaceSession) -> 
     _qr_exit(
         ed,
         session,
-        message=f"Replaced {session.replaced_count} occurrence(s)",
+        message=_qr_replaced_message(session.replaced_count),
     )
 
 
@@ -1432,7 +1466,7 @@ def _qr_key_replace_all(ed: Editor, session: _QueryReplaceSession) -> None:
     _qr_exit(
         ed,
         session,
-        message=f"Replaced {session.replaced_count} occurrence(s)",
+        message=_qr_replaced_message(session.replaced_count),
     )
 
 
@@ -1452,7 +1486,7 @@ def _qr_key_undo_all(ed: Editor, session: _QueryReplaceSession) -> None:
     _qr_exit(
         ed,
         session,
-        message=f"Undid all {count} replacement(s)",
+        message=f"Undid all {count} replacement{'s' if count != 1 else ''}",
         restore_point=True,
     )
 
@@ -1560,11 +1594,14 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
                 start_line=start_line,
                 start_col=start_col,
             )
-            # Install the first match: move point, compute end.
-            buf.point.move_to(pos[0], pos[1])
+            # Install the first match: record start/end and leave point
+            # at the match end (Emacs's on-deck convention).
             end_line, end_col = _qr_match_end(from_text, pos[0], pos[1])
+            session.current_start_line = pos[0]
+            session.current_start_col = pos[1]
             session.current_end_line = end_line
             session.current_end_col = end_col
+            buf.point.move_to(end_line, end_col)
 
             # Install highlight overlay (reuses 6l-3 isearch machinery).
             ed.highlight_term = from_text
