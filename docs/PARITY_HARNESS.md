@@ -6,6 +6,10 @@ state. Use it to find Emacs/neon-edit divergences, fix them in
 neon-edit, and prevent regressions by treating each scenario as a
 living checkpoint.
 
+**Status:** 20 scenarios merged (78 checkpoints, 69 pixel-perfect, 9
+documented diffs). To pick up the work, jump to **"Remaining work (pick up
+here)"** below the coverage table.
+
 CLAUDE.md says **Emacs is the ground truth** for the editor: if a
 divergence is surfaced, the default action is to fix neon-edit. Deviate
 only when matching Emacs is disproportionately complex for our
@@ -241,6 +245,43 @@ diffs are content/semantic differences explained below.)
 | 18 | query-replace defaults | `M-%` `(default foo → bar)` prompt, RET-reuse of the pair, combined `M-p` history (`foo → bar` then individual) |
 | 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
 | 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
+
+## Remaining work (pick up here)
+
+Scenarios 01–20 are merged. The features below were *surfaced* by a
+scenario but deliberately scoped out — each is the next natural piece. They
+are also annotated inline (search the file for the named item); this list
+is the at-a-glance starting point.
+
+**New features (each is its own scenario + PR):**
+
+1. **`yank-from-kill-ring`** (surfaced in scenario 13) — the Emacs-28+ `M-y`
+   when the previous command was *not* a yank: opens a `Yank from
+   kill-ring:` minibuffer to pick a ring entry. neon-edit no-ops there.
+   Reuses the minibuffer-completion + history infra (scenarios 03/16).
+2. **Rest of the `C-x r` register family** (from scenario 15) —
+   `copy-to-register` (`s`), `insert-register` (`i`), and number registers
+   (`C-x r n` / `+`). Builds on the existing point-register plumbing.
+3. **Full `python-indent-calculate-levels`** (from scenario 20) — neon-edit
+   only handles the `:`-header / simple-dedent cycle. The rest: open
+   brackets / continuation lines, dedenting keywords (`else`/`elif`/
+   `except`/`finally`), and the after-a-plain-statement candidate set (the
+   murky `0,0,4` case the probe found).
+4. **ElDoc echo-area docs** (from scenario 20) — python-mode shows the
+   `ElDoc` *lighter* only; the actual echo-area signatures aren't computed.
+
+**Smaller / cleanup:**
+
+5. **`replace-string` history** (from scenario 18) — wire it to the shared
+   `query-replace-history` (the defaults/combined machinery already exists;
+   replace-string is currently the one unwired prompt).
+6. **Cosmetic modeline items** — see "Cosmetic items not yet polished":
+   #2 odd-height split-window row distribution, #4 empty-file EOL mnemonic
+   (`-UUU:` vs `-UU-:`).
+
+**Known intentional divergences** (documented, *not* to "fix") — the
+undo-to-saved modified flag and the redo cursor (scenario 09), and the
+content/semantic diffs (03/04/05) — see the next two sections.
 
 ## Known intentional divergences
 
