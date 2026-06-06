@@ -109,9 +109,9 @@ class TestQueryReplaceEntry:
         sess = ed._query_replace_session
         assert sess.from_text == "foo"
         assert sess.to_text == "baz"
-        # Point is on the first match
+        # Point is on the first match — Emacs leaves point at the match end.
         assert ed.buffer.point.line == 0
-        assert ed.buffer.point.col == 0
+        assert ed.buffer.point.col == 3
         # Minibuffer is closed; prompt is in the message area
         assert ed.minibuffer is None
         assert "Query replacing foo with baz" in ed.message
@@ -137,8 +137,9 @@ class TestQueryReplaceEntry:
         # Move point past the first "foo" before invoking
         ed.buffer.point.move_to(0, 4)  # on "bar"
         start_qr(ed, "foo", "qux")
-        # Should find the second "foo" at col 8, not the first at col 0
-        assert ed.buffer.point.col == 8
+        # Should find the second "foo" (at col 8) not the first; point
+        # sits at the match end (col 11), the Emacs on-deck convention.
+        assert ed.buffer.point.col == 11
 
     def test_highlight_term_set_on_session_entry(self):
         ed = make_editor("foo bar foo")
@@ -158,9 +159,9 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("y")
         # First "foo" replaced with "baz"
         assert ed.buffer.text == "baz bar foo"
-        # Point moved to the next match
+        # Point moved to the next match (Emacs leaves it at the match end)
         assert ed.buffer.point.line == 0
-        assert ed.buffer.point.col == 8
+        assert ed.buffer.point.col == 11
 
     def test_space_aliases_y(self):
         ed = make_editor("foo bar foo")
@@ -174,22 +175,22 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("n")
         # Nothing replaced
         assert ed.buffer.text == "foo bar foo"
-        # Point moved past the first match to the second
-        assert ed.buffer.point.col == 8
+        # Point moved past the first match to the second (at its end)
+        assert ed.buffer.point.col == 11
 
     def test_backspace_aliases_n(self):
         ed = make_editor("foo bar foo")
         start_qr(ed, "foo", "baz")
         ed.process_key("Backspace")
         assert ed.buffer.text == "foo bar foo"
-        assert ed.buffer.point.col == 8
+        assert ed.buffer.point.col == 11
 
     def test_delete_aliases_n(self):
         ed = make_editor("foo bar foo")
         start_qr(ed, "foo", "baz")
         ed.process_key("Delete")
         assert ed.buffer.text == "foo bar foo"
-        assert ed.buffer.point.col == 8
+        assert ed.buffer.point.col == 11
 
     def test_q_exits_without_replacing_current(self):
         ed = make_editor("foo bar foo")
@@ -197,7 +198,7 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("q")
         assert ed._query_replace_session is None
         assert ed.buffer.text == "foo bar foo"
-        assert "Replaced 0 occurrence(s)" in ed.message
+        assert "Replaced 0 occurrences" in ed.message
 
     def test_enter_aliases_q(self):
         ed = make_editor("foo bar foo")
@@ -212,7 +213,8 @@ class TestQueryReplaceBasicKeys:
         ed.process_key(".")
         assert ed._query_replace_session is None
         assert ed.buffer.text == "baz bar foo"
-        assert "Replaced 1 occurrence(s)" in ed.message
+        assert "Replaced 1 occurrence" in ed.message
+        assert "occurrences" not in ed.message
 
     def test_session_exits_naturally_when_no_more_matches(self):
         ed = make_editor("foo bar")  # one match
@@ -220,7 +222,8 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("y")
         assert ed._query_replace_session is None
         assert ed.buffer.text == "baz bar"
-        assert "Replaced 1 occurrence(s)" in ed.message
+        assert "Replaced 1 occurrence" in ed.message
+        assert "occurrences" not in ed.message
 
     def test_sequential_y_keys_replace_all_matches(self):
         ed = make_editor("foo foo foo")
@@ -230,7 +233,7 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("y")
         assert ed.buffer.text == "X X X"
         assert ed._query_replace_session is None
-        assert "Replaced 3 occurrence(s)" in ed.message
+        assert "Replaced 3 occurrences" in ed.message
 
     def test_mixed_y_and_n(self):
         ed = make_editor("foo foo foo")
@@ -239,7 +242,7 @@ class TestQueryReplaceBasicKeys:
         ed.process_key("n")  # skip 2nd
         ed.process_key("y")  # replace 3rd
         assert ed.buffer.text == "X foo X"
-        assert "Replaced 2 occurrence(s)" in ed.message
+        assert "Replaced 2 occurrences" in ed.message
 
     def test_highlight_cleared_on_natural_exit(self):
         ed = make_editor("foo bar")
@@ -261,7 +264,7 @@ class TestQueryReplaceReplaceAll:
         ed.process_key("!")
         assert ed.buffer.text == "X X X"
         assert ed._query_replace_session is None
-        assert "Replaced 3 occurrence(s)" in ed.message
+        assert "Replaced 3 occurrences" in ed.message
 
     def test_bang_after_some_y_n_counts_correctly(self):
         ed = make_editor("foo foo foo foo foo")
@@ -270,14 +273,15 @@ class TestQueryReplaceReplaceAll:
         ed.process_key("n")  # skipped
         ed.process_key("!")  # 2, 3, 4 replaced; total 4
         assert ed.buffer.text == "X foo X X X"
-        assert "Replaced 4 occurrence(s)" in ed.message
+        assert "Replaced 4 occurrences" in ed.message
 
     def test_bang_with_single_match(self):
         ed = make_editor("foo bar")
         start_qr(ed, "foo", "baz")
         ed.process_key("!")
         assert ed.buffer.text == "baz bar"
-        assert "Replaced 1 occurrence(s)" in ed.message
+        assert "Replaced 1 occurrence" in ed.message
+        assert "occurrences" not in ed.message
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -295,8 +299,8 @@ class TestQueryReplaceUndo:
         assert ed.buffer.text == "X foo foo"
         # Session still active
         assert ed._query_replace_session is not None
-        # Point is back on the reverted match
-        assert ed.buffer.point.col == 2  # position of 2nd "foo"
+        # Point is back on the reverted match (at its end)
+        assert ed.buffer.point.col == 5  # end of 2nd "foo"
 
     def test_u_with_nothing_to_undo_shows_message(self):
         ed = make_editor("foo bar")
@@ -353,7 +357,7 @@ class TestQueryReplaceUndo:
         ed.process_key("U")
         assert ed.buffer.text == "foo foo foo bar"
         assert ed._query_replace_session is None
-        assert "Undid all 2 replacement(s)" in ed.message
+        assert "Undid all 2 replacements" in ed.message
 
     def test_capital_u_restores_point_to_session_start(self):
         ed = make_editor("foo foo foo")
@@ -403,8 +407,8 @@ class TestQueryReplaceCancel:
         ed = make_editor("foo bar foo")
         ed.buffer.point.move_to(0, 4)  # on "bar"
         start_qr(ed, "foo", "X")
-        # Point is now on the second "foo" at col 8
-        assert ed.buffer.point.col == 8
+        # Point is now on the second "foo" (at its end, col 11)
+        assert ed.buffer.point.col == 11
         ed.process_key("C-g")
         # Point restored to col 4
         assert ed.buffer.point.col == 4

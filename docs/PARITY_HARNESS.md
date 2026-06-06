@@ -40,6 +40,7 @@ parity/
     scenario_11_fill_paragraph.py
     scenario_12_modeline_state_flags.py
     scenario_13_kill_ring_browse.py
+    scenario_14_query_replace.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -209,7 +210,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(13 scenarios, 47 checkpoints. 38 are pixel-perfect; the 9 remaining
+(14 scenarios, 53 checkpoints. 44 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -227,6 +228,7 @@ diffs are content/semantic differences explained below.)
 | 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
 | 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
 | 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
+| 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
 
 ## Known intentional divergences
 
@@ -375,9 +377,18 @@ Each is sized for one session if the divergences turn out moderate.
    `yank-from-kill-ring` gap (see item 9 and "Known intentional
    divergences").
 
-6. **`scenario_14_query_replace`**: `M-%` interactive replace —
-   minibuffer flow (`Query replace: ` → `Replace string FOO with: `),
-   per-match prompts (`y` / `n` / `q` / `!`), echo-area summary at end.
+6. ~~**`scenario_14_query_replace`**~~ **DONE.** Drove the full `M-%`
+   flow — both entry prompts, the per-match prompt, `y`/`n` decisions, and
+   the closing summary. The prompts already matched Emacs exactly
+   (including `(? for help)`); two real divergences were fixed: (a) on
+   deck, neon-edit left point at the match *start* whereas Emacs leaves it
+   at the match *end* — the session now tracks the match start explicitly
+   and parks point at the end (the highlight already accepts point at
+   either boundary, so the current-match emphasis still renders); and (b)
+   the summary said `Replaced N occurrence(s)` instead of Emacs's
+   pluralised `Replaced N occurrence` / `occurrences` (now shared with the
+   `replace-string` formula). All 6 checkpoints pixel-perfect; the
+   singular/plural forms were both verified against Emacs via the harness.
 
 7. **`scenario_15_register_basics`**: `C-x r SPC <letter>` to save
    point in a register, `C-x r j <letter>` to jump back. Mostly a test
