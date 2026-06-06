@@ -424,8 +424,14 @@ Each is sized for one session if the divergences turn out moderate.
    pixel-perfect. **Deviations** (documented next to the code): the
    history-boundary beeps (`Beginning of history; no preceding item` /
    `End of history; no default available`) are silent no-ops — the
-   minibuffer has no echo-area channel; and history is wired to the three
-   common prompts so far (query-replace / other prompts are future work).
+   minibuffer has no echo-area channel. **Wiring** (extended after the
+   scenario landed): the plain string-history prompts — `M-x` (`command`),
+   `C-x b` / `C-x k` (`buffer-name`), and find-file / find-file-other-
+   window / write-file (`file-name`). `query-replace` / `replace-string`
+   are intentionally **not** wired: a harness probe showed their Emacs
+   history is the special `query-replace-defaults` + combined `from → to`
+   mechanism (the prompt reads `Query replace (default foo → bar): ` and
+   `M-p` recalls the *pair*), deferred to item 10 below.
 
 9. **`scenario_NN_yank_from_kill_ring`** (deferred from scenario 13):
    implement and verify `yank-from-kill-ring` — the command GNU Emacs ≥28
@@ -436,6 +442,18 @@ Each is sized for one session if the divergences turn out moderate.
    like yank). neon-edit currently no-ops `M-y` in that state. This is a
    real feature, not a one-line fix, which is why scenario 13 left it as a
    documented divergence rather than expanding scope.
+
+10. **`scenario_NN_query_replace_defaults`** (deferred while extending
+    scenario 16's history): `M-%` / `replace-string` history is not a plain
+    string history. GNU Emacs keeps `query-replace-defaults` (the last
+    `(from . to)` pair) and shows it in the prompt —
+    `Query replace (default foo → bar): ` — with `RET` on empty input
+    reusing the pair, and `M-p` recalling the *combined* `foo → bar` entry
+    before the individual strings. Implementing it means a defaults store,
+    the `(default … → …)` prompt, the combined-entry history, and
+    default-on-empty submission. neon-edit currently shows a bare
+    `Query replace: ` with no history on those prompts (verified divergent
+    against Emacs via a throwaway probe).
 
 ## Tips and gotchas
 

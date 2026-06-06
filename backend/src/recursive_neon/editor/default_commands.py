@@ -544,7 +544,10 @@ def kill_buffer(ed: Editor, prefix: int | None) -> None:
             ed.message = ""
 
     ed.start_minibuffer(
-        f"Kill buffer (default {default}): ", callback, completer=completer
+        f"Kill buffer (default {default}): ",
+        callback,
+        completer=completer,
+        history="buffer-name",
     )
 
 
@@ -573,7 +576,11 @@ def write_file(ed: Editor, prefix: int | None) -> None:
 
     initial = ed.buffer.filepath or ""
     ed.start_minibuffer(
-        "Write file: ", callback, initial=initial, completer=ed.path_completer
+        "Write file: ",
+        callback,
+        initial=initial,
+        completer=ed.path_completer,
+        history="file-name",
     )
 
 
@@ -2490,7 +2497,9 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
         _auto_detect_mode(ed, path)
         ed.message = f"Opened {path}" if content else f"(New file) {path}"
 
-    ed.start_minibuffer("Find file: ", callback, completer=ed.path_completer)
+    ed.start_minibuffer(
+        "Find file: ", callback, completer=ed.path_completer, history="file-name"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
