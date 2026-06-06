@@ -45,6 +45,7 @@ parity/
     scenario_16_minibuffer_history.py
     scenario_17_tab_indent.py
     scenario_18_query_replace_defaults.py
+    scenario_19_auto_fill_mode.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -214,7 +215,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(18 scenarios, 71 checkpoints. 62 are pixel-perfect; the 9 remaining
+(19 scenarios, 74 checkpoints. 65 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -237,6 +238,7 @@ diffs are content/semantic differences explained below.)
 | 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
 | 17 | TAB indent | `indent-for-tab-command`: indent-relative to previous-line words, tab-to-tab-stop fallback, first-line tab |
 | 18 | query-replace defaults | `M-%` `(default foo → bar)` prompt, RET-reuse of the pair, combined `M-p` history (`foo → bar` then individual) |
+| 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
 
 ## Known intentional divergences
 
@@ -318,6 +320,14 @@ These are real divergences but low-impact:
    short no-file names (`*Help*`, `second`, …) changed — no file-buffer
    checkpoint was disturbed.
 
+4. **Empty-file EOL mnemonic** (`-UUU:` vs `-UU-:`). For an *empty* file
+   (no newline to sample), Emacs can't decide the EOL type and shows the
+   4th mule char as `U`; for a file with a Unix newline it shows `-`.
+   neon-edit always shows `-` for a file-visiting buffer. Surfaced while
+   probing scenario 19 (which sidesteps it with non-empty seed content).
+   Low-impact; the fix is in `view.py::_render_modeline` keying the 4th
+   char off "buffer has a trailing newline / detected EOL".
+
 ## Proposed next scenarios
 
 Each is sized for one session if the divergences turn out moderate.
@@ -362,8 +372,14 @@ Each is sized for one session if the divergences turn out moderate.
      not Emacs's `indent-tabs-mode` tab/space mix — identical on screen.
      **Still TODO:** `python-mode` syntactic / cycling indentation (a
      separate, larger mode-specific feature).
-   - **`auto-fill-mode` insertion** — break-on-space past fill-column; has
-     its own mode-enable echo and ` Fill` modeline indicator to diff.
+   - ~~**`auto-fill-mode` insertion**~~ **DONE** — `scenario_19_auto_fill_mode`.
+     `M-x auto-fill-mode` toggles the minor mode with the Emacs message
+     (`Auto-Fill mode enabled in current buffer`, derived in
+     `toggle_minor_mode`) and the ` Fill` lighter; break-on-space past
+     fill-column already worked. Fixed the default: text-mode no longer
+     enables auto-fill (Emacs's doesn't), so `.txt` starts with it off and
+     the toggle truly enables/disables it. (Surfaced a separate cosmetic
+     quirk — see Cosmetic items #4.)
 
 4. ~~**`scenario_12_modeline_state_flags`**~~ **DONE.** Modified mnemonic
    `---`↔`**-` (already matched); added the no-file `-UUU:` mnemonic and
