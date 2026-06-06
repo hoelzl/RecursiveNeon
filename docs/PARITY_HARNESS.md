@@ -43,6 +43,7 @@ parity/
     scenario_14_query_replace.py
     scenario_15_register_basics.py
     scenario_16_minibuffer_history.py
+    scenario_17_tab_indent.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
@@ -212,7 +213,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(16 scenarios, 63 checkpoints. 54 are pixel-perfect; the 9 remaining
+(17 scenarios, 67 checkpoints. 58 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below.)
 
 | # | Scenario | Coverage |
@@ -233,6 +234,7 @@ diffs are content/semantic differences explained below.)
 | 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
 | 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
 | 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
+| 17 | TAB indent | `indent-for-tab-command`: indent-relative to previous-line words, tab-to-tab-stop fallback, first-line tab |
 
 ## Known intentional divergences
 
@@ -349,11 +351,15 @@ Each is sized for one session if the divergences turn out moderate.
    pixel-perfect. Note: with single-spaced input Emacs does *not* create
    two-space sentence breaks (it only preserves existing ones), so no
    double-space divergence arose. **Still TODO in their own scenarios:**
-   - **TAB / `indent-for-tab-command`** — neon-edit binds no TAB in text
-     buffers (TAB is "undefined" everywhere); Emacs runs `indent-relative`
-     / `tab-to-tab-stop` in fundamental/text-mode (TAB on the empty first
-     line inserts a real tab → column 8) and syntactic, cycling indent in
-     `python-mode`. A large, mode-specific feature.
+   - ~~**TAB / `indent-for-tab-command`**~~ **DONE (text-mode)** —
+     `scenario_17_tab_indent`. Bound `Tab` → `indent-for-tab-command`,
+     implementing `indent-relative` (indent to the next word/indent-point
+     of the nearest previous non-blank line) with the `tab-to-tab-stop`
+     fallback (and on the first line, e.g. TAB at col 0 → col 8). All 4
+     checkpoints pixel-perfect. **Deviation:** neon indents with spaces,
+     not Emacs's `indent-tabs-mode` tab/space mix — identical on screen.
+     **Still TODO:** `python-mode` syntactic / cycling indentation (a
+     separate, larger mode-specific feature).
    - **`auto-fill-mode` insertion** — break-on-space past fill-column; has
      its own mode-enable echo and ` Fill` modeline indicator to diff.
 
