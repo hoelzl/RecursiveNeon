@@ -1637,6 +1637,17 @@ def _qr_install_newline_handler(ed: Editor) -> None:
     mb.key_handlers["M-Enter"] = insert_newline
 
 
+# The " → " separator GNU Emacs shows between a default's from and to.
+_QR_SEP = " → "
+
+
+def _qr_push_history(history: list[str], text: str) -> None:
+    """Prepend *text* to the query-replace *history*, skipping an empty
+    string and a duplicate of the current front (the Emacs minibuffer add)."""
+    if text and (not history or history[0] != text):
+        history.insert(0, text)
+
+
 @defcommand(
     "query-replace",
     "Interactively replace occurrences of one string with another (M-%).",
@@ -1644,62 +1655,91 @@ def _qr_install_newline_handler(ed: Editor) -> None:
 def query_replace(ed: Editor, prefix: int | None) -> None:
     """Prompt for the search and replacement strings, then enter the
     capture-mode session that walks through each match.
+
+    Remembers the last (from, to) pair as the default (GNU Emacs's
+    ``query-replace-defaults``): a later ``M-%`` shows
+    ``Query replace (default FROM → TO): ``, submitting the from-input empty
+    reuses the pair, and ``M-p`` offers the combined ``FROM → TO`` entry
+    ahead of the individual from/to history.
     """
     buf = ed.buffer
     start_line = buf.point.line
     start_col = buf.point.col
+    history = ed._minibuffer_histories.setdefault("query-replace", [])
+    defaults = ed._query_replace_defaults
+
+    def begin_session(from_text: str, to_text: str) -> None:
+        # The default is recorded when the args are read (before the search),
+        # so even a "No matches" run updates it — matches Emacs.
+        ed._query_replace_defaults = (from_text, to_text)
+        # Smart case-fold: fold iff case-fold-search is True AND from_text is
+        # all lowercase (matches the isearch rule in 6l-3).
+        global_fold = bool(ed.get_variable("case-fold-search"))
+        case_fold = global_fold and from_text.islower()
+        pos = buf.find_forward(from_text, start_line, start_col, case_fold=case_fold)
+        if pos is None:
+            ed.message = f"No matches for {from_text}"
+            return
+        session = _QueryReplaceSession(
+            from_text=from_text,
+            to_text=to_text,
+            case_fold=case_fold,
+            start_line=start_line,
+            start_col=start_col,
+        )
+        # Install the first match: record start/end and leave point at the
+        # match end (Emacs's on-deck convention).
+        end_line, end_col = _qr_match_end(from_text, pos[0], pos[1])
+        session.current_start_line = pos[0]
+        session.current_start_col = pos[1]
+        session.current_end_line = end_line
+        session.current_end_col = end_col
+        buf.point.move_to(end_line, end_col)
+        # Install highlight overlay (reuses 6l-3 isearch machinery).
+        ed.highlight_term = from_text
+        ed.highlight_case_fold = case_fold
+        # Activate the capture-mode session and show the prompt.
+        ed._query_replace_session = session
+        ed.message = _qr_prompt(session)
 
     def on_from_submitted(from_text: str) -> None:
         if not from_text:
-            ed.message = ""
+            # Empty input reuses the default pair (skipping the with-prompt).
+            if defaults is not None:
+                begin_session(*defaults)
+            else:
+                ed.message = ""
             return
+        if _QR_SEP in from_text:
+            # A combined "FROM → TO" entry recalled from the default history.
+            # Its parts are already on the history (pushed when the default
+            # was first entered) and the combined form is only a synthetic
+            # view, so don't re-push — that would duplicate them. Just begin.
+            f, t = from_text.split(_QR_SEP, 1)
+            begin_session(f, t)
+            return
+        _qr_push_history(history, from_text)
 
         def on_to_submitted(to_text: str) -> None:
-            # Smart case-fold: fold iff case-fold-search is True AND
-            # from_text is all lowercase (matches the isearch rule in
-            # 6l-3).
-            global_fold = bool(ed.get_variable("case-fold-search"))
-            case_fold = global_fold and from_text.islower()
-
-            # Find the first match from the session start.
-            pos = buf.find_forward(
-                from_text, start_line, start_col, case_fold=case_fold
-            )
-            if pos is None:
-                ed.message = f"No matches for {from_text}"
-                return
-
-            session = _QueryReplaceSession(
-                from_text=from_text,
-                to_text=to_text,
-                case_fold=case_fold,
-                start_line=start_line,
-                start_col=start_col,
-            )
-            # Install the first match: record start/end and leave point
-            # at the match end (Emacs's on-deck convention).
-            end_line, end_col = _qr_match_end(from_text, pos[0], pos[1])
-            session.current_start_line = pos[0]
-            session.current_start_col = pos[1]
-            session.current_end_line = end_line
-            session.current_end_col = end_col
-            buf.point.move_to(end_line, end_col)
-
-            # Install highlight overlay (reuses 6l-3 isearch machinery).
-            ed.highlight_term = from_text
-            ed.highlight_case_fold = case_fold
-
-            # Activate the capture-mode session and show the prompt.
-            ed._query_replace_session = session
-            ed.message = _qr_prompt(session)
+            _qr_push_history(history, to_text)
+            begin_session(from_text, to_text)
 
         ed.start_minibuffer(
             f"Query replace {from_text} with: ",
             on_to_submitted,
+            history_list=list(history),
         )
         _qr_install_newline_handler(ed)
 
-    ed.start_minibuffer("Query replace: ", on_from_submitted)
+    if defaults is not None:
+        prompt = f"Query replace (default {defaults[0]}{_QR_SEP}{defaults[1]}): "
+    else:
+        prompt = "Query replace: "
+    # M-p offers the combined default pair ahead of the individual history.
+    nav = list(history)
+    if defaults is not None:
+        nav.insert(0, f"{defaults[0]}{_QR_SEP}{defaults[1]}")
+    ed.start_minibuffer(prompt, on_from_submitted, history_list=nav)
     _qr_install_newline_handler(ed)
 
 

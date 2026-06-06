@@ -4,11 +4,12 @@ Verifies that submitting input through each command accumulates the
 expected per-prompt history (and that prompts sharing a history variable
 in Emacs share one here too).
 
-Only the plain string-history prompts are wired: M-x (``command``), C-x b
-/ C-x k (``buffer-name``), and find-file / write-file (``file-name``).
-query-replace / replace-string are intentionally NOT wired — their Emacs
-history uses ``query-replace-defaults`` + combined ``from → to`` entries,
-a distinct feature deferred to its own scenario (see PARITY_HARNESS.md).
+The plain string-history prompts are wired: M-x (``command``), C-x b /
+C-x k (``buffer-name``), and find-file / write-file (``file-name``).
+query-replace uses the ``query-replace-defaults`` mechanism (combined
+``from → to`` entries) — see ``test_query_replace_defaults.py``; here we
+only confirm it now populates the ``query-replace`` history.
+replace-string remains unwired (it would share that special history).
 """
 
 from __future__ import annotations
@@ -54,13 +55,13 @@ class TestPromptHistoryWiring:
         ed.process_key("Enter")
         assert ed._minibuffer_histories["file-name"][0].endswith("notes.txt")
 
-    def test_query_replace_is_not_wired_to_history(self) -> None:
-        """query-replace deliberately has no plain history (its Emacs
-        history is the special defaults + combined-pair mechanism)."""
+    def test_query_replace_records_history(self) -> None:
+        """query-replace now records its from/to on the ``query-replace``
+        history (newest first), via the query-replace-defaults mechanism."""
         ed = make_editor("foo and foo")
         ed.process_key("M-%")
         _type(ed, "foo")
         ed.process_key("Enter")
         _type(ed, "bar")
         ed.process_key("Enter")  # session starts on the first match
-        assert "query-replace" not in ed._minibuffer_histories
+        assert ed._minibuffer_histories["query-replace"] == ["bar", "foo"]

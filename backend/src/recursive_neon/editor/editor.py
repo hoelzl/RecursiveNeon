@@ -127,6 +127,13 @@ class Editor:
         # sessions. Matches Emacs's per-variable minibuffer histories.
         self._minibuffer_histories: dict[str, list[str]] = {}
 
+        # query-replace remembers the last (from, to) pair as its default,
+        # shown in the next ``M-%`` prompt — ``Query replace (default FROM →
+        # TO): `` — and reused when the from-input is submitted empty. Like
+        # Emacs's ``query-replace-defaults``; persists across commands (not
+        # cleared by ``_reset_transient_state``).
+        self._query_replace_defaults: tuple[str, str] | None = None
+
         # Describe-key capture session.  When non-None, the next
         # keystroke is consumed and described instead of being
         # dispatched.  Holds brief/full flag plus any mid-two-key
@@ -800,18 +807,22 @@ class Editor:
         initial: str = "",
         on_change: Callable[[str], None] | None = None,
         history: str | None = None,
+        history_list: list[str] | None = None,
     ) -> None:
         """Activate the minibuffer with the given prompt and callback.
 
         ``history`` names a per-prompt input history (e.g. ``"command"``);
         the list is shared by reference so submits accumulate and ``M-p`` /
-        ``M-n`` can recall earlier input.
+        ``M-n`` can recall earlier input. ``history_list`` instead supplies a
+        ready-made list to navigate (e.g. query-replace's transient
+        ``[default-pair] + history``); the caller manages persistence.
         """
-        hist_list = (
-            self._minibuffer_histories.setdefault(history, [])
-            if history is not None
-            else None
-        )
+        if history_list is not None:
+            hist_list: list[str] | None = history_list
+        elif history is not None:
+            hist_list = self._minibuffer_histories.setdefault(history, [])
+        else:
+            hist_list = None
         self.minibuffer = Minibuffer(
             prompt,
             callback,
