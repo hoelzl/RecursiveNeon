@@ -145,22 +145,34 @@ class TestEditorVariables:
         assert ed.get_variable("fill-column") == 100
 
     def test_major_mode_overrides_global(self):
-        ed = self._make_editor()
+        from recursive_neon.editor.modes import MODES, defmode
 
-        ed.set_major_mode("text-mode")
-        # text-mode sets auto-fill to True
-        assert ed.get_variable("auto-fill") is True
+        defmode("test-major-6g", is_major=True, variables={"auto-fill": True}, doc="t")
+        try:
+            ed = self._make_editor()
+            ed.set_major_mode("test-major-6g")
+            # The major mode's value overrides the global default (False).
+            assert ed.get_variable("auto-fill") is True
+        finally:
+            del MODES["test-major-6g"]
 
     def test_buffer_local_overrides_major_mode(self):
-        ed = self._make_editor()
-        ed.set_major_mode("text-mode")
-        ed.buffer.set_variable_local("auto-fill", False)
-        assert ed.get_variable("auto-fill") is False
+        from recursive_neon.editor.modes import MODES, defmode
+
+        defmode("test-major-6g3", is_major=True, variables={"auto-fill": True}, doc="t")
+        try:
+            ed = self._make_editor()
+            ed.set_major_mode("test-major-6g3")
+            ed.buffer.set_variable_local("auto-fill", False)
+            assert ed.get_variable("auto-fill") is False
+        finally:
+            del MODES["test-major-6g3"]
 
     def test_minor_mode_overrides_major_mode(self):
         """A minor mode's variable default overrides the major mode."""
         from recursive_neon.editor.modes import MODES, defmode
 
+        defmode("test-major-6g2", is_major=True, variables={"auto-fill": True}, doc="t")
         defmode(
             "test-minor-6g",
             is_major=False,
@@ -169,12 +181,13 @@ class TestEditorVariables:
         )
         try:
             ed = self._make_editor()
-            ed.set_major_mode("text-mode")
+            ed.set_major_mode("test-major-6g2")
             assert ed.get_variable("auto-fill") is True
             ed.toggle_minor_mode("test-minor-6g")
             assert ed.get_variable("auto-fill") is False
         finally:
             del MODES["test-minor-6g"]
+            del MODES["test-major-6g2"]
 
     def test_get_unknown_variable(self):
         ed = self._make_editor()

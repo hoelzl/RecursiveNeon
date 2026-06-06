@@ -21,7 +21,9 @@ class TestModeRegistry:
     def test_text_mode_registered(self):
         assert "text-mode" in MODES
         assert MODES["text-mode"].is_major is True
-        assert MODES["text-mode"].variables.get("auto-fill") is True
+        # GNU Emacs's text-mode does NOT enable auto-fill by default — it's a
+        # separate minor mode (M-x auto-fill-mode).
+        assert "auto-fill" not in MODES["text-mode"].variables
 
     def test_defmode_creates_and_registers(self):
         m = defmode("test-reg-mode-6g", doc="Test mode")

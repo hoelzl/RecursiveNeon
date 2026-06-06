@@ -13,7 +13,8 @@ Variable resolution order:
 
 Built-in modes:
 - ``fundamental-mode`` — the default, no special behaviour
-- ``text-mode`` — sets ``auto-fill`` to True
+- ``text-mode`` — major mode for plain text (auto-fill is a separate
+  minor mode, not enabled by default — matching GNU Emacs)
 
 Language modes (Python, Markdown, shell) live in sub-modules and are
 registered on import via :func:`register_language_modes`.
@@ -105,9 +106,11 @@ defmode(
 
 defmode(
     "text-mode",
-    variables={"auto-fill": True},
-    doc="Major mode for editing plain text.  Enables auto-fill by default.",
+    doc="Major mode for editing plain text.",
 )
+# Note: GNU Emacs's text-mode does NOT enable auto-fill by default — it is a
+# separate minor mode (M-x auto-fill-mode, or text-mode-hook). So no
+# ``auto-fill`` variable here; ``.txt`` buffers start with it off.
 
 defmode(
     "auto-fill-mode",

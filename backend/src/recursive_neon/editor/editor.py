@@ -1014,19 +1014,25 @@ class Editor:
             self.message = f"Unknown minor mode: {mode_name}"
             return False
         buf = self.buffer
+        # Pretty mode name for the toggle message, e.g. "auto-fill-mode" →
+        # "Auto-Fill", giving "Auto-Fill mode enabled in current buffer" —
+        # GNU Emacs's define-minor-mode message format (cf. read-only-mode).
+        pretty = "-".join(
+            w.capitalize() for w in mode_name.removesuffix("-mode").split("-")
+        )
         # Check if already active
         for i, m in enumerate(buf.minor_modes):
             if m.name == mode_name:
                 if m.on_exit is not None:
                     m.on_exit(self)
                 buf.minor_modes.pop(i)
-                self.message = f"{mode_name} disabled"
+                self.message = f"{pretty} mode disabled in current buffer"
                 return True
         # Activate
         buf.minor_modes.append(mode)
         if mode.on_enter is not None:
             mode.on_enter(self)
-        self.message = f"{mode_name} enabled"
+        self.message = f"{pretty} mode enabled in current buffer"
         return True
 
     def quit(self) -> None:
