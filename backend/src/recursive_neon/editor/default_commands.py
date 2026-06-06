@@ -238,6 +238,59 @@ def newline(ed: Editor, prefix: int | None) -> None:
     ed.buffer.insert_char("\n")
 
 
+def _indent_points(line: str) -> list[int]:
+    """Columns in *line* where a non-whitespace run begins.
+
+    These are GNU Emacs's "indent points" for ``indent-relative`` — the
+    start of each word (a non-blank char at column 0, or preceded by a
+    blank). Assumes no tab characters (neon-edit indents with spaces).
+    """
+    return [
+        c
+        for c, ch in enumerate(line)
+        if ch not in " \t" and (c == 0 or line[c - 1] in " \t")
+    ]
+
+
+def _indent_relative_target(ed: Editor, start_col: int) -> int:
+    """The column ``indent-relative`` would indent to from *start_col*.
+
+    Indents to the nearest indent point — past *start_col* — of the closest
+    previous non-blank line; with none (or no previous line) falls back to
+    ``tab-to-tab-stop`` (the next multiple of ``tab-width``).
+    """
+    buf = ed.buffer
+    for ln in range(buf.point.line - 1, -1, -1):
+        if buf.lines[ln].strip():
+            for col in _indent_points(buf.lines[ln]):
+                if col > start_col:
+                    return col
+            break  # only the nearest previous non-blank line is consulted
+    tw = ed.get_variable("tab-width") or 8
+    return ((start_col // tw) + 1) * tw
+
+
+@defcommand(
+    "indent-for-tab-command",
+    "Indent the current line (TAB) — text-mode indent-relative.",
+)
+def indent_for_tab_command(ed: Editor, prefix: int | None) -> None:
+    """GNU Emacs's TAB. In text / fundamental buffers this is
+    ``indent-relative``: line up with the previous line's words, falling
+    back to ``tab-to-tab-stop`` past the last one (or on the first line).
+
+    Deviations (documented): we insert spaces rather than the tab/space mix
+    Emacs uses under ``indent-tabs-mode`` — the on-screen result is
+    identical. python-mode's syntactic indentation is not implemented yet
+    (future work; see docs/PARITY_HARNESS.md).
+    """
+    buf = ed.buffer
+    start_col = buf.point.col
+    target = _indent_relative_target(ed, start_col)
+    if target > start_col:
+        buf.insert_string(" " * (target - start_col))
+
+
 @defcommand(
     "delete-char", "Delete the character after point.", coalesce_key="delete-forward"
 )
@@ -2553,6 +2606,7 @@ def build_default_keymap() -> Keymap:
 
     # Editing
     km.bind("Enter", "newline")
+    km.bind("Tab", "indent-for-tab-command")
     km.bind("C-d", "delete-char")
     km.bind("Delete", "delete-char")
     km.bind("Backspace", "delete-backward-char")
