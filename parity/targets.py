@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import time
 from pathlib import Path
 
 from parity.harness import Driver, TargetSpec
@@ -111,6 +112,17 @@ def make_emacs_target(
         # from neon-edit's, which gets no kick.
         d.send("C-l")
         d.settle(settle_ms=settle_ms, max_wait=4.0)
+        # Under heavy host load the kick's repaint can outlast the
+        # settle window, leaving the pre-kick screen (tip visible,
+        # *scratch* still shown) for the first snapshot. The tip always
+        # clears once the kick is processed, so it doubles as the
+        # repaint-done condition — keep draining until it is gone.
+        deadline = time.time() + 20.0
+        while (
+            "For information about GNU Emacs" in d.screen.display[-1]
+            and time.time() < deadline
+        ):
+            d.settle(settle_ms=settle_ms, max_wait=2.0)
         return d
 
     return TargetSpec(name="emacs", launch=launch)
