@@ -155,6 +155,12 @@ defmode(
     indicator="Completion List",
 )
 
+defmode(
+    "buffer-menu-mode",
+    doc="Major mode for the ``*Buffer List*`` buffer; modeline reads ``(Buffer Menu)``.",
+    indicator="Buffer Menu",
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Auto-mode detection

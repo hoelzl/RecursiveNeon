@@ -624,30 +624,6 @@ def switch_to_buffer(ed: Editor, prefix: int | None) -> None:
     ed.start_minibuffer(prompt, callback, completer=completer, history="buffer-name")
 
 
-@defcommand("list-buffers", "Show a list of all buffers (C-x C-b).")
-def list_buffers(ed: Editor, prefix: int | None) -> None:
-    lines = ["  Buffer               Size  File"]
-    lines.append("  ------               ----  ----")
-    for buf in ed.buffers:
-        mod = "*" if buf.modified else " "
-        ro = "%" if buf.read_only else " "
-        size = sum(len(ln) for ln in buf.lines) + buf.line_count - 1
-        path = buf.filepath or ""
-        lines.append(f"{mod}{ro} {buf.name:<20s} {size:>5d}  {path}")
-    text = "\n".join(lines)
-
-    # Show in a read-only buffer
-    if not ed.switch_to_buffer("*Buffer List*"):
-        ed.create_buffer(name="*Buffer List*")
-    bl = ed.buffer
-    # Replace content (temporarily disable read-only)
-    bl.read_only = False
-    bl.lines = text.split("\n")
-    bl.point.move_to(0, 0)
-    bl.mark_saved()
-    bl.read_only = True
-
-
 @defcommand("kill-buffer", "Kill (close) a buffer (C-x k).")
 def kill_buffer(ed: Editor, prefix: int | None) -> None:
     # Emacs's kill-buffer default is the current buffer, offered in the
@@ -661,6 +637,14 @@ def kill_buffer(ed: Editor, prefix: int | None) -> None:
         name = name.strip()
         if not name:
             name = default
+        target = next((b for b in ed.buffers if b.name == name), None)
+        if target is not None and target.modified and target.filepath:
+            # A modified *file-visiting* buffer needs confirmation
+            # (Emacs's kill-buffer--possibly-save). Modified buffers
+            # without a file — *scratch* and friends — are killed
+            # silently, matching Emacs.
+            _confirm_kill_modified(ed, target)
+            return
         if ed.remove_buffer(name):
             # Emacs's kill-buffer is silent on success (remove_buffer left a
             # "Killed buffer" message — clear it to match). A failed kill
@@ -673,6 +657,60 @@ def kill_buffer(ed: Editor, prefix: int | None) -> None:
         completer=completer,
         history="buffer-name",
     )
+
+
+_KILL_CONFIRM_ANSWERS = ("yes", "no", "save and then kill")
+
+
+def _confirm_kill_modified(ed: Editor, target: Buffer) -> None:
+    """Confirm killing a modified file-visiting buffer.
+
+    Mirrors GNU Emacs 29's ``kill-buffer--possibly-save``: a long-form
+    ``read-multiple-choice`` prompt — ``Buffer NAME modified; kill
+    anyway? (yes/no/save and then kill)`` — read through the minibuffer
+    with completion, so a unique prefix submitted with RET completes to
+    its answer (``y`` → ``yes``; verified against Emacs 29 via the
+    parity harness, scenario 27). Invalid input re-prompts.
+    """
+    prompt = f"Buffer {target.name} modified; kill anyway? (yes/no/save and then kill) "
+
+    def completer(text: str) -> list[str]:
+        return [a for a in _KILL_CONFIRM_ANSWERS if a.startswith(text)]
+
+    def kill() -> None:
+        if ed.remove_buffer(target.name):
+            ed.message = ""
+
+    def on_submit(text: str) -> None:
+        if text in _KILL_CONFIRM_ANSWERS:
+            answer = text
+        else:
+            matches = completer(text) if text else []
+            if len(matches) != 1:
+                # No unique completion: Emacs's completing-read (with
+                # require-match) refuses to exit — re-prompt.
+                _confirm_kill_modified(ed, target)
+                return
+            answer = matches[0]
+        if answer == "no":
+            ed.message = ""
+            return
+        if answer == "save and then kill":
+            saved = bool(target.on_save is not None and target.on_save(target))
+            if not saved and ed.save_callback is not None:
+                saved = ed.save_callback(target)
+            if not saved:
+                ed.message = "Save failed"
+                return
+            target.mark_saved()
+            _publish_buffer_saved(ed, target)
+            kill()
+            # The save's "Wrote …" message outlives the (silent) kill.
+            ed.message = "Wrote " + (target.filepath or target.name)
+            return
+        kill()  # "yes"
+
+    ed.start_minibuffer(prompt, on_submit, completer=completer)
 
 
 @defcommand("write-file", "Write buffer to a file path (C-x C-w).")
@@ -2285,6 +2323,87 @@ def _show_popup_buffer(ed: Editor, *, name: str, text: str, major_mode: str) -> 
                 ed._current_index = i
                 break
         ed.display_buffer_other_window(name)
+
+
+def _format_buffer_list(ed: Editor) -> str:
+    """Build the ``*Buffer List*`` table (GNU Emacs's Buffer-menu).
+
+    Layout matches Emacs 29's tabulated-list defaults on a TTY, verified
+    against the parity probe: ``C``/``R``/``M`` flag columns (1 cell
+    each, the first two unpadded), a ``Buffer`` name column 19 wide, a
+    ``Size`` column 7 wide right-aligned, ``Mode`` 16 wide, then
+    ``File``. A name longer than 19 may spill into the size column's
+    slack — Emacs lets it run to two cells short of the right-aligned
+    size value, then truncates with ``…``.
+
+    Flags: ``.`` marks the buffer current when the list was made, ``%``
+    read-only, ``*`` modified. Buffers are listed in buffer-list order
+    (current first, then most recently used); the ``*Buffer List*``
+    itself is excluded, as in Emacs. On a TTY Emacs renders the header
+    via ``header-line-format`` (a window decoration); neon-edit makes it
+    the buffer's first line — same pixels, no header-line machinery.
+    """
+    name_w, size_end = 19, 30  # name column width; size right-aligns at col 30
+    current = ed.buffer
+    ordered: list[Buffer] = [current]
+    by_name = {b.name: b for b in ed.buffers}
+    for nm in ed._mru:
+        b = by_name.get(nm)
+        if b is not None and b is not current and b.name != "*Buffer List*":
+            ordered.append(b)
+    for b in ed.buffers:
+        if b not in ordered and b.name != "*Buffer List*":
+            ordered.append(b)
+
+    header = (
+        "CRM "
+        + "Buffer".ljust(name_w + 1)
+        + "Size".rjust(7)
+        + " "
+        + "Mode".ljust(16)
+        + " File"
+    )
+    rows = [header.rstrip()]
+    for b in ordered:
+        flags = (
+            ("." if b is current else " ")
+            + ("%" if b.read_only else " ")
+            + ("*" if b.modified else " ")
+        )
+        size = str(len(b.text))
+        name = b.name
+        max_name = max(name_w, size_end - len(size) - 2 - 4 + 1)
+        if len(name) > max_name:
+            name = name[: max_name - 1] + "…"
+        row = flags + " " + name
+        row += " " * (size_end - len(size) + 1 - len(row)) + size
+        if b.major_mode:
+            mode = b.major_mode.indicator or (
+                b.major_mode.name.removesuffix("-mode").capitalize()
+            )
+        else:
+            mode = "Fundamental"
+        row += " " + mode.ljust(16)
+        if b.filepath:
+            row = row.ljust(48) + " " + b.filepath
+        rows.append(row.rstrip())
+    return "\n".join(rows)
+
+
+@defcommand("list-buffers", "Display the buffer list in another window (C-x C-b).")
+def list_buffers(ed: Editor, prefix: int | None) -> None:
+    """Pop up ``*Buffer List*`` in the other window without selecting it.
+
+    GNU Emacs's ``C-x C-b``: a read-only Buffer-menu table shown via
+    ``display-buffer`` — focus stays in the current window, no echo-area
+    message. Interactive Buffer-menu commands (RET to visit, ``d``/``x``
+    to mark and execute deletions, ``q``) are not yet implemented; see
+    docs/PARITY_HARNESS.md.
+    """
+    text = _format_buffer_list(ed)
+    _show_popup_buffer(
+        ed, name="*Buffer List*", text=text, major_mode="buffer-menu-mode"
+    )
 
 
 def _show_help_buffer(ed: Editor, text: str) -> None:

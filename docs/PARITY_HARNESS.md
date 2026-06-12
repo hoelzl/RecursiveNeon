@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(26 scenarios, 114 checkpoints. 105 are pixel-perfect; the 9 remaining
+(28 scenarios, 121 checkpoints. 108 are pixel-perfect; the 13 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -306,6 +306,8 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 24 | column-number-mode | global toggle (`Column-Number mode enabled`, no buffer suffix), `(l,c)` padded position field, odd-height `C-x 2` gives top window the extra row |
 | 25 | replace-string defaults | shares `query-replace-defaults` + history with `M-%` both ways: `(default a → b)` prompts, combined `M-p` entry, empty-RET reuse, `Replaced 0 occurrences` |
 | 26 | empty-file EOL | `-UUU:` mnemonic for newline-less visits, stays undecided through typing *and* saving; `C-f`/`C-b` boundary errors (`End of buffer`/`Beginning of buffer`) |
+| 27 | kill-buffer confirm | `C-x k` on a modified file buffer: `(yes/no/save and then kill)` prompt, unique-prefix RET completion (`y`→yes), no/yes/save paths, silent kill for non-file buffers |
+| 28 | list-buffers | `C-x C-b` pops *Buffer List* in the other window unselected: Buffer-menu table (`CRM`/name/size/mode/file columns), `(Buffer Menu)` modeline, silent echo |
 
 ## Known intentional divergences
 
@@ -368,6 +370,23 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   `after-M-y-not-after-yank` checkpoint and all six scenario 22
   checkpoints are pixel-perfect.
 
+- **27 `*scratch*` modeline after a kill** (checkpoints `after-y-kill`,
+  `after-save-kill`; the save path also has the usual `Wrote` path-text
+  echo diff). Killing the last file buffer drops both editors into
+  `*scratch*`, but Emacs's scratch runs Lisp Interaction mode with ElDoc
+  (`(Lisp Interaction ElDoc)`) while neon-edit's is `(Fundamental)` —
+  there is no Lisp in the game. Same content-gap class as scenario 05's
+  *Help* doc text.
+
+- **28 `*Buffer List*` body** (both checkpoints). The Buffer-menu
+  table's *rows* are environment-dependent: Emacs `-Q` always carries
+  `*scratch*`/`*Messages*`/`*Async-native-compile-log*` (the long name
+  also widens the dynamic name column), and the File column shows real
+  OS paths. neon-edit's column layout, flags, MRU ordering, name
+  truncation and self-exclusion are pinned by unit tests
+  (`test_list_buffers.py`); the harness verifies the shape — modeline,
+  unselected window, silent echo.
+
 ## Cosmetic items not yet polished
 
 These are real divergences but low-impact:
@@ -419,12 +438,15 @@ Each is sized for one session if the divergences turn out moderate.
    create/kill are now silent like Emacs. Added `Editor.other_buffer_name`
    + recency tracking. (The residual no-file-buffer modeline cosmetics were
    since fixed in scenario 12, so scenario 10 is now fully pixel-perfect.)
-   **Still TODO in a follow-up scenario:** `C-x C-b`
-   (list-buffers) — Emacs pops `*Buffer List*` in a *split* window with a
-   "CRM Buffer Size Mode File" table that also lists `*scratch*`/
-   `*Messages*` (neon-edit replaces the current window and has a different
-   table + buffer model); and `C-x k`'s confirm-if-modified flow ("Buffer
-   X modified; kill anyway? (yes or no)"), which neon-edit lacks.
+   **Follow-ups DONE in scenarios 27/28:** `C-x C-b` now pops a
+   Buffer-menu table (`CRM` flags, dynamic-width name column, size
+   right-aligned, mode, file) in the *other* window without selecting
+   it, replacing the legacy V1-style table that hijacked the current
+   window; and `C-x k` on a modified file-visiting buffer asks Emacs
+   29's `(yes/no/save and then kill)` long-form question (unique-prefix
+   RET completion, all three answer paths). **Still TODO** (own
+   scenario): the interactive Buffer-menu commands inside the list (RET
+   to visit, `d`/`x` mark-and-execute, `q` to quit the window).
 
 3. ~~**`scenario_11_indentation_and_auto_fill`**~~ → split. **DONE:
    `scenario_11_fill_paragraph`** — `M-q` re-wraps to fill-column (70),

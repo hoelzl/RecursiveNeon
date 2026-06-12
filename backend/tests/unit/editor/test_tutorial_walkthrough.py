@@ -408,8 +408,11 @@ class TestChapter8FilesAndBuffers:
         h.editor.create_buffer(name="alpha", text="a")
         h.editor.create_buffer(name="beta", text="b")
         h.send_keys("C-x", "C-b")
-        assert h.editor.buffer.name == "*Buffer List*"
-        text = h.editor.buffer.text
+        # GNU Emacs displays *Buffer List* in the *other* window without
+        # selecting it (see test_list_buffers.py / parity scenario 28);
+        # the current buffer keeps focus.
+        assert h.editor.buffer.name != "*Buffer List*"
+        text = h.buffer_text_named("*Buffer List*")
         assert "alpha" in text
         assert "beta" in text
 
