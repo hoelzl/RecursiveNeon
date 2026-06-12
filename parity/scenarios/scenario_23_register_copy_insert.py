@@ -28,11 +28,11 @@ Checkpoints:
 
 Behaviour pinned by probing Emacs 29 before implementation. Note the
 copy error path (``C-x r s`` with no region) is unit-tested rather than
-checkpointed: in Emacs an earlier ``C-g`` merely *deactivates* the mark,
-so the copy silently uses the inactive region — neon-edit has no
-inactive mark (structural gap, see PARITY_HARNESS.md item 11), so the
-screens would diverge for always-active-mark reasons unrelated to the
-register commands themselves.
+checkpointed: in Emacs an earlier ``C-g`` merely *deactivates* the
+mark, so the copy silently uses the inactive region. (neon-edit gained
+the same inactive-mark model in scenario 30 — ``mark-even-if-inactive``
+now holds here too — but the checkpoint set predates it and the unit
+test still covers the true no-mark error.)
 """
 
 from __future__ import annotations

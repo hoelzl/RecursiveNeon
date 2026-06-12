@@ -162,11 +162,14 @@ class TestKillRegion:
         assert b.text == " world"
         assert b.kill_ring.top == "hello"
 
-    def test_kill_region_clears_mark(self):
+    def test_kill_region_deactivates_mark(self):
         b = Buffer.from_text("hello")
         b.set_mark(0, 5)
         b.kill_region()
-        assert b.mark is None
+        # The kill deactivates the mark but keeps it (it now coincides
+        # with point at the kill site; C-x C-x still works).
+        assert b.mark is not None
+        assert not b.region_active
 
     def test_kill_region_no_mark(self):
         b = Buffer.from_text("hello")

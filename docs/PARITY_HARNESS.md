@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(29 scenarios, 126 checkpoints. 113 are pixel-perfect; the 13 remaining
+(30 scenarios, 133 checkpoints. 120 are pixel-perfect; the 13 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -309,6 +309,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 27 | kill-buffer confirm | `C-x k` on a modified file buffer: `(yes/no/save and then kill)` prompt, unique-prefix RET completion (`y`→yes), no/yes/save paths, silent kill for non-file buffers |
 | 28 | list-buffers | `C-x C-b` pops *Buffer List* in the other window unselected: Buffer-menu table (`CRM`/name/size/mode/file columns), `(Buffer Menu)` modeline, silent echo |
 | 29 | python indent (full) | bracket alignment, dedenter candidates + `Closes …` echo, backslash continuations, `def`-paren `+8` scale and offset-chain cycling |
+| 30 | region + mark ring | **highlight-compared**: active-region face (with `:extend`-to-edge), C-g/M-w deactivate-not-clear, inactive `push-mark`, `C-x C-x` reactivate, `C-SPC C-SPC`, `C-u C-SPC` ring rotation |
 
 ## Known intentional divergences
 
@@ -544,10 +545,10 @@ Each is sized for one session if the divergences turn out moderate.
    `jump-to-register` push a mark** (`Mark set`) in Emacs — neon-edit
    didn't — fixed by `_push_mark_for_big_motion` (push unless prefix arg /
    active region) and an unconditional push in the jump. All 5 checkpoints
-   pixel-perfect. **Documented deviation:** neon-edit has no inactive-mark
-   concept, so a pushed mark is *active* (the region renders highlighted)
-   whereas Emacs's push-mark is inactive — invisible to the text-only
-   harness, noted next to the code. **Follow-up DONE in scenario 23:**
+   pixel-perfect. ~~**Documented deviation:** neon-edit has no
+   inactive-mark concept~~ — *resolved by item 11 / scenario 30:*
+   pushed marks are now inactive, exactly like Emacs's push-mark.
+   **Follow-up DONE in scenario 23:**
    `copy-to-register` (`C-x r s`) and `insert-register` (`C-x r i`) —
    registers now hold a point *or* text; copy is silent and deactivates
    the region; insert leaves point after the text with the mark before
@@ -616,40 +617,41 @@ Each is sized for one session if the divergences turn out moderate.
     history with `M-%` in both directions, and reports `Replaced 0
     occurrences` instead of a bespoke "No matches" message.
 
-11. **Inactive mark + mark ring + attribute-aware snapshots** (paired —
-    do these together, in one planned effort). neon-edit's mark is
-    always "active": `Buffer.region_active ⟺ mark is not None`, there is
-    no transient-mark-mode active/inactive distinction and no mark
-    ring. Consequences vs Emacs: a pushed mark (`M-<`, `M->`,
-    `jump-to-register`, yank, …) renders the region highlighted where
-    Emacs's `push-mark` is inactive (documented deviation next to
-    `_push_mark_for_big_motion` in `default_commands.py` and in
-    scenario 15); `C-g` cannot *deactivate* a mark distinct from
-    clearing it; `C-SPC C-SPC` (set-and-deactivate) and `C-u C-SPC`
-    (pop mark ring) are unimplementable.
+11. ~~**Inactive mark + mark ring + attribute-aware snapshots**~~
+    **DONE** — scenario 30, exactly as planned (paired, opt-in capture).
 
-    **Why paired**: every one of those behaviours is invisible to the
-    text-only harness — region highlighting is exactly an SGR
-    attribute. Fixing the editor without harness coverage would break
-    the verify-against-Emacs methodology; adding attribute snapshots
-    without a consumer is speculative. The harness side should be an
-    **opt-in, scoped** capture (e.g. a `Snapshot.highlight_runs` field
-    recording reverse-video runs per row, captured from pyte's per-cell
-    attributes, compared only by scenarios that ask for it) — do NOT
-    reverse the global text-only decision; full-attribute comparison
-    was deliberately rejected as too noisy (see "Don't compare attrs"
-    below).
+    **Harness side**: `Snapshot.highlights` records `(row, start,
+    end_exclusive)` runs of cells with reverse video or a non-default
+    *background* (foregrounds deliberately ignored — syntax colors
+    differ by design), captured from pyte's per-cell attributes on every
+    snapshot but **compared only by scenarios that declare
+    `COMPARE_HIGHLIGHTS = True`** — the global text-only decision
+    stands. `highlights` is a valid `EXPECTED_DIVERGENCES` field; the
+    report prints both targets' runs when they differ. Unit tests in
+    `parity/tests/test_highlights.py`.
 
-    **Editor side**: `mark_active` flag decoupled from mark existence;
-    `set_mark` activates, `push-mark` doesn't; `C-g` deactivates;
-    region rendering and region commands key off `mark_active`; a
-    per-buffer mark ring with `C-SPC C-SPC` / `C-u C-SPC`. Expect broad
-    test churn in everything that asserts `region_active`.
+    **Editor side** (`test_mark_ring.py` for the unit contract, every
+    rule probed against Emacs 29.3 first): `Buffer.mark_active`
+    decoupled from mark existence; `push_mark` (inactive, pushes the
+    old mark onto a 16-entry ring) vs `set_mark` (activates, no ring);
+    `pop_mark` *rotates* the ring (old mark to the back). C-SPC pushes
+    + activates (`Mark set`); `C-SPC C-SPC` deactivates
+    (`Mark deactivated`); `C-u C-SPC` jumps to the mark and rotates —
+    silent on a real jump, `Mark popped` when point is already there.
+    C-g and M-w *deactivate without clearing* (region commands still
+    work via the inactive mark — `mark-even-if-inactive`; C-w kills
+    after a C-g'd region); `C-x C-x` swaps and *reactivates*. All
+    push-mark sites (big motions, yank, yank-from-kill-ring, isearch's
+    "Mark saved", the register jump/insert) now push inactive.
 
-    **Size**: 2-3 sessions (one for the harness capture + a probe
-    scenario, one-two for the mark semantics). Lower urgency than it
-    looks: no current checkpoint can see the difference, so this only
-    blocks region-*rendering* parity, not any queued scenario.
+    **Region rendering** (new — neon-edit previously rendered no region
+    at all): the active region draws with the `region` face
+    (`faces.py`, background-only SGR), only in the selected window
+    (`highlight-nonselected-windows` nil), and **extends to the window
+    edge** on every row whose region segment spans the newline (the
+    face's `:extend`), including empty lines inside the region; the
+    final row stops at the region-end column. Verified run-for-run
+    against Emacs in scenario 30's seven checkpoints.
 
 ## Tips and gotchas
 
@@ -685,10 +687,14 @@ Each is sized for one session if the divergences turn out moderate.
   virtual filesystem ends up byte-identical to the host file. Use it
   rather than re-inventing setup per scenario.
 
-- **Don't compare attrs.** Snapshots are text-only by design. ANSI
-  colour comparison is noisier than it's worth at the parity level we
-  care about. If you need attribute-level checks, scope them to a
-  dedicated rendering test, not the parity scenarios.
+- **Don't compare attrs globally.** Snapshots are compared text-only by
+  default; full ANSI colour comparison is noisier than it's worth at
+  the parity level we care about. For behaviours that *are* attributes
+  — the active-region face, primarily — a scenario can opt in with
+  `COMPARE_HIGHLIGHTS = True`, which additionally compares
+  `Snapshot.highlights` (runs of reverse-video / non-default-background
+  cells; foregrounds stay ignored). See scenario 30. Keep the opt-in
+  scoped to scenarios that exist to verify highlighting.
 
 - **Run all scenarios after editor changes.** Fixes in shared code
   (`_resolve_keymap`, `_render_modeline`, etc.) can ripple. The full

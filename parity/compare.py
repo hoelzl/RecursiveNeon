@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 from parity.harness import ScenarioResult, Snapshot, StepResult
 
-FIELDS = ("body", "modeline", "echo_area", "cursor")
+FIELDS = ("body", "modeline", "echo_area", "cursor", "highlights")
 
 
 @dataclass(frozen=True)
@@ -82,8 +82,16 @@ class ScenarioVerdict:
         return any(c.stale for c in self.checkpoints)
 
 
-def diff_fields(a: Snapshot, b: Snapshot) -> frozenset[str]:
-    """Names of the snapshot fields on which ``a`` and ``b`` differ."""
+def diff_fields(
+    a: Snapshot, b: Snapshot, *, compare_highlights: bool = False
+) -> frozenset[str]:
+    """Names of the snapshot fields on which ``a`` and ``b`` differ.
+
+    ``highlights`` (reverse-video / non-default-background runs) is only
+    compared when ``compare_highlights`` is set — scenarios opt in via a
+    module-level ``COMPARE_HIGHLIGHTS = True``; the suite-wide text-only
+    decision stands.
+    """
     differing: set[str] = set()
     body_a = [line.rstrip() for line in a.body]
     body_b = [line.rstrip() for line in b.body]
@@ -95,11 +103,16 @@ def diff_fields(a: Snapshot, b: Snapshot) -> frozenset[str]:
         differing.add("echo_area")
     if a.cursor != b.cursor:
         differing.add("cursor")
+    if compare_highlights and a.highlights != b.highlights:
+        differing.add("highlights")
     return frozenset(differing)
 
 
 def _verdict_for_step(
-    step: StepResult, expected: dict[str, set[str]]
+    step: StepResult,
+    expected: dict[str, set[str]],
+    *,
+    compare_highlights: bool = False,
 ) -> CheckpointVerdict:
     exp = frozenset(expected.get(step.label, set()))
     snaps = list(step.snapshots.values())
@@ -112,7 +125,9 @@ def _verdict_for_step(
         )
     return CheckpointVerdict(
         label=step.label,
-        differing=diff_fields(snaps[0], snaps[1]),
+        differing=diff_fields(
+            snaps[0], snaps[1], compare_highlights=compare_highlights
+        ),
         expected=exp,
     )
 
@@ -120,6 +135,8 @@ def _verdict_for_step(
 def evaluate(
     result: ScenarioResult,
     expected: dict[str, set[str]] | None = None,
+    *,
+    compare_highlights: bool = False,
 ) -> ScenarioVerdict:
     """Evaluate every checkpoint of ``result`` against the baseline."""
     expected = expected or {}
@@ -138,7 +155,11 @@ def evaluate(
             )
 
     for step in result.steps:
-        verdict.checkpoints.append(_verdict_for_step(step, expected))
+        verdict.checkpoints.append(
+            _verdict_for_step(
+                step, expected, compare_highlights=compare_highlights
+            )
+        )
     return verdict
 
 

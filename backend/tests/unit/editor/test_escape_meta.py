@@ -141,7 +141,10 @@ class TestEscapeQuitNormalMode:
         ed.process_key("Escape")
         ed.process_key("Escape")
         ed.process_key("Escape")
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed.message == "Quit"
 
     def test_keyboard_escape_quit_clears_prefix_arg(self):
@@ -296,7 +299,10 @@ class TestKeyboardEscapeQuitDirect:
         ed._prefix_arg = 7
         ed._pending_keymap = ed.global_keymap
         ed.execute_command("keyboard-escape-quit")
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed._prefix_arg is None
         assert ed._pending_keymap is None
         assert ed.message == "Quit"
@@ -421,7 +427,10 @@ class TestEscStateMachine:
         # State machine cleared and keyboard-quit ran
         assert ed._meta_pending is False
         assert ed._escape_quit_pending is False
-        assert ed.buffer.mark is None  # region cleared by keyboard-quit
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed.message == "Quit"
 
     def test_cg_in_escape_quit_pending_runs_keyboard_quit(self):

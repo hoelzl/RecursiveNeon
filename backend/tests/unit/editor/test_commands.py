@@ -279,7 +279,10 @@ class TestEditorPrefixKeys:
         ed.process_key("C-space")
         assert ed.buffer.mark is not None
         ed.process_key("C-g")
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed.message == "Quit"
 
 

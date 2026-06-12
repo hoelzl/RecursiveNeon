@@ -183,6 +183,14 @@ class Buffer:
         self.point = Mark(0, 0, kind="right")
         # Mark (region anchor) is None until set
         self.mark: Mark | None = None
+        # Transient-mark-mode state: the mark can exist *inactive* — set
+        # but not highlighted, region commands still usable (Emacs's
+        # ``mark-even-if-inactive``). ``set_mark`` activates, ``push_mark``
+        # does not, C-g / M-w deactivate without clearing.
+        self.mark_active: bool = False
+        # The mark ring (most recent first, max 16): ``push_mark`` pushes
+        # the old mark here; ``pop_mark`` rotates through it (C-u C-SPC).
+        self.mark_ring: list[Mark] = []
 
         # All non-temporary marks tracked for automatic maintenance.
         # Point is always tracked; mark is added/removed as set/cleared.
@@ -254,8 +262,14 @@ class Buffer:
 
     @property
     def region_active(self) -> bool:
-        """True if the mark is set (region is active)."""
-        return self.mark is not None
+        """True if the mark is set *and* active (transient-mark-mode).
+
+        An inactive mark (after ``push_mark``, C-g or M-w) still anchors
+        region commands — they consult ``self.mark`` directly, Emacs's
+        ``mark-even-if-inactive`` — but the region is not highlighted
+        and mark-activation behaviours don't apply.
+        """
+        return self.mark is not None and self.mark_active
 
     @property
     def region_text(self) -> str | None:
@@ -287,7 +301,12 @@ class Buffer:
         self._tracked_marks.discard(m)
 
     def set_mark(self, line: int | None = None, col: int | None = None) -> Mark:
-        """Set the mark at the given position (default: point's position).
+        """Set and *activate* the mark (default position: point).
+
+        Replaces the current mark without touching the mark ring — the
+        low-level setter for commands (and tests) that re-anchor the
+        region directly, e.g. ``exchange-point-and-mark``. Interactive
+        mark-setting commands go through :meth:`push_mark`.
 
         Returns the mark.
         """
@@ -300,13 +319,60 @@ class Buffer:
             self.untrack_mark(self.mark)
         self.mark = Mark(line, col, kind="left")
         self.track_mark(self.mark)
+        self.mark_active = True
         return self.mark
 
+    _MARK_RING_MAX = 16  # Emacs's mark-ring-max
+
+    def push_mark(
+        self,
+        line: int | None = None,
+        col: int | None = None,
+        *,
+        activate: bool = False,
+    ) -> Mark:
+        """Push the old mark onto the mark ring and set a new one.
+
+        GNU Emacs's ``push-mark``: the new mark is *inactive* unless
+        ``activate`` — big motions (M-<, M->), yank and the register
+        jumps push without highlighting; C-SPC pushes and activates.
+        """
+        if self.mark is not None:
+            self.mark_ring.insert(0, self.mark)
+            while len(self.mark_ring) > self._MARK_RING_MAX:
+                self.untrack_mark(self.mark_ring.pop())
+        if line is None:
+            line = self.point.line
+        if col is None:
+            col = self.point.col
+        self.mark = Mark(line, col, kind="left")
+        self.track_mark(self.mark)
+        self.mark_active = activate
+        return self.mark
+
+    def pop_mark(self) -> None:
+        """Rotate the mark ring into the mark (GNU Emacs's ``pop-mark``).
+
+        The current mark moves to the *end* of the ring and the ring
+        head becomes the mark, so repeated C-u C-SPC cycles through all
+        saved positions. Deactivates the mark. A no-op rotation (empty
+        ring) still deactivates.
+        """
+        if self.mark_ring and self.mark is not None:
+            self.mark_ring.append(self.mark)
+            self.mark = self.mark_ring.pop(0)
+        self.mark_active = False
+
+    def deactivate_mark(self) -> None:
+        """Make the mark inactive without clearing it (C-g, M-w)."""
+        self.mark_active = False
+
     def clear_mark(self) -> None:
-        """Deactivate the region by clearing the mark."""
+        """Remove the mark entirely (and deactivate the region)."""
         if self.mark is not None:
             self.untrack_mark(self.mark)
             self.mark = None
+        self.mark_active = False
 
     # ------------------------------------------------------------------
     # Read-only regions
@@ -1167,7 +1233,9 @@ class Buffer:
         start = self.point.copy()
         end = self.mark.copy()
         killed = self.delete_region(start, end)
-        self.clear_mark()
+        # Emacs deactivates the mark after the kill but keeps it (it now
+        # coincides with point at the kill site, and C-x C-x still works).
+        self.deactivate_mark()
         if killed:
             if self.last_command_type == "kill":
                 self.kill_ring.append_to_top(killed)
@@ -1180,13 +1248,14 @@ class Buffer:
         """Copy the region to the kill ring without modifying the buffer (M-w).
 
         Returns the copied text, or empty string if no mark. After the
-        save the mark is cleared (region deactivated), matching the
-        behaviour Emacs gets from ``transient-mark-mode``.
+        save the mark is *deactivated* but kept — Emacs's
+        transient-mark-mode behaviour: the highlight goes away, yet
+        ``C-x C-x`` can still jump back and reactivate the same region.
         """
         if self.mark is None:
             return ""
         text = self.region_text or ""
-        self.clear_mark()
+        self.deactivate_mark()
         if text:
             if self.last_command_type == "kill":
                 self.kill_ring.append_to_top(text)

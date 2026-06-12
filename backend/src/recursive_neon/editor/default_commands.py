@@ -180,16 +180,15 @@ def recenter(ed: Editor, prefix: int | None) -> None:
 def _push_mark_for_big_motion(ed: Editor, prefix: int | None) -> None:
     """Push a mark before a buffer-spanning motion, GNU Emacs style.
 
-    ``beginning-of-buffer`` / ``end-of-buffer`` set the mark (so the user
-    can jump back) unless a prefix arg was given or the region is already
-    active; ``push-mark`` itself echoes ``Mark set``. (Deviation: neon-edit
-    has no inactive-mark concept, so the pushed mark is *active* — the
-    region renders highlighted, whereas Emacs's push-mark is inactive. This
-    is invisible to the text-only parity harness; see docs/PARITY_HARNESS.md.)
+    ``beginning-of-buffer`` / ``end-of-buffer`` push the mark (so the
+    user can jump back with C-u C-SPC) unless a prefix arg was given or
+    the region is already active; ``push-mark`` itself echoes ``Mark
+    set``. The pushed mark is *inactive* — no region highlight (verified
+    against Emacs via parity scenario 30's highlight capture).
     """
     buf = ed.buffer
     if prefix is None and not buf.region_active:
-        buf.set_mark()
+        buf.push_mark()
         ed.message = "Mark set"
 
 
@@ -395,11 +394,11 @@ def kill_ring_save(ed: Editor, prefix: int | None) -> None:
 @defcommand("yank", "Yank (paste) the most recent kill.", coalesce_key="yank")
 def yank(ed: Editor, prefix: int | None) -> None:
     buf = ed.buffer
-    # GNU Emacs's ``yank`` pushes a mark at the start of the inserted
-    # text so the user can immediately act on the region (e.g. C-w to
-    # un-yank, M-w to copy elsewhere). ``push-mark`` itself announces
-    # ``Mark set`` in the echo area.
-    buf.set_mark(buf.point.line, buf.point.col)
+    # GNU Emacs's ``yank`` pushes an *inactive* mark at the start of the
+    # inserted text so the user can immediately act on the region (e.g.
+    # C-w to un-yank, M-w to copy elsewhere — region commands work with
+    # an inactive mark). ``push-mark`` itself announces ``Mark set``.
+    buf.push_mark(buf.point.line, buf.point.col)
     if buf.yank() is None:
         ed.message = "Kill ring is empty"
         return
@@ -449,7 +448,7 @@ def _yank_from_kill_ring(ed: Editor) -> None:
 
     def on_submit(text: str) -> None:
         b = ed.buffer
-        b.set_mark(b.point.line, b.point.col)
+        b.push_mark(b.point.line, b.point.col)
         if text:
             b.insert_string(text)
         ed.message = "Mark set"
@@ -488,9 +487,35 @@ def undo(ed: Editor, prefix: int | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@defcommand("set-mark-command", "Set the mark at point.")
+@defcommand("set-mark-command", "Set the mark at point (C-SPC).")
 def set_mark_command(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.set_mark()
+    """GNU Emacs's ``set-mark-command``, all three behaviours (verified
+    against Emacs 29 via the parity probe / scenarios 30-31):
+
+    * ``C-SPC`` — push the old mark onto the ring, set and *activate*
+      the mark at point (``Mark set``).
+    * ``C-SPC C-SPC`` — an immediately repeated C-SPC deactivates the
+      just-set mark (``Mark deactivated``), leaving it on the ring
+      flow: set-then-unhighlight.
+    * ``C-u C-SPC`` — jump point to the mark and rotate the mark ring
+      (``pop-to-mark-command``): silent on a real jump, ``Mark popped``
+      when point is already at the mark.
+    """
+    buf = ed.buffer
+    if prefix is not None:
+        if buf.mark is None:
+            ed.message = "No mark set in this buffer"
+            return
+        if (buf.point.line, buf.point.col) == (buf.mark.line, buf.mark.col):
+            ed.message = "Mark popped"
+        buf.point.move_to(buf.mark.line, buf.mark.col)
+        buf.pop_mark()
+        return
+    if ed._last_command_name == "set-mark-command" and buf.mark_active:
+        buf.deactivate_mark()
+        ed.message = "Mark deactivated"
+        return
+    buf.push_mark(activate=True)
     ed.message = "Mark set"
 
 
@@ -505,6 +530,9 @@ def exchange_point_and_mark(ed: Editor, prefix: int | None) -> None:
         return
     mark_line, mark_col = buf.mark.line, buf.mark.col
     point_line, point_col = buf.point.line, buf.point.col
+    # set_mark (not push_mark): C-x C-x swaps without growing the mark
+    # ring, and *reactivates* the region — Emacs highlights the swapped
+    # region even when the mark was inactive (e.g. right after M-w).
     buf.set_mark(point_line, point_col)
     buf.point.move_to(mark_line, mark_col)
 
@@ -1220,11 +1248,11 @@ def _start_isearch(ed: Editor, *, forward: bool) -> None:
         ed.highlight_term = None
         ed.highlight_case_fold = False
         _deactivate_isearch_mode(ed)
-        # GNU Emacs pushes a mark at the original search start so
-        # ``C-x C-x`` can return to where the search began, and
+        # GNU Emacs pushes an *inactive* mark at the original search
+        # start so ``C-x C-x`` can return to where the search began, and
         # announces it via the echo area.
         if buf.point.line != start_line or buf.point.col != start_col:
-            buf.set_mark(start_line, start_col)
+            buf.push_mark(start_line, start_col)
             ed.message = "Mark saved where search started"
 
     def on_cancel() -> None:
@@ -1995,9 +2023,9 @@ def _do_register_action(ed: Editor, key: str, session: _RegisterSession) -> None
         # (Emacs's register-val-insert on a marker).
         text = str(_char_position(buf, *val)) if isinstance(val, tuple) else val
         # GNU Emacs >=28: called interactively, insert-register leaves
-        # point *after* the inserted text and the mark before it
-        # (push-mark echoes "Mark set").
-        buf.set_mark(buf.point.line, buf.point.col)
+        # point *after* the inserted text and the (inactive) mark before
+        # it (push-mark echoes "Mark set").
+        buf.push_mark(buf.point.line, buf.point.col)
         buf.insert_string(text)
         ed.message = "Mark set"
     else:  # "jump"
@@ -2014,10 +2042,9 @@ def _do_register_action(ed: Editor, key: str, session: _RegisterSession) -> None
         # Clamp defensively in case the buffer shrank since the save.
         line = max(0, min(line, buf.line_count - 1))
         col = max(0, min(col, len(buf.lines[line])))
-        # GNU Emacs pushes a mark at the old point before jumping (so the
-        # user can return) and echoes "Mark set". Same active-mark deviation
-        # as the big-motion commands above.
-        buf.set_mark()
+        # GNU Emacs pushes an *inactive* mark at the old point before
+        # jumping (so the user can return) and echoes "Mark set".
+        buf.push_mark()
         buf.point.move_to(line, col)
         ed.message = "Mark set"
 

@@ -1064,8 +1064,11 @@ class Editor:
         Does *not* touch the minibuffer — callers handle it explicitly
         because dismissal has a replay-key side effect.
         """
-        # Clear the region / mark
-        self.buffer.clear_mark()
+        # Deactivate the region. The mark itself survives — Emacs's C-g
+        # runs deactivate-mark, not a clear: region commands still work
+        # on the (inactive) mark afterwards (mark-even-if-inactive) and
+        # C-x C-x can reactivate it.
+        self.buffer.deactivate_mark()
         # Clear pending prefix keymap (mid C-x / C-h etc.)
         self._pending_keymap = None
         self._prefix_keys = ""

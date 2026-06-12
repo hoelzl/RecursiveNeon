@@ -44,6 +44,7 @@ _HIGHLIGHT_MATCH = "\033[43;30m"  # yellow background, black foreground
 _HIGHLIGHT_CURRENT = "\033[1;41;97m"  # bold + red background + bright white
 _SYNTAX_PRIORITY = 10  # syntax highlighting (below buffer attrs)
 _BUFFER_ATTR_PRIORITY = 15  # buffer-level text attributes (shell ANSI)
+_REGION_PRIORITY = 18  # active region (above text attrs, below matches)
 _HIGHLIGHT_PRIORITY = 20  # non-current match
 _HIGHLIGHT_PRIORITY_CURRENT = 25  # the match the point is on
 
@@ -302,6 +303,11 @@ class EditorView:
         # Compute buffer-attr spans (ANSI colours from shell output)
         self._compute_buffer_attr_spans(win, text_spans)
 
+        # Active-region face (only in the selected window, like Emacs's
+        # default highlight-nonselected-windows of nil)
+        if is_active:
+            self._compute_region_spans(win, text_spans)
+
         # Compute highlight spans for this window (isearch term etc.)
         self._compute_highlight_spans(win, text_spans)
 
@@ -438,6 +444,53 @@ class EditorView:
                         priority=_BUFFER_ATTR_PRIORITY,
                     )
                 )
+
+    def _compute_region_spans(self, win: Window, text_spans: list[StyleSpan]) -> None:
+        """Append spans for the active region (transient-mark-mode face).
+
+        Matches GNU Emacs's TTY region rendering (verified via parity
+        scenario 30's highlight capture):
+
+        * only when the mark is *active* (``Buffer.region_active``);
+        * on every region row whose segment spans the newline — i.e. all
+          rows except the one holding the region end — the highlight
+          *extends to the window edge* (the region face's ``:extend``);
+        * the final row highlights up to the region-end column only, so
+          a region ending at column 0 adds no run on that row.
+        """
+        buf = win.buffer
+        if not buf.region_active or buf.mark is None:
+            return
+        a = (buf.point.line, buf.point.col)
+        b = (buf.mark.line, buf.mark.col)
+        (s_line, s_col), (e_line, e_col) = min(a, b), max(a, b)
+        first_visible = win.scroll_top
+        last_visible = first_visible + win.text_height - 1
+        style = resolve_face("region")
+        for ln in range(s_line, e_line + 1):
+            if ln < first_visible or ln > last_visible:
+                continue
+            c_start = s_col if ln == s_line else 0
+            # Final row: stop at the region end; earlier rows extend to
+            # the window edge (the region face's :extend).
+            width = e_col - c_start if ln == e_line else win._width - c_start
+            if width <= 0:
+                continue
+            screen_row = win._top + (ln - first_visible)
+            screen_col = win._left + c_start
+            win_right = win._left + win._width
+            if screen_col >= win_right:
+                continue
+            width = min(width, win_right - screen_col)
+            text_spans.append(
+                StyleSpan(
+                    row=screen_row,
+                    col=screen_col,
+                    width=width,
+                    style=style,
+                    priority=_REGION_PRIORITY,
+                )
+            )
 
     def _compute_highlight_spans(
         self, win: Window, text_spans: list[StyleSpan]
@@ -701,6 +754,15 @@ class EditorView:
 
         for row, row_spans in by_row.items():
             line = screen.lines[row]
+            # Pad the row out to the widest span so styles can extend past
+            # the end of the text — the region face highlights to the
+            # window edge on rows where the region spans the newline
+            # (Emacs's :extend), including empty lines inside the region.
+            max_end = max(
+                min(span.col + span.width, screen.width) for span in row_spans
+            )
+            if len(line) < max_end:
+                line = line.ljust(max_end)
             if not line:
                 continue
             n = len(line)

@@ -103,7 +103,11 @@ def main(argv: list[str] | None = None) -> int:
         mod = _load(name)
         result = mod.run()
         expected = getattr(mod, "EXPECTED_DIVERGENCES", {})
-        verdict = evaluate(result, expected)
+        verdict = evaluate(
+            result,
+            expected,
+            compare_highlights=getattr(mod, "COMPARE_HIGHLIGHTS", False),
+        )
         verdicts.append(verdict)
         print(format_verdict(verdict))
         if args.report or not verdict.passed:
