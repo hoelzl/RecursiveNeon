@@ -253,7 +253,7 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     # explicitly to the current point.
     input_start.move_to(buf.point.line, buf.point.col)
 
-    buf.modified = False
+    buf.mark_saved()
 
     # Protect the banner + prompt from accidental modification
     buf.add_read_only_region(Mark(0, 0, kind="left"), input_start)
@@ -498,7 +498,7 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
             state.input_start.move_to(buf.point.line, buf.point.col)
     finally:
         buf._undo_recording = True
-        buf.modified = False
+        buf.mark_saved()
 
     # Protect all historical output — everything before the current input
     if not state.finished:

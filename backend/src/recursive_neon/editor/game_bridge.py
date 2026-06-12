@@ -73,7 +73,7 @@ def open_note(ed: Editor, prefix: int | None) -> None:
 
         # Create buffer with note content
         buf = ed.create_buffer(buf_name, text=note.content)
-        buf.modified = False
+        buf.mark_saved()
 
         # Install save hook that writes back to the note
         def on_save(saved_buf: Buffer) -> bool:
@@ -125,7 +125,7 @@ def open_task_list(ed: Editor, prefix: int | None) -> None:
         # Render tasks as checkbox lines
         lines = _render_task_list(tl)
         buf = ed.create_buffer(buf_name, text="\n".join(lines))
-        buf.modified = False
+        buf.mark_saved()
 
         # Install save hook that parses checkbox state back
         def on_save(saved_buf: Buffer) -> bool:
@@ -197,4 +197,4 @@ def list_npcs(ed: Editor, prefix: int | None) -> None:
 
     buf = ed.create_buffer(buf_name, text="\n".join(lines))
     buf.read_only = True
-    buf.modified = False
+    buf.mark_saved()

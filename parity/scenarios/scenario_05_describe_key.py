@@ -52,7 +52,12 @@ def run() -> ScenarioResult:
                 driver.settle(settle_ms=600)
                 taken.append(driver.snapshot("after-C-h-k"))
                 driver.send("C-f")
-                driver.settle(settle_ms=1500, max_wait=6.0)
+                # Emacs's *Help* render is slow (800-1500ms) and can lag
+                # past a fixed settle window on a loaded host, snapshotting
+                # a half-painted screen. Wait for the *Help* window's
+                # modeline to actually appear (readiness condition), then
+                # settle the trailing paint.
+                driver.wait_for("*Help*", max_wait=10.0, settle_ms=1500)
                 taken.append(driver.snapshot("after-follow-up-C-f"))
                 snapshots[target.name] = taken
 

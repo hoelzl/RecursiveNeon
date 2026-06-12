@@ -31,6 +31,7 @@ from recursive_neon.editor.undo import (
     UndoDelete,
     UndoEntry,
     UndoInsert,
+    UndoSavePoint,
 )
 
 
@@ -191,6 +192,11 @@ class Buffer:
         # (undoing a previous undo). Drives the "Undo" vs "Redo" echo-area
         # feedback in the ``undo`` command, matching GNU Emacs.
         self.last_undo_was_redo: bool = False
+        # Save generation — bumped by ``mark_saved`` so UndoSavePoint
+        # markers recorded against an earlier save state go stale (the
+        # analogue of Emacs comparing the file modtime recorded in its
+        # ``(t . TIME)`` undo entries).
+        self._save_tick: int = 0
 
         # Kill ring (shared across buffers in a real editor, but
         # per-buffer for now — the Editor class will share one instance)
@@ -390,7 +396,7 @@ class Buffer:
                 )
                 offset += len(part)
 
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*start))
             self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
@@ -475,7 +481,7 @@ class Buffer:
             self._insert_newline()
         else:
             self._insert_within_line(ch)
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*start))
             self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
@@ -501,7 +507,7 @@ class Buffer:
             self._insert_newline()
             if part:
                 self._insert_within_line(part)
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*start))
             self.undo_list.append(UndoInsert(*start, self.point.line, self.point.col))
@@ -610,7 +616,7 @@ class Buffer:
             self._join_line_forward()
         else:
             self._delete_within_line_forward()
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*pos))
             self.undo_list.append(UndoDelete(*pos, ch, attrs=del_attr))
@@ -641,7 +647,7 @@ class Buffer:
             self._join_line_backward()
         else:
             self._delete_within_line_backward()
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*orig_pos))
             self.undo_list.append(
@@ -697,7 +703,7 @@ class Buffer:
                 del self._line_attrs[a.line + 1 : b.line + 1]
             self._adjust_marks_after_delete_multi(a.line, a.col, b.line, b.col)
 
-        self.modified = True
+        self._note_modification()
         if self._undo_recording:
             self.undo_list.append(UndoCursorMove(*orig_point))
             self.undo_list.append(
@@ -909,6 +915,41 @@ class Buffer:
         self._goal_col = -1
 
     # ------------------------------------------------------------------
+    # Modified state / save points
+    # ------------------------------------------------------------------
+
+    def _note_modification(self) -> None:
+        """Set the modified flag, recording a save-point marker on the
+        unmodified -> modified transition.
+
+        Mirrors GNU Emacs's ``record_first_change``: the first change
+        while the buffer matches its saved state pushes an
+        :class:`UndoSavePoint` into the undo list, so that undo walking
+        back across it can restore the unmodified state (see
+        ``Buffer.undo``). Like Emacs, the marker is only recorded while
+        undo recording is enabled.
+        """
+        if not self.modified and self._undo_recording:
+            self.undo_list.append(UndoSavePoint(save_tick=self._save_tick))
+        self.modified = True
+
+    def mark_saved(self) -> None:
+        """Record that the buffer content now matches its saved state.
+
+        Clears the modified flag and bumps the save generation so
+        save-point markers recorded against an *earlier* save state go
+        stale (GNU Emacs achieves the same by storing the visited-file
+        modtime in its ``(t . TIME)`` undo entries and comparing on
+        undo). A save while the buffer is already unmodified is a no-op
+        — the content identity didn't change, so existing markers stay
+        valid (Emacs likewise skips rewriting an unmodified buffer, so
+        its recorded modtimes stay valid too).
+        """
+        if self.modified:
+            self._save_tick += 1
+            self.modified = False
+
+    # ------------------------------------------------------------------
     # Undo
     # ------------------------------------------------------------------
 
@@ -989,6 +1030,18 @@ class Buffer:
         terminating = self.undo_list[cursor - 1] if cursor > 0 else None
         is_redo = bool(isinstance(terminating, UndoBoundary) and terminating.redo)
 
+        # Save-point bookkeeping (Emacs primitive-undo's (t . TIME)
+        # handling): if this group's changes were originally made while
+        # the buffer matched its saved state, the group carries an
+        # UndoSavePoint marker and undoing it arrives *at* that state —
+        # clear the modified flag afterwards (stale-generation markers
+        # are ignored, see UndoSavePoint). Conversely, if the buffer is
+        # at a save point right now, the reverse (redo) group we are
+        # about to record leads back here, so it must carry a marker of
+        # its own for the redo path to restore the flag.
+        was_unmodified = not self.modified
+        arrived_at_save = False
+
         # Process collected entries and build reverse entries
         reverse: list[UndoEntry] = []
         for entry in group:
@@ -1031,6 +1084,10 @@ class Buffer:
             elif isinstance(entry, UndoCursorMove):
                 self.point.move_to(entry.line, entry.col)
 
+            elif isinstance(entry, UndoSavePoint):
+                if entry.save_tick == self._save_tick:
+                    arrived_at_save = True
+
         # Append reverse entries to the tail so "undo the undo" works
         # once the cursor resets (i.e., after a non-undo command).
         #
@@ -1046,7 +1103,16 @@ class Buffer:
             # recognised as the opposite operation: the inverse of an undo
             # is a redo, and the inverse of a redo is an undo.
             self.add_undo_boundary(break_undo_chain=False, redo=not is_redo)
+            if was_unmodified:
+                # The reverse group leads back to the save point we are
+                # departing from — mark it so the redo path restores the
+                # unmodified flag (see save-point comment above).
+                self.undo_list.append(UndoSavePoint(save_tick=self._save_tick))
         self.undo_list.extend(reverse)
+        if arrived_at_save:
+            # The applied reverse ops flipped the modified flag on; this
+            # group brought the buffer back to its saved content.
+            self.modified = False
         self.last_undo_was_redo = is_redo
         self.last_command_type = "undo"
         return True

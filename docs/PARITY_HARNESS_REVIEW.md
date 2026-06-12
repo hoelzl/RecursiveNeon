@@ -117,6 +117,13 @@ undo-to-saved fix. All well-scoped.
   (Emacs)"): pinned `ubuntu-24.04` runner (distro emacs-nox = 29.3, the
   version the baselines were validated against), runs the verdict unit
   tests then the full scenario suite on every push/PR to master.
-- [ ] Undo save-point tracking (clears scenario 09 residual).
+- [x] Undo save-point tracking: `UndoSavePoint` entries with a save
+  generation (Emacs's `record_first_change` / `(t . TIME)` analogue)
+  clear the modified flag when undo/redo returns the buffer to its
+  saved state, with stale-generation markers ignored across mid-session
+  saves. Cleared scenario 09's two modeline residuals (now
+  pixel-perfect) and added scenario 21 covering the
+  save/undo/redo/stale-marker flows against real Emacs. Unit contract
+  in `backend/tests/unit/editor/test_undo_savepoint.py`.
 - [ ] Inactive mark / mark ring — needs attribute-aware snapshots to be
   harness-verifiable; schedule alongside any region-rendering work.

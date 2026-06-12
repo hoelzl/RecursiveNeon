@@ -66,14 +66,12 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "09-undo-redo"
 DESCRIPTION = "Undo grouping, history walk-back, exhaustion, and redo."
 
-# Documented deviations (see module docstring): the modified mnemonic
-# after undo-to-saved (save-state-through-undo tracking, an undo-system
-# feature neon-edit lacks) and the redone-insertion cursor landing
-# (Emacs primitive-undo point-sign semantics). Remove the modeline
-# entries once undo save-point tracking lands.
+# Documented deviation (see module docstring): the redone-insertion
+# cursor landing (Emacs primitive-undo point-sign semantics). The
+# modified-mnemonic-after-undo-to-saved divergence this scenario
+# originally documented was fixed by UndoSavePoint tracking — see
+# scenario 21 and test_undo_savepoint.py.
 EXPECTED_DIVERGENCES = {
-    "after-undo-AB": {"modeline"},
-    "after-undo-exhausted": {"modeline"},
     "after-redo": {"cursor"},
 }
 

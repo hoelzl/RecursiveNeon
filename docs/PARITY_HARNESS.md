@@ -56,6 +56,7 @@ parity/
     scenario_18_query_replace_defaults.py
     scenario_19_auto_fill_mode.py
     scenario_20_python_indent.py
+    scenario_21_undo_save_point.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`,
@@ -273,8 +274,9 @@ Three flavours:
 
 ## Current scenario coverage
 
-(20 scenarios, 78 checkpoints. 69 are pixel-perfect; the 9 remaining
-diffs are content/semantic differences explained below.)
+(21 scenarios, 84 checkpoints. 75 are pixel-perfect; the 9 remaining
+diffs are content/semantic differences explained below, each baselined
+in its scenario's `EXPECTED_DIVERGENCES`.)
 
 | # | Scenario | Coverage |
 |---|----------|----------|
@@ -298,6 +300,7 @@ diffs are content/semantic differences explained below.)
 | 18 | query-replace defaults | `M-%` `(default foo → bar)` prompt, RET-reuse of the pair, combined `M-p` history (`foo → bar` then individual) |
 | 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
 | 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
+| 21 | undo save-point | modified flag through undo/redo across `C-x C-s`: undo-to-saved clears `**`, undo past a save stays `**` (stale generation), redo-to-saved clears again |
 
 ## Known intentional divergences
 
@@ -324,16 +327,19 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   `*Help*` name padding that used to differ here were fixed in scenario
   12; only this `Top`/`All` position indicator now differs.)
 
-- **09 modeline `--` vs `**` after undo-to-saved** (checkpoints
-  `after-undo-AB`, `after-undo-exhausted`). Emacs clears the modified
-  mnemonic once undo brings the buffer back to its saved-on-disk content;
-  neon-edit keeps it modified. This was *expected* to land in scenario 12,
-  but it is **not** a modeline-rendering issue — it is save-state-through-
-  undo tracking (Emacs records the buffer-modified state in `(t . TIME)`
-  undo entries and `primitive-undo` restores it). Scenario 12 fixed the
-  pure-rendering mnemonics (`-UUU:`, padding, `C-x C-q`) but left this for
-  its own follow-up: neon-edit would need to record the undo-list position
-  at save time and clear `modified` when undo/redo returns to it.
+- ~~**09 modeline `--` vs `**` after undo-to-saved**~~ **FIXED in
+  scenario 21.** neon-edit now mirrors Emacs's `record_first_change` /
+  `(t . TIME)` mechanism with `UndoSavePoint` undo entries carrying a
+  save generation (`Buffer.mark_saved` bumps it; stale-generation
+  markers are ignored, the analogue of Emacs's modtime comparison).
+  Undo-to-saved clears the modified flag, undo *past* a mid-session save
+  stays modified, and redo back to the save point clears it again — all
+  verified against GNU Emacs 29.3 in scenario 21. See
+  `test_undo_savepoint.py` for the unit-level contract.
+
+- **21 `after-save` echo area** (`Wrote /tmp/parity-XXXX/parity_sp.txt`
+  vs `Wrote parity_sp.txt`). Same virtual-filesystem path sandboxing as
+  scenario 04's find-file prompt — intentional.
 
 - **09 redo cursor `col 0` vs `col 2`** (checkpoint `after-redo`). Emacs's
   `primitive-undo` encodes per operation where point should land when a
@@ -344,7 +350,8 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   `Buffer.undo`'s reverse-entry construction and would churn scenario 06 +
   the undo test suite — disproportionate for a one-cell difference. The
   echo-area feedback (`Undo`/`Redo`), buffer content, and the cursor on
-  every *forward* undo all match.
+  every *forward* undo all match. (Scenario 21's `after-redo-AB`
+  checkpoint shares this deviation.)
 
 - **13 `M-y` not after a yank → `yank-from-kill-ring`** (checkpoint
   `after-M-y-not-after-yank`). The buffer body matches (both leave it
@@ -395,10 +402,10 @@ Each is sized for one session if the divergences turn out moderate.
    walk-back, exhaustion, and `C-f`+`C-/` redo. Surfaced that neon-edit
    was silent on a successful undo whereas Emacs echoes `Undo`/`Redo`;
    fixed by tracking redo-ness on the undo boundary and echoing the same
-   words. Two residual diffs are documented deviations (modified mnemonic
-   after undo-to-saved → owned by scenario 12 below; redo cursor landing →
-   Emacs `primitive-undo` point-sign semantics). See "Known intentional
-   divergences".
+   words. One residual diff is a documented deviation (redo cursor landing →
+   Emacs `primitive-undo` point-sign semantics); the other (modified
+   mnemonic after undo-to-saved) was fixed in scenario 21. See "Known
+   intentional divergences".
 
 2. ~~**`scenario_10_buffer_switching`**~~ **DONE (switch-to-buffer +
    kill-buffer defaults).** `C-x b` now offers the MRU "other" buffer as
@@ -454,10 +461,9 @@ Each is sized for one session if the divergences turn out moderate.
    command bound to `C-x C-q` (echoes `Read-Only mode enabled in current
    buffer`, flips the mnemonic to `%%-`). All 3 checkpoints pixel-perfect,
    and the fix resolved scenario 10's residual cosmetics and shrank 03/05.
-   **Still TODO in their own follow-ups:** `column-number-mode` position
-   format; and the undo-to-saved modified-flag carry-over from scenario 09
-   (an undo-system feature, not modeline rendering — see "Known intentional
-   divergences").
+   **Still TODO in its own follow-up:** `column-number-mode` position
+   format. (The undo-to-saved modified-flag carry-over from scenario 09
+   was fixed in scenario 21 — `UndoSavePoint` tracking.)
 
 5. ~~**`scenario_13_kill_ring_browse`**~~ **DONE.** Built a three-entry
    ring (`C-k C-n C-k C-n C-k`), then walked it with `C-y` + repeated
