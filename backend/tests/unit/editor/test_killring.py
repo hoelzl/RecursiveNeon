@@ -387,18 +387,126 @@ class TestKillCoalescingViaEditor:
         # Two separate entries, not the merged "betaalpha"/"alphabeta".
         assert h.editor.buffer.kill_ring.entries == ["beta", "alpha"]
 
-    def test_yank_pop_is_noop_when_not_after_yank(self) -> None:
+    def test_yank_pop_does_not_rotate_when_not_after_yank(self) -> None:
         """M-y only rotates immediately after a yank.
 
-        A C-b breaks the yank run, so the following M-y must not touch the
-        buffer. (GNU Emacs 29 instead opens a ``yank-from-kill-ring``
-        minibuffer here; neon-edit has no such picker, so it no-ops — see
-        parity scenario 13 / docs/PARITY_HARNESS.md.)
+        A C-b breaks the yank run, so the following M-y must not touch
+        the buffer — it opens the ``yank-from-kill-ring`` minibuffer
+        instead (GNU Emacs >= 28; see TestYankFromKillRing below).
         """
         h = make_harness("one\ntwo\nthree\nfour\n")
         h.send_keys("C-k", "C-n", "C-k", "C-n", "C-k")
         h.send_keys("C-y")  # yank "three"
         after_yank = h.buffer_text()
         h.send_keys("C-b")  # break the yank run
-        h.send_keys("M-y")  # not after a yank → no rotation
+        h.send_keys("M-y")  # not after a yank → picker, no rotation
         assert h.buffer_text() == after_yank
+        assert h.editor.minibuffer is not None
+        assert h.editor.minibuffer.prompt == "Yank from kill-ring: "
+
+
+class TestYankFromKillRing:
+    """M-y when the previous command was not a yank (GNU Emacs >= 28).
+
+    Behaviour verified against Emacs 29 via the parity harness (scenario
+    22): a ``Yank from kill-ring: `` minibuffer whose M-p/M-n history and
+    TAB completion candidates are the ring entries; RET inserts the
+    content literally at point and pushes a mark (``Mark set``), even for
+    empty input; an immediately following M-y re-prompts rather than
+    rotating; an empty ring short-circuits with ``Kill ring is empty``.
+    """
+
+    @staticmethod
+    def _harness_with_ring() -> object:
+        h = make_harness("one\ntwo\nthree\nrest\n")
+        h.send_keys("C-k", "C-n", "C-k", "C-n", "C-k")  # ring [three, two, one]
+        h.send_keys("M->")  # somewhere neutral; breaks the kill run
+        return h
+
+    def test_m_p_ret_inserts_newest_entry_and_pushes_mark(self) -> None:
+        h = self._harness_with_ring()
+        h.send_keys("M-y", "M-p", "Enter")
+        assert h.buffer_text() == "\n\n\nrest\nthree"
+        assert h.editor.message == "Mark set"
+        # Mark at the insert start, point at the end of the insert.
+        assert h.editor.buffer.mark is not None
+        assert (h.editor.buffer.mark.line, h.editor.buffer.mark.col) == (4, 0)
+        assert h.point() == (4, 5)
+
+    def test_m_p_m_p_recalls_older_entry(self) -> None:
+        h = self._harness_with_ring()
+        h.send_keys("M-y", "M-p", "M-p", "Enter")
+        assert h.buffer_text() == "\n\n\nrest\ntwo"
+
+    def test_empty_ret_inserts_nothing_but_pushes_mark(self) -> None:
+        h = self._harness_with_ring()
+        before = h.buffer_text()
+        h.send_keys("M-y", "Enter")
+        assert h.buffer_text() == before
+        assert h.editor.message == "Mark set"
+        assert h.editor.buffer.mark is not None
+
+    def test_typed_text_is_inserted_literally(self) -> None:
+        """completing-read runs without require-match: any input goes in."""
+        h = self._harness_with_ring()
+        h.send_keys("M-y")
+        h.type_string("xyz")
+        h.send_keys("Enter")
+        assert h.buffer_text() == "\n\n\nrest\nxyz"
+
+    def test_immediate_m_y_after_accept_reprompts(self) -> None:
+        """The accept is not a yank: the next M-y re-opens the picker."""
+        h = self._harness_with_ring()
+        h.send_keys("M-y", "M-p", "Enter")  # insert "three"
+        h.send_keys("M-y")
+        assert h.editor.minibuffer is not None
+        assert h.editor.minibuffer.prompt == "Yank from kill-ring: "
+        assert h.buffer_text() == "\n\n\nrest\nthree"  # no rotation happened
+
+    def test_empty_ring_short_circuits(self) -> None:
+        h = make_harness("rest\n")
+        h.send_keys("M-y")
+        assert h.editor.minibuffer is None
+        assert h.editor.message == "Kill ring is empty"
+
+    def test_c_g_cancels_without_touching_buffer(self) -> None:
+        h = self._harness_with_ring()
+        before = h.buffer_text()
+        h.send_keys("M-y", "M-p", "C-g")
+        assert h.editor.minibuffer is None
+        assert h.buffer_text() == before
+
+    def test_tab_completes_over_ring_entries(self) -> None:
+        """TAB completion candidates are the ring entries (prefix match)."""
+        h = self._harness_with_ring()
+        h.send_keys("M-y")
+        h.type_string("tw")
+        h.send_keys("Tab")
+        assert h.editor.minibuffer is not None
+        assert h.editor.minibuffer.text == "two"
+
+    def test_rotate_still_works_right_after_yank(self) -> None:
+        """Regression guard: C-y M-y still rotates in place."""
+        h = self._harness_with_ring()
+        h.send_keys("C-y", "M-y")
+        assert h.editor.minibuffer is None
+        assert h.buffer_text() == "\n\n\nrest\ntwo"
+
+    def test_multiline_entry_recall_renders_escaped_and_inserts_raw(self) -> None:
+        """A recalled multi-line kill shows as ``^J`` in the one-row widget.
+
+        GNU Emacs grows the minibuffer to multiple rows for a multi-line
+        recall; neon-edit's minibuffer is a single-row widget (documented
+        deviation in ``view.py``), so the embedded newline must render as
+        the ``^J`` control-char notation rather than a raw "\\n" that
+        would corrupt the screen rows. The *inserted* text keeps the real
+        newline.
+        """
+        h = make_harness("one\ntwo\nthree\nrest\n")
+        h.editor.buffer.set_mark(0, 0)
+        h.send_keys("C-n", "C-n", "C-w")  # kill "one\ntwo\n" as one entry
+        h.send_keys("M->", "M-y", "M-p")
+        assert h.message_line() == "Yank from kill-ring: one^Jtwo^J"
+        assert "\n" not in h.message_line()
+        h.send_keys("Enter")
+        assert h.buffer_text() == "three\nrest\none\ntwo\n"

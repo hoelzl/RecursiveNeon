@@ -770,7 +770,15 @@ class EditorView:
 
         if self.editor.minibuffer is not None:
             mb = self.editor.minibuffer
-            screen.set_line(message_row, mb.display[: self._width])
+            # Deviation from GNU Emacs: a minibuffer input containing
+            # newlines (e.g. a multi-line kill-ring entry recalled in the
+            # yank-from-kill-ring picker) grows Emacs's minibuffer to
+            # multiple rows — our minibuffer is a single-row widget, so
+            # render embedded newlines as ``^J`` (Emacs's control-char
+            # notation) instead of writing a raw "\n" into the row, which
+            # would corrupt the screen layout. The underlying text is
+            # untouched; only the display is escaped.
+            screen.set_line(message_row, mb.display.replace("\n", "^J")[: self._width])
             # Isearch is a minibuffer-driven mode in our model, but Emacs
             # keeps the cursor on the *match position* in the buffer
             # (and only shows the prompt in the echo area). Detect the
@@ -784,7 +792,11 @@ class EditorView:
                 screen.cursor_col = win._left + min(pt.col, win._width - 1)
             else:
                 screen.cursor_row = message_row
-                screen.cursor_col = min(len(mb.prompt) + mb.cursor, self._width - 1)
+                # Each newline before the cursor renders as two cells (^J).
+                shift = mb.text[: mb.cursor].count("\n")
+                screen.cursor_col = min(
+                    len(mb.prompt) + mb.cursor + shift, self._width - 1
+                )
             screen.cursor_visible = True
         elif self.editor._describe_key_session is not None:
             # While ``C-h k`` is waiting for a follow-up key, Emacs parks

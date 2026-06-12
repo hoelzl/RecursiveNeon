@@ -395,7 +395,57 @@ def yank(ed: Editor, prefix: int | None) -> None:
     coalesce_key="yank",
 )
 def yank_pop(ed: Editor, prefix: int | None) -> None:
+    # GNU Emacs >= 28: when the previous command was *not* a yank, M-y
+    # runs ``yank-from-kill-ring`` instead of failing — the rotate-in-place
+    # behaviour only applies immediately after C-y / M-y.
+    if ed.buffer.last_command_type != "yank":
+        _yank_from_kill_ring(ed)
+        return
     ed.buffer.yank_pop()
+
+
+def _yank_from_kill_ring(ed: Editor) -> None:
+    """``yank-from-kill-ring`` — choose a kill-ring entry via the minibuffer.
+
+    Mirrors GNU Emacs 29 (verified via the parity harness, scenario 22):
+
+    * ``Yank from kill-ring: `` prompt; the ring entries (most recent
+      first) are both the M-p/M-n history and the TAB completion
+      candidates (``read-from-kill-ring`` passes ``kill-ring`` to
+      ``completing-read`` as history *and* collection).
+    * RET inserts the minibuffer content literally at point — typed text
+      that matches no ring entry is inserted as-is (``completing-read``
+      runs with ``require-match`` nil), and empty input inserts nothing.
+    * A mark is pushed at the insert position unconditionally
+      (``push-mark`` precedes ``insert-for-yank``), echoing ``Mark set``
+      even for empty input.
+    * The accept does not mark the command as a yank: an immediately
+      following M-y re-prompts rather than rotating like yank-pop.
+    * On an empty ring, ``current-kill`` signals before the prompt opens:
+      the echo area shows ``Kill ring is empty``.
+    """
+    buf = ed.buffer
+    if buf.kill_ring.empty:
+        ed.message = "Kill ring is empty"
+        return
+    entries = list(buf.kill_ring.entries)
+
+    def on_submit(text: str) -> None:
+        b = ed.buffer
+        b.set_mark(b.point.line, b.point.col)
+        if text:
+            b.insert_string(text)
+        ed.message = "Mark set"
+
+    def completer(text: str) -> list[str]:
+        return [e for e in entries if e.startswith(text)]
+
+    ed.start_minibuffer(
+        "Yank from kill-ring: ",
+        on_submit,
+        completer=completer,
+        history_list=entries,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════

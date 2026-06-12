@@ -17,19 +17,15 @@ Six checkpoints:
   * ``after-M-y-one``            — second ``M-y`` rotates to ``one``.
   * ``after-M-y-wrap-three``     — third ``M-y`` wraps back to ``three``.
   * ``after-M-y-not-after-yank`` — a ``C-b`` breaks the yank run, so the
-    next ``M-y`` is *not* immediately after a yank. **Documented
-    divergence** (the buffer body matches — only the minibuffer differs):
-    GNU Emacs 29 binds ``M-y`` to ``yank-from-kill-ring`` in this state,
-    which opens a ``Yank from kill-ring:`` minibuffer to pick an entry
-    interactively (this *replaced* the old pre-28 ``Previous command was
-    not a yank`` error). neon-edit has no such picker, so its ``yank-pop``
-    is a silent no-op — the buffer is left untouched (same as Emacs) but no
-    minibuffer opens. See ``docs/PARITY_HARNESS.md`` for the deferred
-    ``yank-from-kill-ring`` follow-up.
+    next ``M-y`` is *not* immediately after a yank. GNU Emacs ≥28 binds
+    ``M-y`` to ``yank-from-kill-ring`` in this state, which opens a
+    ``Yank from kill-ring:`` minibuffer to pick an entry interactively
+    (this *replaced* the old pre-28 ``Previous command was not a yank``
+    error). neon-edit historically no-opped here (a documented feature
+    gap); it now opens the same picker — see scenario 22 for the full
+    picker flow.
 
-The first five checkpoints exercise the ring-rotation mechanics and the
-in-place replacement and are pixel-perfect; the sixth records the
-``yank-from-kill-ring`` feature gap.
+All six checkpoints are pixel-perfect.
 
 Surfaced (and fixed) a real bug on the first run: kills separated by a
 non-kill command (here ``C-n``) wrongly *coalesced* into one kill-ring
@@ -50,13 +46,7 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "13-kill-ring-browse"
 DESCRIPTION = "Multi-entry kill ring: build 3 kills, walk with M-y, wrap, precondition."
 
-# Documented divergence (see module docstring): Emacs ≥28 binds M-y not
-# directly after a yank to yank-from-kill-ring, which opens a picker
-# minibuffer (echo area + cursor move into it); neon-edit silently
-# no-ops. Remove once the deferred yank-from-kill-ring scenario lands.
-EXPECTED_DIVERGENCES = {
-    "after-M-y-not-after-yank": {"cursor", "echo_area"},
-}
+EXPECTED_DIVERGENCES: dict[str, set[str]] = {}
 
 CONTENT = "one\ntwo\nthree\nfour\n"
 

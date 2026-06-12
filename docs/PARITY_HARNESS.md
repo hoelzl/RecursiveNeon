@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(21 scenarios, 84 checkpoints. 75 are pixel-perfect; the 9 remaining
+(22 scenarios, 90 checkpoints. 82 are pixel-perfect; the 8 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -292,7 +292,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
 | 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
 | 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
-| 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
+| 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank opens the picker |
 | 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
 | 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
 | 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
@@ -301,6 +301,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
 | 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
 | 21 | undo save-point | modified flag through undo/redo across `C-x C-s`: undo-to-saved clears `**`, undo past a save stays `**` (stale generation), redo-to-saved clears again |
+| 22 | yank-from-kill-ring | `M-y` not after a yank → `Yank from kill-ring:` picker; `M-p`/`M-n` over ring entries, RET inserts + `Mark set`, re-`M-y` re-prompts, `C-g` quit |
 
 ## Known intentional divergences
 
@@ -353,18 +354,15 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   every *forward* undo all match. (Scenario 21's `after-redo-AB`
   checkpoint shares this deviation.)
 
-- **13 `M-y` not after a yank → `yank-from-kill-ring`** (checkpoint
-  `after-M-y-not-after-yank`). The buffer body matches (both leave it
-  untouched); only the minibuffer differs. GNU Emacs ≥28 rebinds `M-y` so
-  that, when the previous command was *not* a yank, it runs
-  `yank-from-kill-ring` — an interactive `Yank from kill-ring:` minibuffer
-  that lets you pick any ring entry (this *replaced* the pre-28 `Previous
-  command was not a yank` error). neon-edit has no such picker, so its
-  `yank-pop` is a silent no-op in that state. Implementing the picker
-  (minibuffer completion over the ring, multi-line entry display, M-n/M-p
-  navigation) is a feature in its own right — deferred to a future
-  `scenario_NN_yank_from_kill_ring` (see "Proposed next scenarios"). The
-  normal cycle (`C-y` then repeated `M-y`) is pixel-perfect.
+- ~~**13 `M-y` not after a yank → `yank-from-kill-ring`**~~ **FIXED in
+  scenario 22.** neon-edit now implements the Emacs ≥28 behaviour: `M-y`
+  when the previous command was not a yank opens the
+  `Yank from kill-ring:` minibuffer (ring entries as both M-p/M-n history
+  and TAB completion candidates; RET inserts literally at point and
+  pushes a mark; an immediately following `M-y` re-prompts rather than
+  rotating; empty ring → `Kill ring is empty`). Scenario 13's
+  `after-M-y-not-after-yank` checkpoint and all six scenario 22
+  checkpoints are pixel-perfect.
 
 ## Cosmetic items not yet polished
 
@@ -530,15 +528,25 @@ Each is sized for one session if the divergences turn out moderate.
    mechanism (the prompt reads `Query replace (default foo → bar): ` and
    `M-p` recalls the *pair*), deferred to item 10 below.
 
-9. **`scenario_NN_yank_from_kill_ring`** (deferred from scenario 13):
-   implement and verify `yank-from-kill-ring` — the command GNU Emacs ≥28
-   binds to `M-y` when the previous command was *not* a yank. It opens a
-   `Yank from kill-ring:` minibuffer with the ring entries as completion
-   candidates (multi-line entries shown with a separator), `M-n`/`M-p` to
-   navigate, `RET` to insert the chosen entry at point (and push a mark,
-   like yank). neon-edit currently no-ops `M-y` in that state. This is a
-   real feature, not a one-line fix, which is why scenario 13 left it as a
-   documented divergence rather than expanding scope.
+9. ~~**`scenario_NN_yank_from_kill_ring`**~~ **DONE** —
+   `scenario_22_yank_from_kill_ring`. `yank-pop` now dispatches to
+   `yank-from-kill-ring` when the previous command was not a yank
+   (Emacs ≥28): a `Yank from kill-ring:` minibuffer with the ring
+   entries (most recent first) as both the `M-p`/`M-n` history and the
+   TAB completion candidates; `RET` inserts the content literally at
+   point and pushes a mark (`Mark set`), even for empty input
+   (`completing-read` runs with `require-match` nil and `push-mark`
+   precedes the insert); the accept is *not* a yank, so a following
+   `M-y` re-prompts instead of rotating; an empty ring short-circuits
+   with `Kill ring is empty`. All edges probed against Emacs 29 before
+   implementation; scenario 13's `after-M-y-not-after-yank` baseline
+   entry was removed (now pixel-perfect). Unit contract:
+   `test_killring.py::TestYankFromKillRing`. **Deviation:** a recalled
+   multi-line ring entry grows Emacs's minibuffer to multiple rows;
+   neon's single-row minibuffer widget renders the embedded newlines as
+   `^J` instead (documented in `view.py::_render_message_line` — a raw
+   newline would corrupt the row layout). The inserted text keeps the
+   real newlines.
 
 10. ~~**`scenario_18_query_replace_defaults`**~~ **DONE.** `M-%` now keeps
     `query-replace-defaults` (the last `(from . to)` pair): a later prompt
