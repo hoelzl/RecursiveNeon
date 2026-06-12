@@ -126,4 +126,10 @@ undo-to-saved fix. All well-scoped.
   save/undo/redo/stale-marker flows against real Emacs. Unit contract
   in `backend/tests/unit/editor/test_undo_savepoint.py`.
 - [ ] Inactive mark / mark ring — needs attribute-aware snapshots to be
-  harness-verifiable; schedule alongside any region-rendering work.
+  harness-verifiable, so the two must land together as one planned
+  effort. Deliberately **not** attacked in this pass: it is a 2-3
+  session project (harness capture design + core mark semantics), no
+  current checkpoint can observe the difference, and Phase 8 (browser)
+  is the project's declared next priority. Fully specced as item 11 in
+  `PARITY_HARNESS.md` "Proposed next scenarios" for whoever picks it
+  up.
