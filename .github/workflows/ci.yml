@@ -79,3 +79,36 @@ jobs:
           name: coverage-report
           path: backend/coverage.xml
         if: always()
+
+  parity:
+    name: Editor Parity (Emacs)
+    # Pinned runner image (not -latest) so the distro emacs-nox stays at a
+    # known version: Emacs behaviour drifts across releases, and the
+    # EXPECTED_DIVERGENCES baselines were validated against GNU Emacs 29.3
+    # (Ubuntu 24.04). Bump deliberately, re-validating the baselines.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emacs-nox
+          emacs --version | head -1
+
+      - name: Install dependencies
+        run: pip install -e "./backend[dev]" pyte pexpect
+
+      - name: Parity unit tests (verdict logic)
+        run: python -m pytest parity/tests -q -o addopts=""
+
+      - name: Run parity scenarios
+        env:
+          # targets.py defaults to <repo>/.venv/bin/python; CI has no venv.
+          NEON_PARITY_PYTHON: python
+        run: python -m parity.run
