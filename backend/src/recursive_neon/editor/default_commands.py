@@ -1798,22 +1798,31 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Registers (C-x r) — point save/jump basics
+# Registers (C-x r) — point save/jump and text copy/insert
 #
-# ``point-to-register`` (C-x r SPC) and ``jump-to-register`` (C-x r j)
-# each read one more key — the register *name* — the same way describe-key
+# ``point-to-register`` (C-x r SPC), ``jump-to-register`` (C-x r j),
+# ``copy-to-register`` (C-x r s) and ``insert-register`` (C-x r i) each
+# read one more key — the register *name* — the same way describe-key
 # (C-h k) reads a key. The command installs an ``Editor._register_session``;
 # ``Editor.process_key`` consumes the next keystroke as the name and calls
 # ``_do_register_action`` to finish.
+#
+# A register holds either a point location (``tuple[int, int]``) or text
+# (``str``). Type mismatches reproduce Emacs's errors: jumping to a text
+# register says "Register doesn't contain a buffer position or
+# configuration" (curly apostrophe — Emacs's default text-quoting-style),
+# inserting an *empty* register says "Register does not contain text",
+# and inserting a *point* register inserts the buffer position as a
+# number, all verified against Emacs 29 via the parity harness
+# (scenario 23).
 #
 # Deviations from Emacs (documented):
 # - We store a static ``(line, col)`` in the current buffer, not an
 #   edit-tracking marker into a specific buffer. Point save/jump without
 #   intervening edits (the common case) is faithful; a jump after the saved
 #   text moved would land at the stale position rather than following it.
-# - Only point registers are implemented. copy-to-register (C-x r s),
-#   insert-register (C-x r i), number/rectangle/window registers, and the
-#   register preview are not bound. See docs/PARITY_HARNESS.md.
+# - Number / rectangle / window registers and the register preview popup
+#   are not implemented. See docs/PARITY_HARNESS.md.
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -1841,6 +1850,40 @@ def jump_to_register(ed: Editor, prefix: int | None) -> None:
     ed.message = "Jump to register: "
 
 
+@defcommand(
+    "copy-to-register",
+    "Copy the region into a register (C-x r s).",
+)
+def copy_to_register(ed: Editor, prefix: int | None) -> None:
+    """Prompt for a register name; the next key is read as that name."""
+    from recursive_neon.editor.editor import _RegisterSession
+
+    ed._register_session = _RegisterSession(action="copy")
+    ed.message = "Copy to register: "
+
+
+@defcommand(
+    "insert-register",
+    "Insert the contents of a register at point (C-x r i).",
+)
+def insert_register(ed: Editor, prefix: int | None) -> None:
+    """Prompt for a register name; the next key is read as that name."""
+    from recursive_neon.editor.editor import _RegisterSession
+
+    ed._register_session = _RegisterSession(action="insert")
+    ed.message = "Insert register: "
+
+
+def _char_position(buf: Buffer, line: int, col: int) -> int:
+    """The Emacs buffer position (1-based char offset) of ``(line, col)``.
+
+    Emacs's ``insert-register`` on a point register inserts the marker's
+    position as a number; our registers store ``(line, col)``, so the
+    offset is reconstructed against the current buffer content.
+    """
+    return sum(len(buf.lines[i]) + 1 for i in range(line)) + col + 1
+
+
 def _do_register_action(ed: Editor, key: str, session: _RegisterSession) -> None:
     """Complete a register command once the register name has been read.
 
@@ -1855,10 +1898,42 @@ def _do_register_action(ed: Editor, key: str, session: _RegisterSession) -> None
     if session.action == "point":
         ed._registers[name] = (buf.point.line, buf.point.col)
         ed.message = ""
+    elif session.action == "copy":
+        # Emacs reads the register name *before* evaluating the region
+        # (interactive-spec order), so the no-region error comes after
+        # the prompt — mirror that by checking here, not in the command.
+        if buf.mark is None:
+            ed.message = "The mark is not set now, so there is no region"
+            return
+        ed._registers[name] = buf.region_text or ""
+        # Like kill-ring-save, the copy deactivates the region (clears
+        # the mark in our always-active-mark model) and leaves the echo
+        # area empty — Emacs shows no confirmation message.
+        buf.clear_mark()
+        ed.message = ""
+    elif session.action == "insert":
+        val = ed._registers.get(name)
+        if val is None:
+            ed.message = "Register does not contain text"
+            return
+        # A point register inserts its buffer position as a number
+        # (Emacs's register-val-insert on a marker).
+        text = str(_char_position(buf, *val)) if isinstance(val, tuple) else val
+        # GNU Emacs >=28: called interactively, insert-register leaves
+        # point *after* the inserted text and the mark before it
+        # (push-mark echoes "Mark set").
+        buf.set_mark(buf.point.line, buf.point.col)
+        buf.insert_string(text)
+        ed.message = "Mark set"
     else:  # "jump"
         loc = ed._registers.get(name)
         if loc is None:
             ed.message = f"Register {name} is empty"
+            return
+        if isinstance(loc, str):
+            # Text register: Emacs's error, curly apostrophe included
+            # (the default text-quoting-style curves quotes in messages).
+            ed.message = "Register doesn’t contain a buffer position or configuration"
             return
         line, col = loc
         # Clamp defensively in case the buffer shrank since the save.
@@ -2778,10 +2853,13 @@ def build_default_keymap() -> Keymap:
     cx4 = Keymap("C-x 4 prefix")
     cx4.bind("C-f", "find-file-other-window")
     cx.bind("4", cx4)
-    # C-x r prefix map (registers): SPC saves point, j jumps to it.
+    # C-x r prefix map (registers): SPC saves point, j jumps to it,
+    # s copies the region into a register, i inserts one at point.
     cxr = Keymap("C-x r prefix")
     cxr.bind(" ", "point-to-register")
     cxr.bind("j", "jump-to-register")
+    cxr.bind("s", "copy-to-register")
+    cxr.bind("i", "insert-register")
     cx.bind("r", cxr)
     km.bind("C-x", cx)
 

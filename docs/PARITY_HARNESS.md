@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(22 scenarios, 90 checkpoints. 82 are pixel-perfect; the 8 remaining
+(23 scenarios, 97 checkpoints. 89 are pixel-perfect; the 8 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -302,6 +302,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
 | 21 | undo save-point | modified flag through undo/redo across `C-x C-s`: undo-to-saved clears `**`, undo past a save stays `**` (stale generation), redo-to-saved clears again |
 | 22 | yank-from-kill-ring | `M-y` not after a yank → `Yank from kill-ring:` picker; `M-p`/`M-n` over ring entries, RET inserts + `Mark set`, re-`M-y` re-prompts, `C-g` quit |
+| 23 | register copy/insert | `C-x r s`/`C-x r i` text registers: silent copy, insert leaves point after + `Mark set`, empty/type-mismatch errors, point register inserts position number |
 
 ## Known intentional divergences
 
@@ -502,9 +503,17 @@ Each is sized for one session if the divergences turn out moderate.
    pixel-perfect. **Documented deviation:** neon-edit has no inactive-mark
    concept, so a pushed mark is *active* (the region renders highlighted)
    whereas Emacs's push-mark is inactive — invisible to the text-only
-   harness, noted next to the code. **Still TODO** (own scenarios): the
-   rest of the `C-x r` family — `copy-to-register` (`s`), `insert-register`
-   (`i`), number / rectangle / window registers, and the register preview.
+   harness, noted next to the code. **Follow-up DONE in scenario 23:**
+   `copy-to-register` (`C-x r s`) and `insert-register` (`C-x r i`) —
+   registers now hold a point *or* text; copy is silent and deactivates
+   the region; insert leaves point after the text with the mark before
+   (`Mark set`, the Emacs ≥28 interactive behaviour); type mismatches
+   reproduce Emacs's errors verbatim (`Register does not contain text`,
+   `Register doesn’t contain a buffer position or configuration` — curly
+   apostrophe), and inserting a *point* register inserts the buffer
+   position as a number. All 7 checkpoints pixel-perfect. **Still TODO**
+   (own scenarios): number / rectangle / window registers and the
+   register preview popup.
 
 8. ~~**`scenario_16_minibuffer_history`**~~ **DONE.** The `Minibuffer`
    had no history at all, so this added per-prompt input history with

@@ -61,7 +61,8 @@ class _RegisterSession:
     """
 
     action: str
-    """``"point"`` (save point) or ``"jump"`` (restore point)."""
+    """``"point"`` (save point), ``"jump"`` (restore point), ``"copy"``
+    (region text into the register) or ``"insert"`` (register at point)."""
 
 
 class Editor:
@@ -151,14 +152,15 @@ class Editor:
         self._query_replace_session: _QueryReplaceSession | None = None
 
         # Registers (Emacs ``C-x r``).  ``_registers`` maps a register
-        # name (a single character) to a saved point location ``(line,
-        # col)``.  ``_register_session`` is set while ``point-to-register``
-        # / ``jump-to-register`` wait for the next key (the register name);
-        # the next keystroke is consumed as that name.  Cleared by
-        # ``_reset_transient_state``.  Note: we store a static ``(line,
-        # col)`` in the current buffer rather than an edit-tracking marker
-        # in a specific buffer — enough for point save/jump basics.
-        self._registers: dict[str, tuple[int, int]] = {}
+        # name (a single character) to either a saved point location
+        # ``(line, col)`` or copied text (``str``).  ``_register_session``
+        # is set while a register command waits for the next key (the
+        # register name); the next keystroke is consumed as that name.
+        # Cleared by ``_reset_transient_state``.  Note: we store a static
+        # ``(line, col)`` in the current buffer rather than an
+        # edit-tracking marker in a specific buffer — enough for point
+        # save/jump basics.
+        self._registers: dict[str, tuple[int, int] | str] = {}
         self._register_session: _RegisterSession | None = None
 
         # ESC-as-Meta state machine.  A bare Escape keystroke sets
