@@ -40,6 +40,17 @@ VENV_PY = Path(
 BACKEND_SRC = REPO_ROOT / "backend" / "src"
 
 
+def emacs_binary() -> str:
+    """The Emacs executable the harness compares against.
+
+    Override via ``NEON_PARITY_EMACS`` to pin a specific build. The
+    ground-truth version is printed by ``parity.run`` so reports are
+    interpretable later — Emacs behaviour drifts across releases (e.g.
+    the ``M-y`` → ``yank-from-kill-ring`` rebind in Emacs 28).
+    """
+    return os.environ.get("NEON_PARITY_EMACS", "emacs")
+
+
 def make_emacs_target(
     file_path: str,
     *,
@@ -64,7 +75,7 @@ def make_emacs_target(
     args.append(file_path)
 
     def launch() -> Driver:
-        d = Driver("emacs", args=args, cols=cols, rows=rows)
+        d = Driver(emacs_binary(), args=args, cols=cols, rows=rows)
         d.settle(settle_ms=settle_ms, max_wait=6.0)
         # Kick Emacs to flush its initial render of the file buffer.
         d.send("C-f C-b")

@@ -22,10 +22,19 @@ parity/
                              Driver.wait_for (wait for a readiness condition
                              on screen, not just an output-silence window)
   targets.py                 make_emacs_target / make_neon_target builders;
-                             NEON_PARITY_PYTHON env override for the neon venv
+                             NEON_PARITY_PYTHON env override for the neon venv;
+                             NEON_PARITY_EMACS env override for the emacs binary
   fixtures.py                staged_file context manager + make_targets pair
+  compare.py                 field-level snapshot comparison + verdicts
+                             (body / modeline / echo_area / cursor)
   report.py                  side-by-side diff renderer
-  run.py                     python -m parity.run [--list] [pattern]
+  run.py                     python -m parity.run [--list] [--report] [pattern]
+                             asserts against each scenario's
+                             EXPECTED_DIVERGENCES baseline; exit 1 on any
+                             unexpected diff
+  tests/
+    test_compare.py          unit tests for the verdict logic (pure Python,
+                             no pty/Emacs needed)
   scenarios/
     scenario_01_startup.py
     scenario_02_end_of_buffer.py
@@ -49,7 +58,17 @@ parity/
     scenario_20_python_indent.py
 ```
 
-Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`.
+Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`,
+plus an optional `EXPECTED_DIVERGENCES` baseline:
+
+```python
+# Documented deviations (see module docstring / "Known intentional
+# divergences" in this file). Checkpoint label -> snapshot fields
+# allowed to differ. Anything beyond this fails the run.
+EXPECTED_DIVERGENCES = {
+    "after-TAB": {"body", "cursor", "echo_area", "modeline"},
+}
+```
 
 ## Environment setup
 
@@ -105,22 +124,49 @@ live in WSL; the repo lives on `/mnt/c/...`). Two host-specific wrinkles:
 ## Running scenarios
 
 ```bash
-.venv/bin/python -m parity.run            # all scenarios
+.venv/bin/python -m parity.run            # all scenarios; exit 1 on failure
 .venv/bin/python -m parity.run 03         # scenarios matching '03'
 .venv/bin/python -m parity.run --list     # just list available scenarios
+.venv/bin/python -m parity.run --report   # full diffs even for passing steps
 ```
 
-Reports go to stdout. For a compact pass/fail-by-field view:
+The runner **asserts**: every checkpoint is compared field by field
+(body / modeline / echo_area / cursor) against the scenario's
+`EXPECTED_DIVERGENCES` baseline. The output is one verdict line per
+checkpoint —
 
-```bash
-.venv/bin/python -m parity.run | grep -E "^## Step:|^- (modeline|echo_area|cursor):"
+```
+03-mx-minibuffer-prompt-and-completion:
+  [     OK] after-M-x
+  [     OK] after-typing-for
+  [ALLOWED] after-TAB — allowed diff in: body, cursor, echo_area, modeline
+  ...
 ```
 
-For the full diff with body rows and structured fields, redirect to a
-file and scroll:
+— followed by the full side-by-side diff for any *failing* scenario
+(pass `--report` to get the diffs for passing ones too). The run exits
+nonzero if any checkpoint diverges outside its baseline, so the suite
+can gate CI. A baselined field that *stops* differing is flagged as
+"stale" (warning, not failure): it usually means the divergence got
+fixed — update the baseline, the scenario docstring, and this doc.
+
+The verdict logic itself is unit-tested without a pty:
 
 ```bash
-.venv/bin/python -m parity.run 07 > /tmp/p07.txt
+.venv/bin/python -m pytest parity/tests -p no:cacheprovider --no-cov -o addopts=""
+```
+
+The runner prints the ground-truth line (`Ground truth: GNU Emacs NN.N`)
+at the top of every run; baselines in this repo were last validated
+against **GNU Emacs 29.3**. Emacs behaviour drifts across releases (the
+`M-y` → `yank-from-kill-ring` rebind in 28 is a documented example), so
+if your verdicts disagree with the checked-in baselines, check the
+version line first. Pin a specific build with `NEON_PARITY_EMACS`.
+
+For the full diff of one scenario, redirect to a file and scroll:
+
+```bash
+.venv/bin/python -m parity.run --report 07 > /tmp/p07.txt
 less /tmp/p07.txt
 ```
 
@@ -191,7 +237,8 @@ Three flavours:
 2. **neon-edit is "right" for game semantics** (e.g. virtual filesystem
    path in find-file prompt — see scenario 04) → document the
    intentional deviation in the scenario's module docstring and in
-   the diverging code's comments.
+   the diverging code's comments, **and add the checkpoint/fields to
+   the scenario's `EXPECTED_DIVERGENCES`** so the runner accepts it.
 
 3. **Emacs and neon-edit have legitimately different content** (e.g.
    different command sets, different docstring length) → leave the
@@ -201,7 +248,9 @@ Three flavours:
 
 ### When you fix a divergence
 
-- Run the affected scenario and verify it now matches.
+- Run the affected scenario and verify it now matches. If the
+  divergence was baselined in `EXPECTED_DIVERGENCES`, remove the entry
+  (the runner flags it as stale otherwise) and update the docs.
 - Run the **full** test suite (`cd backend && ../.venv/bin/pytest tests/ -q --no-cov`).
   Some Emacs-style fixes break tests that codified the prior
   divergent behaviour. Update those tests — they were wrong, the new
