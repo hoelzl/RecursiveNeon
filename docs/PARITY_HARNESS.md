@@ -552,6 +552,41 @@ Each is sized for one session if the divergences turn out moderate.
     wire `replace-string` to the same shared `query-replace-history`
     (it remains unwired).
 
+11. **Inactive mark + mark ring + attribute-aware snapshots** (paired —
+    do these together, in one planned effort). neon-edit's mark is
+    always "active": `Buffer.region_active ⟺ mark is not None`, there is
+    no transient-mark-mode active/inactive distinction and no mark
+    ring. Consequences vs Emacs: a pushed mark (`M-<`, `M->`,
+    `jump-to-register`, yank, …) renders the region highlighted where
+    Emacs's `push-mark` is inactive (documented deviation next to
+    `_push_mark_for_big_motion` in `default_commands.py` and in
+    scenario 15); `C-g` cannot *deactivate* a mark distinct from
+    clearing it; `C-SPC C-SPC` (set-and-deactivate) and `C-u C-SPC`
+    (pop mark ring) are unimplementable.
+
+    **Why paired**: every one of those behaviours is invisible to the
+    text-only harness — region highlighting is exactly an SGR
+    attribute. Fixing the editor without harness coverage would break
+    the verify-against-Emacs methodology; adding attribute snapshots
+    without a consumer is speculative. The harness side should be an
+    **opt-in, scoped** capture (e.g. a `Snapshot.highlight_runs` field
+    recording reverse-video runs per row, captured from pyte's per-cell
+    attributes, compared only by scenarios that ask for it) — do NOT
+    reverse the global text-only decision; full-attribute comparison
+    was deliberately rejected as too noisy (see "Don't compare attrs"
+    below).
+
+    **Editor side**: `mark_active` flag decoupled from mark existence;
+    `set_mark` activates, `push-mark` doesn't; `C-g` deactivates;
+    region rendering and region commands key off `mark_active`; a
+    per-buffer mark ring with `C-SPC C-SPC` / `C-u C-SPC`. Expect broad
+    test churn in everything that asserts `region_active`.
+
+    **Size**: 2-3 sessions (one for the harness capture + a probe
+    scenario, one-two for the mark semantics). Lower urgency than it
+    looks: no current checkpoint can see the difference, so this only
+    blocks region-*rendering* parity, not any queued scenario.
+
 ## Tips and gotchas
 
 - **The "is undefined" canary.** When you write a scenario using a
