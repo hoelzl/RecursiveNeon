@@ -55,7 +55,11 @@ def make_targets(
 ) -> tuple[TargetSpec, TargetSpec]:
     """Build an (emacs, neon) target pair both pointed at ``fixture``."""
     emacs = make_emacs_target(
-        str(fixture.disk_path), cols=cols, rows=rows, settle_ms=settle_ms
+        str(fixture.disk_path),
+        cols=cols,
+        rows=rows,
+        settle_ms=settle_ms,
+        cwd=str(fixture.tmp_dir),
     )
     neon = make_neon_target(
         setup_lines=write_file_via_echo(

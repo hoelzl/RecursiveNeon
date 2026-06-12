@@ -59,8 +59,16 @@ def make_emacs_target(
     cols: int = 80,
     rows: int = 24,
     settle_ms: int = 1200,
+    cwd: str | None = None,
 ) -> TargetSpec:
-    """Open ``file_path`` in Emacs ``-Q`` with a quiet startup."""
+    """Open ``file_path`` in Emacs ``-Q`` with a quiet startup.
+
+    ``cwd`` should be the scenario's staging directory: it becomes the
+    ``default-directory`` of non-file buffers (``*scratch*``), so a
+    relative ``C-x C-f`` in a scenario resolves inside the staged
+    sandbox rather than wherever the harness happens to run from
+    (scenario 27 once stray-wrote a file into the repo root this way).
+    """
 
     eval_forms = [
         "(menu-bar-mode -1)",
@@ -77,7 +85,7 @@ def make_emacs_target(
     args.append(file_path)
 
     def launch() -> Driver:
-        d = Driver(emacs_binary(), args=args, cols=cols, rows=rows)
+        d = Driver(emacs_binary(), args=args, cols=cols, rows=rows, cwd=cwd)
         d.settle(settle_ms=settle_ms, max_wait=6.0)
         # Kick Emacs to flush its initial render of the file buffer (any
         # input event works). C-l (recenter) is used because it leaves no
