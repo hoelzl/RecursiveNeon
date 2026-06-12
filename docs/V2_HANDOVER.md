@@ -1662,12 +1662,17 @@ Phase 7 is complete. The project moves to Phase 8 (browser) with a genuinely pol
 **Goal**: The browser renders the same terminal experience, wrapped in the desktop UI.
 
 Tasks:
-1. Set up xterm.js connecting to `/ws/terminal` (same protocol as CLI client)
-2. Cooked mode (shell) rendering in the browser
-3. Raw mode (TUI apps) rendering in the browser
+1. Set up xterm.js connecting to `/ws/terminal` (same protocol as CLI client) — **DONE** (`frontend/src/terminal/`, resize-on-connect, vitest-covered protocol logic)
+2. Cooked mode (shell) rendering in the browser — **DONE** (client-side line editor: history, C-a/C-e/C-k/C-u, tab completion via the `complete` round-trip, C-c)
+3. Raw mode (TUI apps) rendering in the browser — **DONE** (alternate screen, full-frame `screen` rendering, DOM→protocol key encoding incl. C-/M- chords; editor + dired verified in Chrome)
 4. Desktop chrome: window manager, taskbar, desktop icons
 5. Restore and refine the cyberpunk CSS theme from v1
 6. Optionally add GUI-native apps (chat, file browser, editor) that reuse the backend app core
+
+Note (from `docs/EDITOR_SHELL_ROADMAP.md` §1): with the editor able to
+host shells, dired and the TUI apps in its own windows, one fullscreen
+terminal already behaves like a desktop — re-evaluate how much of tasks
+4-6 is still load-bearing before building them.
 
 ## 7. Key Design Decisions for Future Sessions
 

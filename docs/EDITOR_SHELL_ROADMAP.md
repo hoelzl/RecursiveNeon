@@ -1,10 +1,16 @@
 # Editor-as-Game-Shell Roadmap
 
-> **Status**: Planning handover, written 2026-06-12. Nothing in this
-> document is implemented yet. Prerequisite reading:
-> `docs/PARITY_HARNESS.md` (the verify-against-Emacs methodology this
-> plan reuses), `docs/V2_HANDOVER.md` §Phase 8, `CLAUDE.md` rule 5
-> (Emacs is the ground truth).
+> **Status**: IMPLEMENTED 2026-06-12 (steps 1-4, same day as planned).
+> Step 1 dired → `editor/dired.py` + parity scenarios 31/32; step 2
+> TuiApp window host → `editor/app_host.py`; step 3 shell polish →
+> multi-shell `C-u M-x shell` + `C-c C-c` in `editor/shell_mode.py`;
+> step 4 browser terminal → `frontend/src/terminal/` (xterm.js,
+> verified end-to-end in Chrome against the live backend). The optional
+> per-NPC `chat-mode` buffer (step 3) remains future work, as do Phase
+> 8 tasks 4-6. Prerequisite reading: `docs/PARITY_HARNESS.md` (the
+> verify-against-Emacs methodology this plan reuses),
+> `docs/V2_HANDOVER.md` §Phase 8, `CLAUDE.md` rule 5 (Emacs is the
+> ground truth).
 
 ## 1. The goal
 
