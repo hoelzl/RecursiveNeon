@@ -113,5 +113,10 @@ undo-to-saved fix. All well-scoped.
   is confirmed, and the suite now exits 0 only in that state.
 - [x] Emacs version recorded per run (`Ground truth: GNU Emacs NN.N`
   header) with a `NEON_PARITY_EMACS` override in `parity/targets.py`.
-- [ ] CI job running the parity scenarios with a pinned emacs-nox.
+- [x] CI job running the parity scenarios (`ci.yml` job "Editor Parity
+  (Emacs)"): pinned `ubuntu-24.04` runner (distro emacs-nox = 29.3, the
+  version the baselines were validated against), runs the verdict unit
+  tests then the full scenario suite on every push/PR to master.
 - [ ] Undo save-point tracking (clears scenario 09 residual).
+- [ ] Inactive mark / mark ring — needs attribute-aware snapshots to be
+  harness-verifiable; schedule alongside any region-rendering work.

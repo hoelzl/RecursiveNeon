@@ -170,6 +170,14 @@ For the full diff of one scenario, redirect to a file and scroll:
 less /tmp/p07.txt
 ```
 
+**CI**: the "Editor Parity (Emacs)" job in `.github/workflows/ci.yml`
+runs the verdict unit tests and the full scenario suite on every
+push/PR to master, on a pinned `ubuntu-24.04` runner (distro emacs-nox
+29.3 — the version the baselines were validated against). A red parity
+job means either a real regression or an undocumented divergence; fix
+neon-edit or, for a sanctioned deviation, extend the scenario's
+`EXPECTED_DIVERGENCES` and document it.
+
 ## The workflow
 
 ### Adding a scenario
