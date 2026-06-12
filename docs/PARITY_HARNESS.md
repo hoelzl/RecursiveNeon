@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(28 scenarios, 121 checkpoints. 108 are pixel-perfect; the 13 remaining
+(29 scenarios, 126 checkpoints. 113 are pixel-perfect; the 13 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -308,6 +308,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 26 | empty-file EOL | `-UUU:` mnemonic for newline-less visits, stays undecided through typing *and* saving; `C-f`/`C-b` boundary errors (`End of buffer`/`Beginning of buffer`) |
 | 27 | kill-buffer confirm | `C-x k` on a modified file buffer: `(yes/no/save and then kill)` prompt, unique-prefix RET completion (`y`→yes), no/yes/save paths, silent kill for non-file buffers |
 | 28 | list-buffers | `C-x C-b` pops *Buffer List* in the other window unselected: Buffer-menu table (`CRM`/name/size/mode/file columns), `(Buffer Menu)` modeline, silent echo |
+| 29 | python indent (full) | bracket alignment, dedenter candidates + `Closes …` echo, backslash continuations, `def`-paren `+8` scale and offset-chain cycling |
 
 ## Known intentional divergences
 
@@ -469,10 +470,20 @@ Each is sized for one session if the divergences turn out moderate.
      indents to the syntactic level (prev-line indent + 4 after a `:`
      header) and cycles `[calc, calc-4, …, 0]` on repeated TAB. Also added
      the `(Python ElDoc)` modeline lighter (Emacs runs eldoc in python-mode;
-     the echo-area docs themselves are a future gap). **Still TODO:** the
-     full `python-indent-calculate-levels` (brackets, continuation lines,
-     dedenting keywords, the after-a-plain-statement cycle) — only the
-     `:`-header / simple-dedent case is replicated.
+     the echo-area docs themselves are a future gap). **Follow-up DONE in
+     scenario 29:** the full `python-indent-calculate-indentation` port —
+     bracket alignment (content-after-opener, newline-start `+4`,
+     `def`-block `+8` scale, closing-bracket-to-opening-line, nested,
+     string/comment-protected), backslash continuations (first `+4`,
+     later align-with-previous, block statements after-the-keyword),
+     after-block-end dedent, dedenter candidate lists (pairing table,
+     non-matching-opener shadowing, non-contiguous cycling) and the
+     `Closes …` echo on dedenter TAB. Each rule probed case-by-case
+     against Emacs 29.3 first; unit battery in
+     `test_python_indent_full.py`. **Documented deviations:**
+     `:inside-string` is not special-cased (TAB in a multi-line string
+     re-indents as code) and the dedenter walk pairs keywords lexically
+     rather than via real block navigation.
    - ~~**`auto-fill-mode` insertion**~~ **DONE** — `scenario_19_auto_fill_mode`.
      `M-x auto-fill-mode` toggles the minor mode with the Emacs message
      (`Auto-Fill mode enabled in current buffer`, derived in

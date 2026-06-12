@@ -70,29 +70,223 @@ _RULES: list[SyntaxRule] = [
 # ── Indentation (Emacs's python-indent-line) ────────────────────────
 
 _INDENT = 4  # python-indent-offset
+_DEF_BLOCK_SCALE = 2  # python-indent-def-block-scale
+
+# Statements that open a block (python-rx block-start).
+_BLOCK_START_RE = re.compile(
+    r"^\s*(?:async\s+)?"
+    r"(?:def|class|if|elif|else|try|except|finally|for|while|with)\b"
+)
+# Dedenter statements and the openers each can attach to
+# (python-info-dedenter-opening-block-positions' pairing table).
+_DEDENTER_RE = re.compile(r"^\s*(else|elif|except|finally)\b")
+_DEDENTER_PAIRS = {
+    "elif": ("elif", "if"),
+    "else": ("if", "elif", "except", "for", "while"),
+    "except": ("except", "try"),
+    "finally": ("else", "except", "try"),
+}
+_OPENER_KEYWORD_RE = re.compile(
+    r"^\s*(?:async\s+)?(def|class|if|elif|else|try|except|finally|for|while|with)\b"
+)
+# Statements that end a block (the :after-block-end context).
+_BLOCK_END_RE = re.compile(r"^\s*(?:return|break|continue|pass|raise)\b")
+
+
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _code_part(line: str) -> str:
+    """The code portion of *line*: everything before a real ``#`` comment,
+    with single-line string contents respected (a ``#`` inside quotes is
+    not a comment)."""
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch in "\"'":
+            j = i + 1
+            while j < len(line):
+                if line[j] == "\\":
+                    j += 2
+                    continue
+                if line[j] == ch:
+                    break
+                j += 1
+            i = j + 1
+            continue
+        if ch == "#":
+            return line[:i]
+        i += 1
+    return line
+
+
+def _open_bracket_stack(buf: Buffer, upto_line: int) -> list[tuple[int, int]]:
+    """Positions of unclosed ``([{`` before line *upto_line*.
+
+    A small lexer over the preceding lines: bracket characters inside
+    strings (single-line or triple-quoted) and comments don't count.
+    The triple-quote tracking is naive (no mixed ``'''``-inside-``\"\"\"``
+    handling) — adequate for indentation purposes.
+    """
+    stack: list[tuple[int, int]] = []
+    triple: str | None = None
+    for ln in range(upto_line):
+        line = buf.lines[ln]
+        i = 0
+        while i < len(line):
+            if triple is not None:
+                if line.startswith(triple, i):
+                    triple = None
+                    i += 3
+                else:
+                    i += 1
+                continue
+            ch = line[i]
+            if line.startswith('"""', i) or line.startswith("'''", i):
+                triple = line[i : i + 3]
+                i += 3
+                continue
+            if ch in "\"'":
+                j = i + 1
+                while j < len(line):
+                    if line[j] == "\\":
+                        j += 2
+                        continue
+                    if line[j] == ch:
+                        break
+                    j += 1
+                i = j + 1
+                continue
+            if ch == "#":
+                break
+            if ch in "([{":
+                stack.append((ln, i))
+            elif ch in ")]}" and stack:
+                stack.pop()
+            i += 1
+    return stack
+
+
+def _dedenter_candidates(buf: Buffer, cur: int, keyword: str) -> list[tuple[int, int]]:
+    """``(indent, line)`` of the opening blocks the dedenter could attach to.
+
+    Walks back over block-start lines, collecting matching openers at
+    strictly decreasing indentation (each candidate is one valid column
+    for the ``else``/``elif``/``except``/``finally`` line), descending —
+    the deepest candidate is offered first, like Emacs.
+    """
+    pairs = _DEDENTER_PAIRS[keyword]
+    out: list[tuple[int, int]] = []
+    bar = float("inf")
+    for ln in range(cur - 1, -1, -1):
+        line = buf.lines[ln]
+        if not line.strip():
+            continue
+        m = _OPENER_KEYWORD_RE.match(line)
+        if m is None:
+            continue
+        ind = _indent_of(line)
+        if ind < bar:
+            # Every block start lowers the bar — a *non*-matching opener
+            # (e.g. a ``with`` between an ``else`` and its ``if``) shadows
+            # matching openers at its own indent, exactly as Emacs's
+            # backward block walk collects indentations.
+            if m.group(1) in pairs:
+                out.append((ind, ln))
+            bar = ind
+            if ind == 0:
+                break
+    return out
+
+
+def _python_calculate_indent(buf: Buffer) -> int | list[int]:
+    """Emacs's ``python-indent-calculate-indentation`` for the point line.
+
+    Returns the calculated column, or a list of candidate columns for a
+    dedenter line (``else``/``elif``/``except``/``finally``). Context
+    rules verified against GNU Emacs 29.3 via the parity probe battery
+    (see scenario 29 and ``test_python_indent_full.py``):
+
+    * inside an unclosed bracket with content after the opener → align
+      with the first non-blank char after the bracket;
+    * bracket followed by newline → opening line's indent + 4, or + 8
+      when the opening line is itself a block start (``def foo(`` —
+      python-indent-def-block-scale);
+    * a closing bracket starting the line → the opening line's indent;
+    * backslash continuations → previous line's indent + 4 (first
+      continuation), the previous continuation's own indent (later
+      lines), or — for block statements — the column right after the
+      keyword (``if aaa and \\`` → column 3);
+    * after a block-ending statement (return/break/continue/pass/raise)
+      → previous indent − 4;
+    * after a ``:`` block opener → previous indent + 4;
+    * otherwise → previous non-blank line's indent.
+
+    Known approximations (documented deviations): ``:inside-string`` is
+    not special-cased (TAB inside a multi-line string re-indents as
+    code), and the dedenter walk pairs keywords lexically rather than by
+    real block navigation.
+    """
+    cur = buf.point.line
+    if cur == 0:
+        return 0
+    prev = next((ln for ln in range(cur - 1, -1, -1) if buf.lines[ln].strip()), None)
+    if prev is None:
+        return 0
+
+    stripped = buf.lines[cur].lstrip()
+
+    ded = _DEDENTER_RE.match(stripped)
+    if ded is not None:
+        candidates = _dedenter_candidates(buf, cur, ded.group(1))
+        if candidates:
+            return [ind for ind, _ in candidates]
+
+    stack = _open_bracket_stack(buf, cur)
+    if stack:
+        oline, ocol = stack[-1]
+        open_line = buf.lines[oline]
+        if stripped[:1] in ")]}":
+            return _indent_of(open_line)
+        after = _code_part(open_line)[ocol + 1 :]
+        if after.strip():
+            return ocol + 1 + (len(after) - len(after.lstrip()))
+        base = _indent_of(open_line)
+        scale = _DEF_BLOCK_SCALE if _BLOCK_START_RE.match(open_line) else 1
+        return base + scale * _INDENT
+
+    prev_line = buf.lines[prev]
+    prev_code = _code_part(prev_line)
+    if prev_code.rstrip().endswith("\\"):
+        if prev >= 1 and _code_part(buf.lines[prev - 1]).rstrip().endswith("\\"):
+            return _indent_of(prev_line)
+        m = _BLOCK_START_RE.match(prev_line)
+        if m is not None:
+            rest = prev_line[m.end() :]
+            return m.end() + (len(rest) - len(rest.lstrip()))
+        return _indent_of(prev_line) + _INDENT
+    if _BLOCK_END_RE.match(prev_code):
+        return max(_indent_of(prev_line) - _INDENT, 0)
+    if prev_code.rstrip().endswith(":"):
+        return _indent_of(prev_line) + _INDENT
+    return _indent_of(prev_line)
 
 
 def _python_indent_levels(buf: Buffer) -> list[int]:
     """Candidate indentation columns for the current line, deepest first.
 
-    A simplified ``python-indent-calculate-levels``: the deepest level is the
-    nearest previous non-blank line's indent + 4 when it ends with ``:``
-    (opening a block), else that line's own indent; the cycle then dedents by
-    4 down to 0. The full Emacs heuristics (brackets, continuation lines,
-    dedenting keywords like ``else``/``except``) are **not** replicated, so
-    repeated TAB after a non-``:`` line is best-effort — see the module note.
+    For a regular context the levels are the calculated column plus
+    every multiple of 4 below it (``calc=7`` → ``[7, 4, 0]`` — verified
+    against Emacs: the chain restarts at the offset multiples, not at
+    ``calc - 4``). For a dedenter line the levels are exactly the
+    matching open blocks' columns.
     """
-    cur = buf.point.line
-    prev_indent = 0
-    opens_block = False
-    for ln in range(cur - 1, -1, -1):
-        line = buf.lines[ln]
-        if line.strip():
-            prev_indent = len(line) - len(line.lstrip(" "))
-            opens_block = line.rstrip().endswith(":")
-            break
-    calculated = prev_indent + _INDENT if opens_block else prev_indent
-    return list(range(calculated, -1, -_INDENT))
+    calc = _python_calculate_indent(buf)
+    if isinstance(calc, list):
+        return calc
+    first_multiple = (calc - 1) // _INDENT * _INDENT if calc > 0 else -1
+    return [calc] + list(range(first_multiple, -1, -_INDENT))
 
 
 def python_indent_line(ed: Editor) -> None:
@@ -115,6 +309,15 @@ def python_indent_line(ed: Editor) -> None:
         if target:
             buf.insert_string(" " * target)
     buf.point.move_to(cur, target)
+    # Indenting a dedenter line reports which block that column attaches
+    # to — GNU Emacs's "Closes if c:" echo
+    # (python-info-dedenter-opening-block-message).
+    ded = _DEDENTER_RE.match(line.lstrip())
+    if ded is not None:
+        for ind, ln in _dedenter_candidates(buf, cur, ded.group(1)):
+            if ind == target:
+                ed.message = f"Closes {buf.lines[ln].strip()}"
+                break
 
 
 def _python_on_enter(ed: Editor) -> None:
