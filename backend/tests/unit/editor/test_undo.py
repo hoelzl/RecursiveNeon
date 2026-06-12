@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.mark import Mark
-from recursive_neon.editor.undo import UndoBoundary
+from recursive_neon.editor.undo import UndoBoundary, UndoSavePoint
 
 # ═══════════════════════════════════════════════════════════════════════
 # Basic undo of insertions
@@ -236,5 +236,9 @@ class TestUndoRecordingFlag:
         b = Buffer()
         b.insert_char("a")
         b.insert_char("b")
-        # Each char generates 2 entries (cursor + insert)
-        assert len(b.undo_list) == 4
+        # The first change while unmodified records a save-point marker
+        # (Emacs's record_first_change / (t . TIME) convention — see
+        # test_undo_savepoint.py), then each char generates 2 entries
+        # (cursor + insert).
+        assert len(b.undo_list) == 5
+        assert isinstance(b.undo_list[0], UndoSavePoint)

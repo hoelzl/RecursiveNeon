@@ -577,7 +577,7 @@ def list_buffers(ed: Editor, prefix: int | None) -> None:
     bl.read_only = False
     bl.lines = text.split("\n")
     bl.point.move_to(0, 0)
-    bl.modified = False
+    bl.mark_saved()
     bl.read_only = True
 
 
@@ -623,7 +623,7 @@ def write_file(ed: Editor, prefix: int | None) -> None:
         if not saved and ed.save_callback is not None:
             saved = ed.save_callback(ed.buffer)
         if saved:
-            ed.buffer.modified = False
+            ed.buffer.mark_saved()
             ed.message = f"Wrote {path}"
             _publish_buffer_saved(ed, ed.buffer)
         elif ed.save_callback is not None or ed.buffer.on_save is not None:
@@ -2092,7 +2092,7 @@ def help_tutorial(ed: Editor, prefix: int | None) -> None:
         return
     ed.create_buffer(name="TUTORIAL.txt", text=text)
     ed.buffer.read_only = True
-    ed.buffer.modified = False
+    ed.buffer.mark_saved()
 
 
 def _show_popup_buffer(ed: Editor, *, name: str, text: str, major_mode: str) -> None:
@@ -2113,7 +2113,7 @@ def _show_popup_buffer(ed: Editor, *, name: str, text: str, major_mode: str) -> 
     buf.read_only = False
     buf.lines = text.split("\n")
     buf.point.move_to(0, 0)
-    buf.modified = False
+    buf.mark_saved()
     buf.read_only = True
     ed.set_major_mode(major_mode)
 
@@ -2213,7 +2213,7 @@ def save_some_buffers(ed: Editor, prefix: int | None) -> None:
                 if not saved and ed.save_callback is not None:
                     saved = ed.save_callback(buf_ref)
                 if saved:
-                    buf_ref.modified = False
+                    buf_ref.mark_saved()
                     saved_count[0] += 1
                     _publish_buffer_saved(ed, buf_ref)
             _ask_next()
@@ -2388,7 +2388,7 @@ def save_buffer(ed: Editor, prefix: int | None) -> None:
     buf = ed.buffer
     # Try buffer-specific on_save first (e.g., note/task-list bridge)
     if buf.on_save is not None and buf.on_save(buf):
-        buf.modified = False
+        buf.mark_saved()
         ed.message = "Wrote " + (buf.filepath or buf.name)
         _publish_buffer_saved(ed, buf)
         return
@@ -2396,7 +2396,7 @@ def save_buffer(ed: Editor, prefix: int | None) -> None:
         ed.message = "No save handler configured"
         return
     if ed.save_callback(buf):
-        buf.modified = False
+        buf.mark_saved()
         ed.message = "Wrote " + (buf.filepath or buf.name)
         _publish_buffer_saved(ed, buf)
     else:

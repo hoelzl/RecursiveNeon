@@ -59,6 +59,25 @@ class UndoCursorMove:
 
 
 @dataclass(frozen=True)
+class UndoSavePoint:
+    """Records that the buffer matched its saved state just before the
+    change that follows this entry.
+
+    The analogue of GNU Emacs's ``(t . TIME)`` undo entry: Emacs's
+    ``record_first_change`` pushes one on the first change while the
+    buffer is unmodified, and ``primitive-undo`` clears the
+    buffer-modified flag when undo walks back across it (provided the
+    recorded file modtime still matches, i.e. the file was not saved
+    again since).  ``save_tick`` is our equivalent of that staleness
+    check: ``Buffer.mark_saved`` bumps the buffer's save generation, and
+    ``Buffer.undo`` only clears the modified flag for markers of the
+    *current* generation.
+    """
+
+    save_tick: int
+
+
+@dataclass(frozen=True)
 class UndoBoundary:
     """Separator between command groups.
 
@@ -79,4 +98,4 @@ class UndoBoundary:
     redo: bool = field(default=False, compare=False)
 
 
-UndoEntry = UndoInsert | UndoDelete | UndoCursorMove | UndoBoundary
+UndoEntry = UndoInsert | UndoDelete | UndoCursorMove | UndoSavePoint | UndoBoundary
