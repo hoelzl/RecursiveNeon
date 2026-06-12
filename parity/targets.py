@@ -86,12 +86,29 @@ def make_emacs_target(
 
     def launch() -> Driver:
         d = Driver(emacs_binary(), args=args, cols=cols, rows=rows, cwd=cwd)
-        d.settle(settle_ms=settle_ms, max_wait=6.0)
+        # Wait for the startup echo-area tip rather than relying on a
+        # silence window: on slow hosts Emacs's startup has silent gaps
+        # longer than ``settle_ms``, so a pure-silence settle can return
+        # mid-startup — the C-l kick is then consumed *before* the tip is
+        # displayed, leaving the tip on screen at snapshot time. The tip
+        # is the *last* thing startup paints and, under ``-Q``, always
+        # appears (``inhibit-startup-echo-area-message`` only takes
+        # effect when literally set in an init file — startup.el greps
+        # the init file for it — so the --eval above cannot suppress it).
+        d.wait_for(
+            "For information about GNU Emacs",
+            row=-1,
+            max_wait=30.0,
+            settle_ms=settle_ms,
+        )
         # Kick Emacs to flush its initial render of the file buffer (any
-        # input event works). C-l (recenter) is used because it leaves no
-        # trace: no point motion and no echo. The previous kick, C-f C-b,
-        # *errored* in an empty buffer (echoing "End of buffer") and made
-        # the launch states differ from neon-edit's, which gets no kick.
+        # input event works); it also clears the tip. C-l (recenter) is
+        # used because it leaves no trace: no point motion and no echo.
+        # Exactly one C-l — repeats would cycle recenter-top-bottom and
+        # scroll windows whose point sits below the first screen line.
+        # The previous kick, C-f C-b, *errored* in an empty buffer
+        # (echoing "End of buffer") and made the launch states differ
+        # from neon-edit's, which gets no kick.
         d.send("C-l")
         d.settle(settle_ms=settle_ms, max_wait=4.0)
         return d

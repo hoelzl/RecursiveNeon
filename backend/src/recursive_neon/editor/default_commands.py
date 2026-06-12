@@ -808,6 +808,11 @@ def find_file(ed: Editor, prefix: int | None) -> None:
         path = path.strip()
         if not path:
             return
+        # A directory path opens dired instead (Emacs's find-file).
+        from recursive_neon.editor.dired import maybe_open_dired_for_path
+
+        if maybe_open_dired_for_path(ed, path):
+            return
         # Check if already open
         for buf in ed.buffers:
             if buf.filepath == path:
@@ -1571,12 +1576,23 @@ def quit_window(ed: Editor, prefix: int | None) -> None:
 
     Behaves like Emacs's ``quit-window``: if the current window can be
     deleted (there is more than one), do so and the previously-active
-    window regains focus. When this is the only window, silently no-op
-    (don't error like ``delete-window`` does) so the binding feels safe
-    to press anywhere.
+    window regains focus. When this is the only window, the window shows
+    the previously-selected buffer instead and the quitted buffer is
+    buried (verified against Emacs 29.3: ``q`` in a fullscreen dired
+    returns to the buffer it was opened from).
     """
     tree = ed._window_tree
     if tree is None or tree.is_single():
+        quitted = ed.buffer.name
+        other = ed.other_buffer_name()
+        if other is not None:
+            ed.switch_to_buffer(other)
+            # Bury the quitted buffer: drop it to the bottom of the
+            # recency order so C-x b / a second quit-window prefers
+            # anything else over it (Emacs's bury-buffer).
+            if quitted in ed._mru:
+                ed._mru.remove(quitted)
+                ed._mru.append(quitted)
         return
     tree.active.sync_from_buffer()
     new = tree.delete_window()
@@ -1645,6 +1661,12 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
         if other is not None:
             tree.active = other
             _switch_to_window(ed, other)
+        # A directory path opens dired in this window (Emacs's
+        # find-file-other-window runs dired-other-window).
+        from recursive_neon.editor.dired import maybe_open_dired_for_path
+
+        if maybe_open_dired_for_path(ed, path):
+            return
         # Now open/switch to the file in this window
         for buf in ed.buffers:
             if buf.filepath == path:
@@ -1672,6 +1694,8 @@ def find_file_other_window(ed: Editor, prefix: int | None) -> None:
 def build_default_keymap() -> Keymap:
     # Ensure shell-mode commands/mode are registered
     # Ensure game-bridge commands are registered (open-note, etc.)
+    # Ensure dired commands/mode are registered (C-x d, dired-*)
+    import recursive_neon.editor.dired  # noqa: F401
     import recursive_neon.editor.game_bridge  # noqa: F401
     import recursive_neon.editor.shell_mode  # noqa: F401
 
@@ -1779,6 +1803,7 @@ def build_default_keymap() -> Keymap:
     cx.bind("b", "switch-to-buffer")
     cx.bind("k", "kill-buffer")
     cx.bind("C-b", "list-buffers")
+    cx.bind("d", "dired")
     cx.bind("C-c", "quit-editor")
     cx.bind("u", "undo")
     cx.bind("f", "set-fill-column")

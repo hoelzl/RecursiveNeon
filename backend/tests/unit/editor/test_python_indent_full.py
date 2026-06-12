@@ -13,6 +13,8 @@ from recursive_neon.editor.editor import Editor
 from recursive_neon.editor.modes import register_language_modes
 from recursive_neon.editor.modes.python_mode import _python_indent_levels
 
+from .harness import make_harness
+
 register_language_modes()
 
 
@@ -145,3 +147,34 @@ class TestDedenters:
         # with an (unconventional) 8-indented inner if, the levels skip 4.
         text = "if a:\n        if b:\n                pass\nelse:"
         assert levels_for(text) == [8, 0]
+
+
+class TestGuessIndentOffset:
+    """python-indent-guess-indent-offset on mode entry (Emacs parity:
+    scenario 31's after-visit-beta checkpoint pins the can't-guess
+    message)."""
+
+    def test_unguessable_buffer_messages_and_uses_default(self) -> None:
+        h = make_harness("print('beta')\n")
+        h.editor.buffer.name = "beta.py"
+        h.editor.set_major_mode("python-mode")
+        assert h.editor.message == "Can’t guess python-indent-offset, using defaults: 4"
+        assert "python-indent-offset" not in h.editor.buffer.local_variables
+
+    def test_guessed_offset_is_buffer_local_and_silent(self) -> None:
+        h = make_harness("if x:\n  y = 1\nz\n")
+        h.editor.buffer.name = "two.py"
+        h.editor.set_major_mode("python-mode")
+        assert h.editor.message == ""
+        assert h.editor.buffer.local_variables["python-indent-offset"] == 2
+        # TAB on the trailing line indents by the guessed offset's
+        # context: after a plain statement it matches its indent (2 via
+        # the guessed step, not the default 4).
+        h.send_keys("C-n", "C-n", "Tab")
+        assert h.editor.buffer.lines[2] == "  z"
+
+    def test_comment_and_blank_lines_skipped_when_sampling(self) -> None:
+        h = make_harness("for i in r:\n\n    # c\n        body\n")
+        h.editor.buffer.name = "skip.py"
+        h.editor.set_major_mode("python-mode")
+        assert h.editor.buffer.local_variables["python-indent-offset"] == 8

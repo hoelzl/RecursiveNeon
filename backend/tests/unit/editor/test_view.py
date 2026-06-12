@@ -80,12 +80,17 @@ class TestViewRendering:
         modeline = screen.lines[view.text_height]
         assert "--" in modeline
 
-    def test_modeline_shows_filepath(self):
+    def test_modeline_shows_buffer_name_not_path(self):
+        # GNU Emacs's %b shows the buffer *name*; the visited path never
+        # appears in the modeline (find-file names buffers after the
+        # file's basename).
         view = make_view("hello", width=80)
+        view.editor.buffer.name = "notes.txt"
         view.editor.buffer.filepath = "Documents/notes.txt"
         screen = view._render()
         modeline = screen.lines[view.text_height]
-        assert "Documents/notes.txt" in modeline
+        assert "Documents/notes.txt" not in modeline
+        assert "notes.txt" in modeline
 
     def test_modeline_shows_line_number(self):
         view = make_view("hello\nworld")

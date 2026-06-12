@@ -69,8 +69,17 @@ _RULES: list[SyntaxRule] = [
 
 # ── Indentation (Emacs's python-indent-line) ────────────────────────
 
-_INDENT = 4  # python-indent-offset
+_INDENT = 4  # python-indent-offset (default)
 _DEF_BLOCK_SCALE = 2  # python-indent-def-block-scale
+
+
+def _offset(buf: Buffer) -> int:
+    """The buffer's ``python-indent-offset`` — the value guessed from the
+    file on mode entry (Emacs's ``python-indent-guess-indent-offset``),
+    falling back to the default of 4."""
+    val = buf.local_variables.get("python-indent-offset")
+    return val if isinstance(val, int) and val > 0 else _INDENT
+
 
 # Statements that open a block (python-rx block-start).
 _BLOCK_START_RE = re.compile(
@@ -254,7 +263,7 @@ def _python_calculate_indent(buf: Buffer) -> int | list[int]:
             return ocol + 1 + (len(after) - len(after.lstrip()))
         base = _indent_of(open_line)
         scale = _DEF_BLOCK_SCALE if _BLOCK_START_RE.match(open_line) else 1
-        return base + scale * _INDENT
+        return base + scale * _offset(buf)
 
     prev_line = buf.lines[prev]
     prev_code = _code_part(prev_line)
@@ -265,11 +274,11 @@ def _python_calculate_indent(buf: Buffer) -> int | list[int]:
         if m is not None:
             rest = prev_line[m.end() :]
             return m.end() + (len(rest) - len(rest.lstrip()))
-        return _indent_of(prev_line) + _INDENT
+        return _indent_of(prev_line) + _offset(buf)
     if _BLOCK_END_RE.match(prev_code):
-        return max(_indent_of(prev_line) - _INDENT, 0)
+        return max(_indent_of(prev_line) - _offset(buf), 0)
     if prev_code.rstrip().endswith(":"):
-        return _indent_of(prev_line) + _INDENT
+        return _indent_of(prev_line) + _offset(buf)
     return _indent_of(prev_line)
 
 
@@ -285,8 +294,9 @@ def _python_indent_levels(buf: Buffer) -> list[int]:
     calc = _python_calculate_indent(buf)
     if isinstance(calc, list):
         return calc
-    first_multiple = (calc - 1) // _INDENT * _INDENT if calc > 0 else -1
-    return [calc] + list(range(first_multiple, -1, -_INDENT))
+    step = _offset(buf)
+    first_multiple = (calc - 1) // step * step if calc > 0 else -1
+    return [calc] + list(range(first_multiple, -1, -step))
 
 
 def python_indent_line(ed: Editor) -> None:
@@ -320,12 +330,41 @@ def python_indent_line(ed: Editor) -> None:
                 break
 
 
+def _guess_indent_offset(buf: Buffer) -> int | None:
+    """Emacs's ``python-indent-guess-indent-offset``: the indentation
+    delta between the first block-opening statement and the next
+    non-blank, non-comment line. None when the buffer has no block to
+    sample (or the sample is not a positive indent step)."""
+    for i, line in enumerate(buf.lines):
+        if not _BLOCK_START_RE.match(line):
+            continue
+        if not _code_part(line).rstrip().endswith(":"):
+            continue
+        base = _indent_of(line)
+        for j in range(i + 1, len(buf.lines)):
+            nxt = buf.lines[j]
+            if not nxt.strip() or nxt.lstrip().startswith("#"):
+                continue
+            delta = _indent_of(nxt) - base
+            return delta if delta > 0 else None
+        return None
+    return None
+
+
 def _python_on_enter(ed: Editor) -> None:
-    """Activate the ElDoc lighter, like GNU Emacs's python-mode."""
+    """Activate the ElDoc lighter and guess the indent offset, like GNU
+    Emacs's python-mode startup."""
     eldoc = MODES.get("eldoc-mode")
     buf = ed.buffer
     if eldoc is not None and not any(m.name == "eldoc-mode" for m in buf.minor_modes):
         buf.minor_modes.append(eldoc)
+    guessed = _guess_indent_offset(buf)
+    if guessed is not None:
+        buf.set_variable_local("python-indent-offset", guessed)
+    else:
+        # python-indent-guess-indent-offset-verbose default t. The
+        # curly apostrophe is Emacs's text-quoting-style at work.
+        ed.message = "Can’t guess python-indent-offset, using defaults: 4"
 
 
 def _python_on_exit(ed: Editor) -> None:

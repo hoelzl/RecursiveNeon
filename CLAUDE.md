@@ -82,6 +82,7 @@ cd backend
 - Faces: `backend/src/recursive_neon/editor/faces.py` (`FACES`, `resolve_face` — named face→ANSI mapping)
 - Language modes: `backend/src/recursive_neon/editor/modes/` (`python_mode`, `markdown_mode`, `sh_mode`, `AUTO_MODE_ALIST`, `detect_mode`)
 - Shell-in-editor: `backend/src/recursive_neon/editor/shell_mode.py` (`BufferOutput`, `ShellState`, `ShellBufferInput`, `setup_shell_buffer`, comint commands, `execute_shell_command`)
+- Dired: `backend/src/recursive_neon/editor/dired.py` (`dired-mode` over the VFS — `DiredProvider` protocol, `open_dired`, C-x d / `edit <dir>` / find-file-on-directory; host side `shell/programs/edit.py::VfsDiredProvider`)
 - Text attributes: `backend/src/recursive_neon/editor/text_attr.py` (`TextAttr` — frozen SGR attribute type)
 - ANSI parser: `backend/src/recursive_neon/editor/ansi_parser.py` (`parse_ansi` — ANSI text to `(text, attr)` runs)
 - Game bridge: `backend/src/recursive_neon/editor/game_bridge.py` (`open-note`, `open-task-list`, `list-npcs` commands)

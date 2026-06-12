@@ -57,6 +57,9 @@ parity/
     scenario_19_auto_fill_mode.py
     scenario_20_python_indent.py
     scenario_21_undo_save_point.py
+    ...
+    scenario_31_dired_basics.py
+    scenario_32_dired_ops.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`,
@@ -274,7 +277,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(30 scenarios, 133 checkpoints. 120 are pixel-perfect; the 13 remaining
+(32 scenarios, 148 checkpoints. 121 are pixel-perfect; the 27 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -310,6 +313,8 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 28 | list-buffers | `C-x C-b` pops *Buffer List* in the other window unselected: Buffer-menu table (`CRM`/name/size/mode/file columns), `(Buffer Menu)` modeline, silent echo |
 | 29 | python indent (full) | bracket alignment, dedenter candidates + `Closes …` echo, backslash continuations, `def`-paren `+8` scale and offset-chain cycling |
 | 30 | region + mark ring | **highlight-compared**: active-region face (with `:extend`-to-edge), C-g/M-w deactivate-not-clear, inactive `push-mark`, `C-x C-x` reactivate, `C-SPC C-SPC`, `C-u C-SPC` ring rotation |
+| 31 | dired basics | `edit <dir>` opens dired: `%17b` modeline + `(Dired by name)`, `n`/`p` onto filename column (`L<n>` compared), RET visits a file (pixel-perfect incl. the python `Can’t guess…` echo), `C-x b RET` back with point kept, RET descends, `^` lands on the child's line |
+| 32 | dired ops | `d` flag (`%*` modified flag), `x` → `Delete f (yes or no)` prompt (echo compared) + `Deleting...done`, `+`/`R`/`C` prompts and `Move:`/`Copy: 1 file done` messages, point line tracked through delete/insert |
 
 ## Known intentional divergences
 
@@ -388,6 +393,20 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   truncation and self-exclusion are pinned by unit tests
   (`test_list_buffers.py`); the harness verifies the shape — modeline,
   unselected window, silent echo.
+
+- **31/32 dired listing body + cursor column** (every dired-listing
+  checkpoint). The header line shows the staged absolute path
+  (`/tmp/parity-XXXX/tree:` vs the VFS path), and the per-entry
+  metadata is real on the Emacs side but synthesized over the VFS
+  (`neon neon` owner/group, fictional link counts/free space — the VFS
+  models none of these), which also shifts the filename column the
+  cursor sits in. The *structure* is what the scenarios verify: point
+  line via the modeline `L<n>`, dired's `%17b` name padding,
+  `(Dired by name)`, `%%`/`%*` flags, and every path-free echo message.
+  The exact listing format, mark mechanics and line-rewrite behaviour
+  are pinned by `tests/unit/editor/test_dired.py`. The `+`/`R`/`C`
+  prompt checkpoints additionally baseline `echo_area` — the prompts
+  embed the host path (same class as scenario 04).
 
 ## Cosmetic items not yet polished
 

@@ -16,6 +16,101 @@ from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 
 if TYPE_CHECKING:
     from recursive_neon.editor.buffer import Buffer
+    from recursive_neon.editor.dired import DiredEntry
+    from recursive_neon.models.app_models import FileNode
+
+
+class VfsDiredProvider:
+    """``DiredProvider`` over the virtual filesystem.
+
+    Translates dired's absolute virtual paths into AppService node
+    operations via the shell's path resolver. Metadata the VFS does not
+    model (permissions, owner, link counts) is synthesized inside
+    ``editor/dired.py``; this class only reports what the VFS knows:
+    names, types, content sizes, timestamps and subdirectory counts.
+    """
+
+    def __init__(self, ctx: ProgramContext) -> None:
+        self._ctx = ctx
+        self._app = ctx.services.app_service
+
+    def _resolve_dir(self, path: str) -> FileNode:
+        node = self._ctx.resolve_path(path)
+        if node.type != "directory":
+            raise NotADirectoryError(f"{path}: Not a directory")
+        return node
+
+    def _entry(self, node: FileNode) -> DiredEntry:
+        from recursive_neon.editor.dired import DiredEntry
+
+        if node.type == "directory":
+            nsubdirs = sum(
+                1
+                for child in self._app.list_directory(node.id)
+                if child.type == "directory"
+            )
+            return DiredEntry(
+                name=node.name,
+                is_dir=True,
+                mtime=node.updated_at or node.created_at,
+                nsubdirs=nsubdirs,
+            )
+        return DiredEntry(
+            name=node.name,
+            is_dir=False,
+            size=len((node.content or "").encode("utf-8")),
+            mtime=node.updated_at or node.created_at,
+        )
+
+    def list_dir(self, path: str) -> list[DiredEntry]:
+        node = self._resolve_dir(path)
+        return [self._entry(child) for child in self._app.list_directory(node.id)]
+
+    def metadata(self, path: str) -> DiredEntry:
+        return self._entry(self._ctx.resolve_path(path))
+
+    def is_dir(self, path: str) -> bool | None:
+        try:
+            return self._ctx.resolve_path(path).type == "directory"
+        except (FileNotFoundError, NotADirectoryError, ValueError):
+            return None
+
+    def create_dir(self, path: str) -> None:
+        parent, name = self._ctx.resolve_parent_and_name(path)
+        self._app.create_directory({"name": name, "parent_id": parent.id})
+
+    def delete(self, path: str) -> None:
+        self._app.delete_file(self._ctx.resolve_path(path).id)
+
+    def _target(self, new: str, default_name: str) -> tuple[FileNode, str]:
+        """Resolve a rename/copy target: an existing directory means
+        "into that directory under the original name" (like ``mv``/``cp``
+        and Emacs's dired); anything else is a parent + new-name pair."""
+        try:
+            node = self._ctx.resolve_path(new)
+            if node.type == "directory":
+                return node, default_name
+        except (FileNotFoundError, NotADirectoryError, ValueError):
+            pass
+        return self._ctx.resolve_parent_and_name(new)
+
+    def _node_path(self, parent: FileNode, name: str) -> str:
+        from recursive_neon.shell.path_resolver import get_node_path
+
+        base = get_node_path(parent.id, self._app)
+        return ("/" + name) if base == "/" else f"{base}/{name}"
+
+    def rename(self, old: str, new: str) -> str:
+        node = self._ctx.resolve_path(old)
+        parent, name = self._target(new, node.name)
+        self._app.move_file(node.id, parent.id, name)
+        return self._node_path(parent, name)
+
+    def copy(self, old: str, new: str) -> str:
+        node = self._ctx.resolve_path(old)
+        parent, name = self._target(new, node.name)
+        self._app.copy_file(node.id, parent.id, name)
+        return self._node_path(parent, name)
 
 
 def register_edit_program(registry: ProgramRegistry) -> None:
@@ -48,18 +143,20 @@ async def _run_edit(ctx: ProgramContext) -> int:
     content = ""
     name = "*scratch*"
     initial_file_id: str | None = None
+    dired_dir_id: str | None = None  # directory argument → open dired
 
     if args:
         path_str = args[0]
         try:
             node = ctx.resolve_path(path_str)
             if node.type == "directory":
-                ctx.stderr.error(f"edit: {path_str}: Is a directory")
-                return 1
-            content = node.content or ""
-            name = node.name
-            filepath = path_str
-            initial_file_id = node.id
+                # ``edit <dir>`` opens a dired buffer, like ``emacs <dir>``.
+                dired_dir_id = node.id
+            else:
+                content = node.content or ""
+                name = node.name
+                filepath = path_str
+                initial_file_id = node.id
         except (FileNotFoundError, ValueError) as e:
             # New file — try to resolve parent to validate path
             try:
@@ -175,9 +272,20 @@ async def _run_edit(ctx: ProgramContext) -> int:
     if hasattr(npc_mgr, "on_message_callback"):
         npc_mgr.on_message_callback = view.editor.on_npc_event
 
+    # Wire the dired provider (C-x d, find-file on a directory)
+    view.editor.dired_provider = VfsDiredProvider(ctx)
+
     # Load user config (~/.neon-edit.py) — errors surface in *Messages*
     from recursive_neon.editor.config_loader import load_config
 
     load_config(view.editor)
+
+    # A directory argument opens its dired buffer on top of the initial
+    # *scratch* buffer (Emacs launched on a directory does the same).
+    if dired_dir_id is not None:
+        from recursive_neon.editor.dired import open_dired
+
+        open_dired(view.editor, get_node_path(dired_dir_id, app_service))
+        view.sync_active_window_to_buffer()
 
     return await ctx.run_tui(view)
