@@ -28,6 +28,15 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "04-find-file-prompt-and-cancel"
 DESCRIPTION = "C-x C-f opens the find-file prompt; C-g cancels it."
 
+# Documented divergence (see module docstring): Emacs pre-fills the real
+# OS cwd, neon-edit the virtual-FS root, so the prompt text and the
+# cursor column (end of the pre-filled path) differ while the prompt is
+# open. The post-C-g checkpoint must match exactly.
+EXPECTED_DIVERGENCES = {
+    "after-C-x-C-f": {"cursor", "echo_area"},
+    "after-typing-zzz": {"cursor", "echo_area"},
+}
+
 
 def run() -> ScenarioResult:
     result = ScenarioResult(name=NAME, description=DESCRIPTION)

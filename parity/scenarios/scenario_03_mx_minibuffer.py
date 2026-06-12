@@ -21,6 +21,17 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "03-mx-minibuffer-prompt-and-completion"
 DESCRIPTION = "Press M-x, type 'for', then TAB; observe minibuffer + completions."
 
+# Documented divergence (see module docstring and PARITY_HARNESS.md
+# "Known intentional divergences"): the two editors have legitimately
+# different command sets, so completion content — and with it the
+# *Completions* popup layout, the minibuffer text, the cursor, and which
+# window's modeline sits above the echo area — differs at both TAB
+# checkpoints. Verified against GNU Emacs 29.3.
+EXPECTED_DIVERGENCES = {
+    "after-TAB": {"body", "cursor", "echo_area", "modeline"},
+    "after-TAB-TAB": {"body", "cursor", "echo_area", "modeline"},
+}
+
 
 def run() -> ScenarioResult:
     result = ScenarioResult(name=NAME, description=DESCRIPTION)

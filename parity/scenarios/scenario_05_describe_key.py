@@ -26,6 +26,15 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "05-describe-key-forward-char"
 DESCRIPTION = "C-h k C-f should pop up a *Help* buffer documenting forward-char."
 
+# Documented divergence (see module docstring): the *Help* text itself
+# is content-dependent (Emacs's forward-char doc is longer than
+# neon-edit's defcommand docstring), which also flips the *Help*
+# modeline position indicator (Top vs All). The prompt checkpoint must
+# match exactly.
+EXPECTED_DIVERGENCES = {
+    "after-follow-up-C-f": {"body", "modeline"},
+}
+
 
 def run() -> ScenarioResult:
     result = ScenarioResult(name=NAME, description=DESCRIPTION)

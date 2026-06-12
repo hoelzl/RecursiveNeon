@@ -50,6 +50,14 @@ from parity.harness import ScenarioResult, StepResult
 NAME = "13-kill-ring-browse"
 DESCRIPTION = "Multi-entry kill ring: build 3 kills, walk with M-y, wrap, precondition."
 
+# Documented divergence (see module docstring): Emacs ≥28 binds M-y not
+# directly after a yank to yank-from-kill-ring, which opens a picker
+# minibuffer (echo area + cursor move into it); neon-edit silently
+# no-ops. Remove once the deferred yank-from-kill-ring scenario lands.
+EXPECTED_DIVERGENCES = {
+    "after-M-y-not-after-yank": {"cursor", "echo_area"},
+}
+
 CONTENT = "one\ntwo\nthree\nfour\n"
 
 
