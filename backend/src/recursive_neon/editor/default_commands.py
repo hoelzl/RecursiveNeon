@@ -1695,6 +1695,8 @@ def build_default_keymap() -> Keymap:
     # Ensure shell-mode commands/mode are registered
     # Ensure game-bridge commands are registered (open-note, etc.)
     # Ensure dired commands/mode are registered (C-x d, dired-*)
+    # Ensure the TUI app host is registered (M-x codebreaker, sysmon, …)
+    import recursive_neon.editor.app_host  # noqa: F401
     import recursive_neon.editor.dired  # noqa: F401
     import recursive_neon.editor.game_bridge  # noqa: F401
     import recursive_neon.editor.shell_mode  # noqa: F401
