@@ -202,8 +202,10 @@ class TestSetupShellBuffer:
         assert shell_editor.buffer.keymap is not None
         assert shell_editor.buffer.keymap.name == "shell-mode-map"
 
-    def test_not_modified(self, shell_editor):
-        assert not shell_editor.buffer.modified
+    def test_modified_like_emacs(self, shell_editor):
+        # GNU Emacs's shell buffer carries the ** modified flag for its
+        # whole life (probed against Emacs 29.3: modeline -UUU:**-).
+        assert shell_editor.buffer.modified
 
     def test_shell_output_configured(self, shell_editor):
         buf = shell_editor.buffer
@@ -501,11 +503,12 @@ class TestExecuteShellCommand:
         # Error message should appear in buffer
         assert "not found" in text.lower() or "no such" in text.lower()
 
-    async def test_not_modified_after_command(self, shell_editor):
+    async def test_stays_modified_after_command(self, shell_editor):
+        # Emacs never clears the shell buffer's modified flag (probed).
         buf = shell_editor.buffer
         state: ShellState = buf._shell_state  # type: ignore[attr-defined]
         await execute_shell_command(buf, state, "echo hi")
-        assert not buf.modified
+        assert buf.modified
 
     async def test_history_recorded(self, shell_editor):
         buf = shell_editor.buffer
@@ -677,3 +680,149 @@ class TestIntegration:
         # No pending async after pressing Enter on finished shell
         result = await shell_view.on_after_key()
         assert result is None
+
+
+class TestInterruptSubjob:
+    """C-c C-c — comint-interrupt-subjob (probed against Emacs 29.3:
+    typed input stays on its line unexecuted, a fresh prompt appears;
+    we skip the pty ^C echo, documented in shell_mode.py)."""
+
+    def test_discards_input_and_reprompts(self, shell_editor):
+        buf = shell_editor.buffer
+        for ch in "echo nope":
+            shell_editor.process_key(ch)
+        shell_editor.process_key("C-c")
+        shell_editor.process_key("C-c")
+        state: ShellState = buf._shell_state  # type: ignore[attr-defined]
+        # The typed text is still visible, above a fresh prompt.
+        assert "echo nope" in buf.text
+        assert buf.lines[-1].endswith("$ ") or buf.lines[-1] != ""
+        # Input region is empty again.
+        from recursive_neon.editor.shell_mode import _get_current_input
+
+        assert _get_current_input(buf, state) == ""
+        # And "nope" was never executed (no output line).
+        assert "\nnope" not in buf.text
+
+    def test_resets_history_navigation(self, shell_editor):
+        buf = shell_editor.buffer
+        state: ShellState = buf._shell_state  # type: ignore[attr-defined]
+        state.shell.session.history.append("echo old")
+        shell_editor.process_key("M-p")  # recall "echo old"
+        assert state.history_index != -1
+        shell_editor.process_key("C-c")
+        shell_editor.process_key("C-c")
+        assert state.history_index == -1
+        assert state.saved_input == ""
+
+    def test_history_region_protected_after_interrupt(self, shell_editor):
+        buf = shell_editor.buffer
+        for ch in "abc":
+            shell_editor.process_key(ch)
+        shell_editor.process_key("C-c")
+        shell_editor.process_key("C-c")
+        # Everything before the new input start is read-only.
+        assert buf.is_read_only_at(0, 0)
+        state: ShellState = buf._shell_state  # type: ignore[attr-defined]
+        assert not buf.is_read_only_at(state.input_start.line, state.input_start.col)
+
+    def test_finished_shell_messages(self, shell_editor):
+        buf = shell_editor.buffer
+        state: ShellState = buf._shell_state  # type: ignore[attr-defined]
+        state.finished = True
+        shell_editor.process_key("C-c")
+        shell_editor.process_key("C-c")
+        assert shell_editor.message == "[Process shell finished]"
+
+
+class TestMultipleShells:
+    """C-u M-x shell — prompt for a buffer name (probed: ``Shell buffer
+    (default *shell*<2>): `` with one shell already running)."""
+
+    def _cu_mx_shell(self, ed):
+        ed.process_key("C-u")
+        ed.process_key("M-x")
+        for ch in "shell":
+            ed.process_key(ch)
+        ed.process_key("Enter")
+
+    def test_prompt_and_default_first_shell(self, editor, shell):
+        editor.shell_factory = lambda: shell
+        self._cu_mx_shell(editor)
+        assert editor.minibuffer is not None
+        assert editor.minibuffer.prompt == "Shell buffer (default *shell*): "
+        editor.process_key("Enter")  # accept default
+        assert editor.buffer.name == "*shell*"
+        assert getattr(editor.buffer, "_shell_state", None) is not None
+
+    def test_default_increments_when_shell_exists(self, shell_editor, test_container):
+        from recursive_neon.shell.shell import Shell
+
+        shell_editor.shell_factory = lambda: Shell(test_container)
+        self._cu_mx_shell(shell_editor)
+        assert shell_editor.minibuffer.prompt == "Shell buffer (default *shell*<2>): "
+        shell_editor.process_key("Enter")
+        assert shell_editor.buffer.name == "*shell*<2>"
+        assert getattr(shell_editor.buffer, "_shell_state", None) is not None
+        # Two independent shells exist.
+        names = {
+            b.name
+            for b in shell_editor.buffers
+            if getattr(b, "_shell_state", None) is not None
+        }
+        assert names == {"*shell*", "*shell*<2>"}
+
+    def test_named_shell(self, editor, shell):
+        editor.shell_factory = lambda: shell
+        self._cu_mx_shell(editor)
+        for ch in "work":
+            editor.process_key(ch)
+        editor.process_key("Enter")
+        assert editor.buffer.name == "work"
+        assert getattr(editor.buffer, "_shell_state", None) is not None
+
+    def test_existing_shell_buffer_is_switched_to(self, shell_editor, test_container):
+        from recursive_neon.shell.shell import Shell
+
+        shell_editor.shell_factory = lambda: Shell(test_container)
+        shell_editor.create_buffer(name="other", text="x")
+        self._cu_mx_shell(shell_editor)
+        for ch in "*shell*":
+            shell_editor.process_key(ch)
+        shell_editor.process_key("Enter")
+        assert shell_editor.buffer.name == "*shell*"
+        # Still only one shell — no second instance was created.
+        assert (
+            sum(
+                1
+                for b in shell_editor.buffers
+                if getattr(b, "_shell_state", None) is not None
+            )
+            == 1
+        )
+
+    def test_existing_non_shell_buffer_refused(self, shell_editor, test_container):
+        from recursive_neon.shell.shell import Shell
+
+        shell_editor.shell_factory = lambda: Shell(test_container)
+        shell_editor.create_buffer(name="notes.txt", text="x")
+        shell_editor.switch_to_buffer("*shell*")
+        self._cu_mx_shell(shell_editor)
+        for ch in "notes.txt":
+            shell_editor.process_key(ch)
+        shell_editor.process_key("Enter")
+        assert shell_editor.message == "Buffer notes.txt is not a shell buffer"
+        assert getattr(shell_editor.buffer, "_shell_state", None) is not None
+
+    def test_plain_mx_shell_still_reuses_canonical_buffer(
+        self, shell_editor, test_container
+    ):
+        from recursive_neon.shell.shell import Shell
+
+        shell_editor.shell_factory = lambda: Shell(test_container)
+        shell_editor.create_buffer(name="elsewhere", text="")
+        shell_editor.process_key("M-x")
+        for ch in "shell":
+            shell_editor.process_key(ch)
+        shell_editor.process_key("Enter")
+        assert shell_editor.buffer.name == "*shell*"
