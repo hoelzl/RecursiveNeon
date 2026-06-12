@@ -125,6 +125,18 @@ class EditorView:
         self._height = height
         return self._render()
 
+    def sync_active_window_to_buffer(self) -> None:
+        """Bind the active window to the editor's current buffer.
+
+        ``on_key`` only propagates buffer switches made *during* a
+        keystroke; hosts that switch buffers before the TUI loop starts
+        (e.g. ``edit <dir>`` opening a dired buffer on launch) call this
+        so the first render doesn't show the original buffer.
+        """
+        win = self._tree.active
+        if self.editor.buffer is not win.buffer:
+            self._update_window_buffer(win, self.editor.buffer)
+
     async def on_after_key(self) -> ScreenBuffer | None:
         """Process pending async work (e.g., shell command execution).
 
@@ -643,7 +655,9 @@ class EditorView:
         else:
             mod = "**-" if buf.modified else "---"
 
-        name = buf.filepath if buf.filepath else buf.name
+        # GNU Emacs shows the buffer *name* (%b) — never the visited
+        # path; find-file names the buffer after the file's basename.
+        name = buf.name
 
         # Position percent: which slice of the buffer is on screen.
         total = max(1, buf.line_count)
@@ -699,8 +713,10 @@ class EditorView:
         # save time, never from live edits (``Buffer.eol_decided``).
         mule = "-UU-:" if (buf.filepath and buf.eol_decided) else "-UUU:"
         # Emacs right-pads the buffer name to a 12-column minimum (``%12b``)
-        # so the position columns line up; long names are unaffected.
-        name_field = name.ljust(12)
+        # so the position columns line up; long names are unaffected. Some
+        # modes widen the field — dired uses ``%17b`` (Mode.buffer_id_width).
+        id_width = buf.major_mode.buffer_id_width if buf.major_mode else 12
+        name_field = name.ljust(id_width)
 
         # Assemble. The trailing dashes fill the row out to the window width,
         # matching the look of Emacs's ``mode-line-end-spaces`` padding.

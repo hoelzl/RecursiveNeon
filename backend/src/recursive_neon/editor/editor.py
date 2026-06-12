@@ -226,6 +226,11 @@ class Editor:
         self.npc_manager: Any | None = None  # INPCManager
         self.event_bus: Any | None = None  # GameEventBus
 
+        # Dired provider — virtual-filesystem access for dired buffers,
+        # injected by the hosting environment (edit.py).  ``None`` when
+        # running standalone; M-x dired then reports it is unavailable.
+        self.dired_provider: Any | None = None  # DiredProvider
+
         # NPC notification style: "flash" shows a modeline flash,
         # "silent" appends silently.
         self._npc_notify: str = "flash"
