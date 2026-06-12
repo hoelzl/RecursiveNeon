@@ -125,6 +125,25 @@ class EditorView:
         self._height = height
         return self._render()
 
+    @property
+    def tick_interval_ms(self) -> int:
+        """Tick only while a live hosted TUI app wants ticks (sysmon).
+
+        ``run_tui_app`` re-reads this each loop iteration, so the editor
+        runs untimed until an app that ticks is hosted.
+        """
+        from recursive_neon.editor.app_host import min_tick_interval_ms
+
+        return min_tick_interval_ms(self.editor)
+
+    def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
+        """Drive hosted TUI apps' periodic updates (editor/app_host.py)."""
+        from recursive_neon.editor.app_host import tick_hosted_apps
+
+        if tick_hosted_apps(self.editor, dt_ms):
+            return self._render()
+        return None
+
     def sync_active_window_to_buffer(self) -> None:
         """Bind the active window to the editor's current buffer.
 
@@ -286,6 +305,14 @@ class EditorView:
         """
         buf = win.buffer
         text_h = win.text_height
+
+        # Window-geometry hook: buffers that track their window's text
+        # area (hosted TUI apps — editor/app_host.py) get told the
+        # current size before their lines are read, so a layout change
+        # re-renders the app at the new dimensions in the same frame.
+        size_hook = getattr(buf, "on_window_size", None)
+        if size_hook is not None:
+            size_hook(win._width, text_h)
 
         # Ensure cursor is visible (only for active window)
         if is_active:

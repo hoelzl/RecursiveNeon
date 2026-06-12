@@ -231,6 +231,13 @@ class Editor:
         # running standalone; M-x dired then reports it is unavailable.
         self.dired_provider: Any | None = None  # DiredProvider
 
+        # TUI app factories — name → () -> TuiApp, injected by the
+        # hosting environment (edit.py) so M-x codebreaker / sysmon / …
+        # can host the game's TUI apps in an editor window.  ``None``
+        # when running standalone; the commands then report the app as
+        # unavailable.  See editor/app_host.py.
+        self.tui_app_factories: dict[str, Any] | None = None
+
         # NPC notification style: "flash" shows a modeline flash,
         # "silent" appends silently.
         self._npc_notify: str = "flash"
@@ -464,6 +471,23 @@ class Editor:
 
             _qr_handle_key(self, key)
             return
+
+        # Hosted TUI app capture (Emacs term char mode): when the
+        # selected window shows a live hosted app, keys go to the app
+        # and ``C-c`` is the escape prefix (see editor/app_host.py).
+        # Runs before the ESC machine so the app sees raw Escape — but
+        # never while the minibuffer (``C-c b`` → switch-to-buffer
+        # prompt) or a pending prefix keymap (``C-c 4`` …) is consuming
+        # keys.
+        if (
+            self.minibuffer is None
+            and self._pending_keymap is None
+            and getattr(self.buffer, "_app_host_state", None) is not None
+        ):
+            from recursive_neon.editor.app_host import host_handle_key
+
+            if host_handle_key(self, key):
+                return
 
         # ESC-as-Meta state machine.  Runs before minibuffer routing so
         # a bare Escape does not reach the minibuffer and so that

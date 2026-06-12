@@ -152,3 +152,34 @@ class TestEditDirectoryArgument:
     def test_provider_always_wired(self, test_container, fs) -> None:
         view = self._run_edit_on(test_container, ["edit"])
         assert isinstance(view.editor.dired_provider, VfsDiredProvider)
+
+    def test_tui_app_factories_wired(self, test_container, fs) -> None:
+        """edit wires factories for all five hostable TUI apps, and each
+        factory builds a working app (editor/app_host.py)."""
+        view = self._run_edit_on(test_container, ["edit"])
+        factories = view.editor.tui_app_factories
+        assert set(factories) == {
+            "codebreaker",
+            "sysmon",
+            "portscan",
+            "fsbrowse",
+            "memdump",
+        }
+        for name, factory in factories.items():
+            app = factory()
+            screen = app.on_start(80, 22)
+            assert screen.height == 22, name
+
+    def test_mx_sysmon_hosts_in_editor_window(self, test_container, fs) -> None:
+        """End-to-end: M-x sysmon inside an edit session opens the hosted
+        buffer with the real app rendered at window size."""
+        view = self._run_edit_on(test_container, ["edit"])
+        screen = view.on_start(80, 24)
+        for key in ["M-x"] + list("sysmon") + ["Enter"]:
+            screen = view.on_key(key) or screen
+        ed = view.editor
+        assert ed.buffer.name == "*sysmon*"
+        assert ed.buffer.read_only
+        state = ed.buffer._app_host_state
+        assert state.height == 22 and not state.finished
+        assert view.tick_interval_ms == state.app.tick_interval_ms

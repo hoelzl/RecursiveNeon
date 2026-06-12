@@ -275,6 +275,46 @@ async def _run_edit(ctx: ProgramContext) -> int:
     # Wire the dired provider (C-x d, find-file on a directory)
     view.editor.dired_provider = VfsDiredProvider(ctx)
 
+    # Wire TUI app factories so M-x codebreaker / sysmon / portscan /
+    # fsbrowse / memdump host the apps in an editor window
+    # (editor/app_host.py). Imports are deferred — an app is only paid
+    # for when it is actually launched.
+    def _codebreaker() -> Any:
+        from recursive_neon.shell.programs.codebreaker import CodeBreakerApp
+
+        return CodeBreakerApp()
+
+    def _sysmon() -> Any:
+        from recursive_neon.shell.programs.sysmon import SysMonApp
+
+        return SysMonApp(
+            process_table=ctx.services.process_table,
+            start_time=ctx.services.start_time,
+        )
+
+    def _portscan() -> Any:
+        from recursive_neon.shell.programs.portscan import PortScanApp
+
+        return PortScanApp()
+
+    def _memdump() -> Any:
+        from recursive_neon.shell.programs.memdump import MemDumpApp
+
+        return MemDumpApp()
+
+    def _fsbrowse() -> Any:
+        from recursive_neon.shell.programs.fsbrowse import FsBrowseApp
+
+        return FsBrowseApp(app_service=app_service, start_dir_id=ctx.cwd_id)
+
+    view.editor.tui_app_factories = {
+        "codebreaker": _codebreaker,
+        "sysmon": _sysmon,
+        "portscan": _portscan,
+        "memdump": _memdump,
+        "fsbrowse": _fsbrowse,
+    }
+
     # Load user config (~/.neon-edit.py) — errors surface in *Messages*
     from recursive_neon.editor.config_loader import load_config
 
