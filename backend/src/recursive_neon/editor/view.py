@@ -243,7 +243,10 @@ class EditorView:
             node._height = height
         else:
             if node.direction == SplitDirection.HORIZONTAL:
-                first_h = height // 2
+                # GNU Emacs gives the *top* window the extra row when the
+                # available height is odd (split-window halves round up
+                # for the upper window).
+                first_h = (height + 1) // 2
                 second_h = height - first_h
                 self._compute_layout(node.first, top, left, width, first_h)
                 self._compute_layout(node.second, top + first_h, left, width, second_h)
@@ -564,13 +567,14 @@ class EditorView:
 
         Layout (matches GNU Emacs's TTY default):
 
-            -UU-:<mod>  F1  <name>   <pos>   L<line>[  C<col>]     (<Mode>) ---
+            -UU-:<mod>  F1  <name>   <pos>   L<line>     (<Mode>) ---
 
         where ``<mod>`` is ``---`` for an unmodified writable buffer,
         ``**-`` for modified, ``%%-`` for read-only, ``%*-`` for both;
         ``<pos>`` is ``All`` / ``Top`` / ``Bot`` / ``<nn>%`` depending on
-        which part of the buffer is visible; and the ``C<col>`` segment
-        only appears when ``column-number-mode`` is enabled.
+        which part of the buffer is visible; and the ``L<line>`` segment
+        becomes ``(<line>,<col>)`` when ``column-number-mode`` is enabled
+        (both are width-padded fields — see below).
         """
         buf = win.buffer
         ed = self.editor
@@ -602,14 +606,23 @@ class EditorView:
             pct = int(round(100 * (top + th) / total))
             pos = f"{pct}%"
 
-        # Line / column readout (line-number-mode on by default).
+        # Line / column readout. GNU Emacs renders this as a width-padded
+        # field (``mode-line-position``): `` L%l`` right-padded to 6 with
+        # only line-number-mode (the default), `` (%l,%c)`` padded to 10
+        # with column-number-mode as well, `` C%c`` padded to 5 with the
+        # column alone — the leading space belongs to the field, and the
+        # column is zero-based (``column-number-indicator-zero-based``).
         pt = win._point
-        parts: list[str] = []
-        if bool(ed.get_variable("line-number-mode")):
-            parts.append(f"L{pt.line + 1}")
-        if bool(ed.get_variable("column-number-mode")):
-            parts.append(f"C{pt.col}")
-        pos_line = "  ".join(parts)
+        line_on = bool(ed.get_variable("line-number-mode"))
+        col_on = bool(ed.get_variable("column-number-mode"))
+        if line_on and col_on:
+            pos_field = f" ({pt.line + 1},{pt.col})".ljust(10)
+        elif line_on:
+            pos_field = f" L{pt.line + 1}".ljust(6)
+        elif col_on:
+            pos_field = f" C{pt.col}".ljust(5)
+        else:
+            pos_field = ""
 
         # Mode indicator (major + minor).
         if buf.major_mode:
@@ -624,11 +637,14 @@ class EditorView:
         )
         mode_str = f"({display}{minor_indicators})"
 
-        # Coding-system mnemonic: ``-UU-:`` for a file-visiting buffer;
-        # Emacs widens the third column to ``U`` (``-UUU:``) for a buffer
-        # with no associated file (``*scratch*``/``*Help*``/``*Completions*``
-        # or a fresh ``C-x b`` buffer).
-        mule = "-UU-:" if buf.filepath else "-UUU:"
+        # Coding-system mnemonic. The 4th mule char shows the end-of-line
+        # type — ``-`` once a Unix EOL has been detected, ``U`` while it
+        # is undecided. Emacs leaves it undecided for buffers not visiting a
+        # file (``*scratch*``/``*Help*``/``*Completions*``…) and for
+        # visited files with no newline to sample (empty files, or a
+        # single line without a trailing newline) — decided at visit or
+        # save time, never from live edits (``Buffer.eol_decided``).
+        mule = "-UU-:" if (buf.filepath and buf.eol_decided) else "-UUU:"
         # Emacs right-pads the buffer name to a 12-column minimum (``%12b``)
         # so the position columns line up; long names are unaffected.
         name_field = name.ljust(12)
@@ -636,9 +652,7 @@ class EditorView:
         # Assemble. The trailing dashes fill the row out to the window width,
         # matching the look of Emacs's ``mode-line-end-spaces`` padding.
         head = f"{mule}{mod}  F1  {name_field}   {pos}"
-        if pos_line:
-            head += f"   {pos_line}"
-        head += f"     {mode_str} "
+        head += f"  {pos_field}  {mode_str} "
 
         w = win._width
         if len(head) < w:

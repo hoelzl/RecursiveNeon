@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from recursive_neon.editor.commands import defcommand
 from recursive_neon.editor.keymap import Keymap
@@ -32,12 +32,29 @@ _TUTORIAL_PATH = (
 
 @defcommand("forward-char", "Move point forward one character.")
 def forward_char(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.forward_char(prefix if prefix is not None else 1)
+    _char_move(ed, prefix if prefix is not None else 1)
 
 
 @defcommand("backward-char", "Move point backward one character.")
 def backward_char(ed: Editor, prefix: int | None) -> None:
-    ed.buffer.backward_char(prefix if prefix is not None else 1)
+    _char_move(ed, -(prefix if prefix is not None else 1))
+
+
+def _char_move(ed: Editor, n: int) -> None:
+    """Horizontal motion shared by ``forward-char`` and ``backward-char``.
+
+    GNU Emacs signals an end-of-buffer / beginning-of-buffer error when
+    the motion cannot consume the full count — point still moves as far
+    as it can, and the echo area shows ``End of buffer`` / ``Beginning
+    of buffer`` (e.g. ``C-f`` in an empty buffer; verified against Emacs
+    29 via parity scenario 26). neon-edit used to be silent here.
+    """
+    buf = ed.buffer
+    before = _char_position(buf, buf.point.line, buf.point.col)
+    buf.forward_char(n)
+    after = _char_position(buf, buf.point.line, buf.point.col)
+    if abs(after - before) < abs(n):
+        ed.message = "End of buffer" if n > 0 else "Beginning of buffer"
 
 
 @defcommand("next-line", "Move point to the next line.")
@@ -1702,6 +1719,72 @@ def _qr_push_history(history: list[str], text: str) -> None:
         history.insert(0, text)
 
 
+def _replace_read_args(
+    ed: Editor,
+    prompt_prefix: str,
+    on_ready: Callable[[str, str], None],
+) -> None:
+    """Read the (from, to) replacement pair through the minibuffer.
+
+    The analogue of GNU Emacs's ``query-replace-read-args``, shared by
+    ``query-replace`` and ``replace-string`` (both share the
+    ``query-replace-defaults`` pair and the ``query-replace`` history in
+    Emacs — verified against Emacs 29 via the parity harness): the
+    opening prompt shows ``<prefix> (default FROM → TO): `` once a pair
+    exists, submitting the from-input empty reuses the pair, and ``M-p``
+    offers the combined ``FROM → TO`` entry ahead of the individual
+    from/to history. The default is recorded as soon as the args are
+    read (before any search), so even a no-match run updates it —
+    matches Emacs.
+    """
+    history = ed._minibuffer_histories.setdefault("query-replace", [])
+    defaults = ed._query_replace_defaults
+
+    def set_defaults_and_go(from_text: str, to_text: str) -> None:
+        ed._query_replace_defaults = (from_text, to_text)
+        on_ready(from_text, to_text)
+
+    def on_from_submitted(from_text: str) -> None:
+        if not from_text:
+            # Empty input reuses the default pair (skipping the with-prompt).
+            if defaults is not None:
+                set_defaults_and_go(*defaults)
+            else:
+                ed.message = ""
+            return
+        if _QR_SEP in from_text:
+            # A combined "FROM → TO" entry recalled from the default history.
+            # Its parts are already on the history (pushed when the default
+            # was first entered) and the combined form is only a synthetic
+            # view, so don't re-push — that would duplicate them. Just begin.
+            f, t = from_text.split(_QR_SEP, 1)
+            set_defaults_and_go(f, t)
+            return
+        _qr_push_history(history, from_text)
+
+        def on_to_submitted(to_text: str) -> None:
+            _qr_push_history(history, to_text)
+            set_defaults_and_go(from_text, to_text)
+
+        ed.start_minibuffer(
+            f"{prompt_prefix} {from_text} with: ",
+            on_to_submitted,
+            history_list=list(history),
+        )
+        _qr_install_newline_handler(ed)
+
+    if defaults is not None:
+        prompt = f"{prompt_prefix} (default {defaults[0]}{_QR_SEP}{defaults[1]}): "
+    else:
+        prompt = f"{prompt_prefix}: "
+    # M-p offers the combined default pair ahead of the individual history.
+    nav = list(history)
+    if defaults is not None:
+        nav.insert(0, f"{defaults[0]}{_QR_SEP}{defaults[1]}")
+    ed.start_minibuffer(prompt, on_from_submitted, history_list=nav)
+    _qr_install_newline_handler(ed)
+
+
 @defcommand(
     "query-replace",
     "Interactively replace occurrences of one string with another (M-%).",
@@ -1710,22 +1793,14 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
     """Prompt for the search and replacement strings, then enter the
     capture-mode session that walks through each match.
 
-    Remembers the last (from, to) pair as the default (GNU Emacs's
-    ``query-replace-defaults``): a later ``M-%`` shows
-    ``Query replace (default FROM → TO): ``, submitting the from-input empty
-    reuses the pair, and ``M-p`` offers the combined ``FROM → TO`` entry
-    ahead of the individual from/to history.
+    The arg reading (default pair, combined ``M-p`` history) is shared
+    with ``replace-string`` — see ``_replace_read_args``.
     """
     buf = ed.buffer
     start_line = buf.point.line
     start_col = buf.point.col
-    history = ed._minibuffer_histories.setdefault("query-replace", [])
-    defaults = ed._query_replace_defaults
 
     def begin_session(from_text: str, to_text: str) -> None:
-        # The default is recorded when the args are read (before the search),
-        # so even a "No matches" run updates it — matches Emacs.
-        ed._query_replace_defaults = (from_text, to_text)
         # Smart case-fold: fold iff case-fold-search is True AND from_text is
         # all lowercase (matches the isearch rule in 6l-3).
         global_fold = bool(ed.get_variable("case-fold-search"))
@@ -1756,45 +1831,7 @@ def query_replace(ed: Editor, prefix: int | None) -> None:
         ed._query_replace_session = session
         ed.message = _qr_prompt(session)
 
-    def on_from_submitted(from_text: str) -> None:
-        if not from_text:
-            # Empty input reuses the default pair (skipping the with-prompt).
-            if defaults is not None:
-                begin_session(*defaults)
-            else:
-                ed.message = ""
-            return
-        if _QR_SEP in from_text:
-            # A combined "FROM → TO" entry recalled from the default history.
-            # Its parts are already on the history (pushed when the default
-            # was first entered) and the combined form is only a synthetic
-            # view, so don't re-push — that would duplicate them. Just begin.
-            f, t = from_text.split(_QR_SEP, 1)
-            begin_session(f, t)
-            return
-        _qr_push_history(history, from_text)
-
-        def on_to_submitted(to_text: str) -> None:
-            _qr_push_history(history, to_text)
-            begin_session(from_text, to_text)
-
-        ed.start_minibuffer(
-            f"Query replace {from_text} with: ",
-            on_to_submitted,
-            history_list=list(history),
-        )
-        _qr_install_newline_handler(ed)
-
-    if defaults is not None:
-        prompt = f"Query replace (default {defaults[0]}{_QR_SEP}{defaults[1]}): "
-    else:
-        prompt = "Query replace: "
-    # M-p offers the combined default pair ahead of the individual history.
-    nav = list(history)
-    if defaults is not None:
-        nav.insert(0, f"{defaults[0]}{_QR_SEP}{defaults[1]}")
-    ed.start_minibuffer(prompt, on_from_submitted, history_list=nav)
-    _qr_install_newline_handler(ed)
+    _replace_read_args(ed, "Query replace", begin_session)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2358,42 +2395,40 @@ def save_some_buffers(ed: Editor, prefix: int | None) -> None:
     "Replace occurrences of a string from point to end of buffer.",
 )
 def replace_string(ed: Editor, prefix: int | None) -> None:
-    def ask_search(search: str) -> None:
-        search = search.strip()
-        if not search:
-            return
+    """Non-interactive bulk replace. Shares the ``query-replace-defaults``
+    pair and the ``query-replace`` history with ``query-replace`` (GNU
+    Emacs reads both commands' args through ``query-replace-read-args``)
+    — see ``_replace_read_args``.
+    """
 
-        def ask_replacement(replacement: str) -> None:
-            buf = ed.buffer
-            count = 0
-            # Single undo group for the entire replacement
-            buf.add_undo_boundary()
+    def do_replace(search: str, replacement: str) -> None:
+        buf = ed.buffer
+        count = 0
+        # Single undo group for the entire replacement
+        buf.add_undo_boundary()
+        ln = buf.point.line
+        col = buf.point.col
+        while True:
+            pos = buf.find_forward(search, ln, col)
+            if pos is None:
+                break
+            # Move point to start of match, delete match, insert replacement
+            buf.point.move_to(pos[0], pos[1])
+            end = Mark(pos[0], pos[1] + len(search))
+            # Handle multi-line search strings would need more, but
+            # for now search is single-line (find_forward is line-based)
+            buf.delete_region(buf.point.copy(), end)
+            buf.insert_string(replacement)
+            count += 1
+            # Continue from after the replacement
             ln = buf.point.line
             col = buf.point.col
-            while True:
-                pos = buf.find_forward(search, ln, col)
-                if pos is None:
-                    break
-                # Move point to start of match, delete match, insert replacement
-                buf.point.move_to(pos[0], pos[1])
-                end = Mark(pos[0], pos[1] + len(search))
-                # Handle multi-line search strings would need more, but
-                # for now search is single-line (find_forward is line-based)
-                buf.delete_region(buf.point.copy(), end)
-                buf.insert_string(replacement)
-                count += 1
-                # Continue from after the replacement
-                ln = buf.point.line
-                col = buf.point.col
-            buf.add_undo_boundary()
-            if count:
-                ed.message = f"Replaced {count} occurrence{'s' if count != 1 else ''}"
-            else:
-                ed.message = "No matches"
+        buf.add_undo_boundary()
+        # Emacs reports the count even when it is zero ("Replaced 0
+        # occurrences"), not a separate no-match message.
+        ed.message = f"Replaced {count} occurrence{'s' if count != 1 else ''}"
 
-        ed.start_minibuffer(f"Replace string {search} with: ", ask_replacement)
-
-    ed.start_minibuffer("Replace string: ", ask_search)
+    _replace_read_args(ed, "Replace string", do_replace)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2492,6 +2527,24 @@ def set_fill_column(ed: Editor, prefix: int | None) -> None:
 )
 def auto_fill_mode(ed: Editor, prefix: int | None) -> None:
     ed.toggle_minor_mode("auto-fill-mode")
+
+
+@defcommand(
+    "column-number-mode",
+    "Toggle column number display in the mode line.",
+)
+def column_number_mode(ed: Editor, prefix: int | None) -> None:
+    # A *global* minor mode in GNU Emacs: it flips the display for every
+    # buffer and the toggle message has no "in current buffer" suffix
+    # (unlike buffer-local modes such as auto-fill-mode). The mode-line
+    # effect — "L2" becoming "(2,3)" — lives in view._render_modeline.
+    # Prefix semantics match define-minor-mode: no prefix toggles, a
+    # positive prefix enables, zero/negative disables.
+    current = bool(ed.get_variable("column-number-mode"))
+    enable = not current if prefix is None else prefix > 0
+    ed.set_variable("column-number-mode", enable)
+    state = "enabled" if enable else "disabled"
+    ed.message = f"Column-Number mode {state}"
 
 
 @defcommand(

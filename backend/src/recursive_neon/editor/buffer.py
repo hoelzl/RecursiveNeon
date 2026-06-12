@@ -169,6 +169,16 @@ class Buffer:
         else:
             self.lines = [""]
 
+        # End-of-line type detection (the 4th mule char in the modeline:
+        # "-" once decided, "U" while undecided). GNU Emacs samples the
+        # EOL only when the file is *visited*: an empty file, or one
+        # without any newline, stays undecided — and *remains* undecided
+        # for the buffer's lifetime even after typing newlines or saving
+        # newline-containing content (verified against Emacs 29 via the
+        # parity harness, scenario 26 — the save was a wrong first guess
+        # the harness caught). Live content is never consulted.
+        self.eol_decided: bool = "\n" in text
+
         # Point is right-inserting: typed chars appear before it
         self.point = Mark(0, 0, kind="right")
         # Mark (region anchor) is None until set

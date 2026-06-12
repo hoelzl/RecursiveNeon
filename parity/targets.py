@@ -13,9 +13,11 @@ To make the *initial* render comparable, both targets:
    information about GNU Emacs..." line in the echo area on startup which
    has nothing to do with the buffer state and would obscure scenario
    diffs.
-3. Send a no-op ``C-f C-b`` after settle. Emacs only renders the *file*
+3. Send a no-op ``C-l`` after settle. Emacs only renders the *file*
    buffer after the first input event; without the kick, the initial
    screen still shows ``*scratch*`` even though point is in the file.
+   ``C-l`` is the kick because it leaves no trace (no motion, no echo)
+   even in an empty buffer.
 """
 
 from __future__ import annotations
@@ -77,8 +79,12 @@ def make_emacs_target(
     def launch() -> Driver:
         d = Driver(emacs_binary(), args=args, cols=cols, rows=rows)
         d.settle(settle_ms=settle_ms, max_wait=6.0)
-        # Kick Emacs to flush its initial render of the file buffer.
-        d.send("C-f C-b")
+        # Kick Emacs to flush its initial render of the file buffer (any
+        # input event works). C-l (recenter) is used because it leaves no
+        # trace: no point motion and no echo. The previous kick, C-f C-b,
+        # *errored* in an empty buffer (echoing "End of buffer") and made
+        # the launch states differ from neon-edit's, which gets no kick.
+        d.send("C-l")
         d.settle(settle_ms=settle_ms, max_wait=4.0)
         return d
 

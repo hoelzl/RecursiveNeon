@@ -274,7 +274,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(23 scenarios, 97 checkpoints. 89 are pixel-perfect; the 8 remaining
+(26 scenarios, 114 checkpoints. 105 are pixel-perfect; the 9 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -303,6 +303,9 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 21 | undo save-point | modified flag through undo/redo across `C-x C-s`: undo-to-saved clears `**`, undo past a save stays `**` (stale generation), redo-to-saved clears again |
 | 22 | yank-from-kill-ring | `M-y` not after a yank → `Yank from kill-ring:` picker; `M-p`/`M-n` over ring entries, RET inserts + `Mark set`, re-`M-y` re-prompts, `C-g` quit |
 | 23 | register copy/insert | `C-x r s`/`C-x r i` text registers: silent copy, insert leaves point after + `Mark set`, empty/type-mismatch errors, point register inserts position number |
+| 24 | column-number-mode | global toggle (`Column-Number mode enabled`, no buffer suffix), `(l,c)` padded position field, odd-height `C-x 2` gives top window the extra row |
+| 25 | replace-string defaults | shares `query-replace-defaults` + history with `M-%` both ways: `(default a → b)` prompts, combined `M-p` entry, empty-RET reuse, `Replaced 0 occurrences` |
+| 26 | empty-file EOL | `-UUU:` mnemonic for newline-less visits, stays undecided through typing *and* saving; `C-f`/`C-b` boundary errors (`End of buffer`/`Beginning of buffer`) |
 
 ## Known intentional divergences
 
@@ -375,9 +378,11 @@ These are real divergences but low-impact:
    diffs in scenarios 10 (`second`, now pixel-perfect) and shrank 05
    (`*Help*`) / 03 (`*Completions*`) to their content-only diffs.
 
-2. **Split-window proportion when odd**. Emacs gives the *top* window
-   the extra row when total height is odd; neon-edit gives it to the
-   bottom. Fix is in the view's region computation for split nodes.
+2. ~~**Split-window proportion when odd**.~~ **FIXED in scenario 24.**
+   `view.py::_compute_layout` now rounds the *top* window up
+   (`(height + 1) // 2`), matching Emacs's split-window. Verified by
+   scenario 24's `after-C-x-2` checkpoint (modelines at rows 11/22 on a
+   24-row screen).
 
 3. ~~**Buffer-name padding in modeline** (`%12b`).~~ **FIXED in scenario
    12.** `_render_modeline` now right-pads the name to a 12-column minimum.
@@ -385,13 +390,14 @@ These are real divergences but low-impact:
    short no-file names (`*Help*`, `second`, …) changed — no file-buffer
    checkpoint was disturbed.
 
-4. **Empty-file EOL mnemonic** (`-UUU:` vs `-UU-:`). For an *empty* file
-   (no newline to sample), Emacs can't decide the EOL type and shows the
-   4th mule char as `U`; for a file with a Unix newline it shows `-`.
-   neon-edit always shows `-` for a file-visiting buffer. Surfaced while
-   probing scenario 19 (which sidesteps it with non-empty seed content).
-   Low-impact; the fix is in `view.py::_render_modeline` keying the 4th
-   char off "buffer has a trailing newline / detected EOL".
+4. ~~**Empty-file EOL mnemonic** (`-UUU:` vs `-UU-:`).~~ **FIXED in
+   scenario 26.** `Buffer.eol_decided` is sampled once at construction
+   (visit time): a file with no newline — empty or a single unterminated
+   line — stays undecided (`U` as the 4th mule char) for the buffer's
+   whole lifetime. Notably, *saving* newline-containing content does
+   **not** decide it in Emacs either — the first implementation guessed
+   it would, and scenario 26's `after-save` checkpoint failed until the
+   model matched. Live buffer content is never consulted.
 
 ## Proposed next scenarios
 
@@ -460,8 +466,13 @@ Each is sized for one session if the divergences turn out moderate.
    command bound to `C-x C-q` (echoes `Read-Only mode enabled in current
    buffer`, flips the mnemonic to `%%-`). All 3 checkpoints pixel-perfect,
    and the fix resolved scenario 10's residual cosmetics and shrank 03/05.
-   **Still TODO in its own follow-up:** `column-number-mode` position
-   format. (The undo-to-saved modified-flag carry-over from scenario 09
+   **Follow-up DONE in scenario 24:** `column-number-mode` — a *global*
+   toggle command (`Column-Number mode enabled`, no "in current buffer"
+   suffix) switching the position readout to Emacs's padded `(%l,%c)`
+   field (zero-based column); the `L%l`/`(%l,%c)` fields are now
+   rendered with Emacs's min-width specs (6/10) rather than fixed
+   spacing, fixing a latent padding divergence for multi-digit line
+   numbers. (The undo-to-saved modified-flag carry-over from scenario 09
    was fixed in scenario 21 — `UndoSavePoint` tracking.)
 
 5. ~~**`scenario_13_kill_ring_browse`**~~ **DONE.** Built a three-entry
@@ -565,9 +576,12 @@ Each is sized for one session if the divergences turn out moderate.
     from/to history (and splits it on submit). Added
     `Editor._query_replace_defaults`, a `history_list` param to
     `start_minibuffer` (transient `[default-pair] + history` navigation),
-    and `_qr_push_history`. All 4 checkpoints pixel-perfect. **Still TODO:**
-    wire `replace-string` to the same shared `query-replace-history`
-    (it remains unwired).
+    and `_qr_push_history`. All 4 checkpoints pixel-perfect.
+    **Follow-up DONE in scenario 25:** `replace-string` now reads its
+    args through the same `_replace_read_args` helper (the analogue of
+    Emacs's `query-replace-read-args`), sharing the defaults pair and
+    history with `M-%` in both directions, and reports `Replaced 0
+    occurrences` instead of a bespoke "No matches" message.
 
 11. **Inactive mark + mark ring + attribute-aware snapshots** (paired —
     do these together, in one planned effort). neon-edit's mark is

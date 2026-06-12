@@ -9,7 +9,10 @@ C-x k (``buffer-name``), and find-file / write-file (``file-name``).
 query-replace uses the ``query-replace-defaults`` mechanism (combined
 ``from → to`` entries) — see ``test_query_replace_defaults.py``; here we
 only confirm it now populates the ``query-replace`` history.
-replace-string remains unwired (it would share that special history).
+replace-string shares that history and the defaults pair: both commands
+read their args through ``_replace_read_args``, the analogue of GNU
+Emacs's ``query-replace-read-args`` (verified against Emacs 29 via the
+parity harness, scenario 24).
 """
 
 from __future__ import annotations
@@ -65,3 +68,41 @@ class TestPromptHistoryWiring:
         _type(ed, "bar")
         ed.process_key("Enter")  # session starts on the first match
         assert ed._minibuffer_histories["query-replace"] == ["bar", "foo"]
+
+    def _run_replace_string(self, ed: Editor, frm: str, to: str) -> None:
+        ed.process_key("M-x")
+        _type(ed, "replace-string")
+        ed.process_key("Enter")
+        _type(ed, frm)
+        ed.process_key("Enter")
+        _type(ed, to)
+        ed.process_key("Enter")
+
+    def test_replace_string_shares_query_replace_history(self) -> None:
+        ed = make_editor("foo and foo")
+        self._run_replace_string(ed, "foo", "bar")
+        assert ed._minibuffer_histories["query-replace"] == ["bar", "foo"]
+        assert ed.buffer.text == "bar and bar"
+
+    def test_replace_string_sets_shared_defaults_pair(self) -> None:
+        """After replace-string, M-% offers the pair as its default —
+        and vice versa (one query-replace-defaults in Emacs)."""
+        ed = make_editor("foo and foo")
+        self._run_replace_string(ed, "foo", "bar")
+        assert ed._query_replace_defaults == ("foo", "bar")
+        ed.process_key("M-%")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Query replace (default foo → bar): "
+        ed.process_key("C-g")
+
+    def test_replace_string_empty_input_reuses_default_pair(self) -> None:
+        ed = make_editor("foo and foo\nmore foo")
+        self._run_replace_string(ed, "foo", "bar")
+        ed.buffer.point.move_to(0, 0)
+        ed.process_key("M-x")
+        _type(ed, "replace-string")
+        ed.process_key("Enter")
+        assert ed.minibuffer is not None
+        assert ed.minibuffer.prompt == "Replace string (default foo → bar): "
+        ed.process_key("Enter")  # empty: reuse foo → bar; nothing left
+        assert ed.message == "Replaced 0 occurrences"

@@ -107,8 +107,25 @@ class TestViewRendering:
         view.editor.buffer.point.col = 3
         screen = view._render()
         modeline = screen.lines[view.text_height]
-        assert "L2" in modeline
-        assert "C3" in modeline
+        # GNU Emacs renders the combined readout as "(line,col)" — the
+        # column zero-based — not as separate L/C segments.
+        assert "(2,3)" in modeline
+        assert "L2" not in modeline
+
+    def test_modeline_position_field_padding_matches_emacs(self):
+        """The position readout is a width-padded field, not fixed spaces.
+
+        Emacs pads " L%l" to a 6-column minimum and " (%l,%c)" to 10, so
+        the gap before "(Text)" shrinks as the numbers grow (verified
+        against Emacs 29 via the parity probe for the single-digit case;
+        the multi-digit case follows from the same %-spec).
+        """
+        view = make_view("hello\nworld", width=60)
+        modeline = view._render().lines[view.text_height]
+        assert " L1     (" in modeline  # " L1" → 6 wide, then 2 spaces
+        view.editor.buffer.local_variables["column-number-mode"] = True
+        modeline = view._render().lines[view.text_height]
+        assert " (1,0)      (" in modeline  # " (1,0)" → 10 wide, + 2
 
     def test_modeline_no_file_buffer_uses_uuu_prefix(self):
         # Emacs widens the coding mnemonic to -UUU: for a buffer not
@@ -120,11 +137,37 @@ class TestViewRendering:
         assert "-UU-:" not in modeline
 
     def test_modeline_file_buffer_uses_uu_dash_prefix(self):
-        view = make_view("x", width=60)
+        # Content with a newline: the EOL type is decided (Unix), so the
+        # 4th mule char is "-".
+        view = make_view("x\ny", width=60)
         view.editor.buffer.filepath = "notes.txt"
         modeline = view._render().lines[view.text_height]
         assert "-UU-:" in modeline
         assert "-UUU:" not in modeline
+
+    def test_modeline_file_buffer_without_newline_is_undecided(self):
+        # No newline to sample (empty file, or single line without a
+        # trailing newline): Emacs leaves the EOL mnemonic undecided
+        # ("U"), same as a no-file buffer. Verified against Emacs 29.
+        view = make_view("x", width=60)
+        view.editor.buffer.filepath = "notes.txt"
+        modeline = view._render().lines[view.text_height]
+        assert "-UUU:" in modeline
+
+    def test_eol_stays_undecided_through_edits_and_saves(self):
+        # The EOL is sampled only at visit time. Typing a newline into an
+        # undecided buffer does NOT decide it, and neither does saving
+        # the newline-containing content — Emacs keeps -UUU: for the
+        # buffer's lifetime (verified against Emacs 29, scenario 26).
+        view = make_view("", width=60)
+        buf = view.editor.buffer
+        buf.filepath = "notes.txt"
+        buf.insert_string("hello\n")
+        modeline = view._render().lines[view.text_height]
+        assert "-UUU:" in modeline  # still undecided after typing
+        buf.mark_saved()
+        modeline = view._render().lines[view.text_height]
+        assert "-UUU:" in modeline  # …and after saving
 
     def test_modeline_pads_short_name_to_12(self):
         # Emacs %12b: the name occupies a 12-column minimum before the

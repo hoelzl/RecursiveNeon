@@ -87,6 +87,17 @@ class TestHorizontalSplitRendering:
         assert row == 0
         assert col == 0
 
+    def test_odd_height_gives_top_window_the_extra_row(self):
+        # 24 rows - 1 echo row = 23 for windows. GNU Emacs's split-window
+        # rounds the *upper* window up: top gets 12 rows (11 text +
+        # modeline at row 11), bottom 11 (modeline at row 22). Verified
+        # against Emacs 29 via the parity probe.
+        h = make_harness("hello\nworld", width=80, height=24)
+        h.send_keys("C-x", "2")
+        lines = h.screen_lines()
+        modeline_rows = [i for i, ln in enumerate(lines) if "*scratch*" in ln]
+        assert modeline_rows == [11, 22]
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Vertical split rendering
