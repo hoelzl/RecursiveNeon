@@ -72,9 +72,14 @@ Structurally sound for this work:
    cleaner for everything done so far; caps future parity at recursive
    minibuffers, minibuffer-local keymaps, richer completion styles. The
    `yank-from-kill-ring` picker will lean on this widget.
-4. **`default_commands.py` is ~2,750 lines** and the destination of
-   every new command. Not a god-module yet; isearch / query-replace /
-   registers are natural seams to split along before it becomes one.
+4. ~~**`default_commands.py` is ~2,750 lines**~~ **SPLIT** along
+   exactly the named seams: `isearch_commands.py` (~510),
+   `replace_commands.py` (M-% + replace-string, ~640) and
+   `register_commands.py` (~160) — `default_commands.py` is back to
+   ~1,800 lines, imports the three for registration, and re-exports the
+   handful of names `editor.py`/tests historically pulled from it.
+   Behaviour-neutral: full backend + parity suites green either side of
+   the split.
 
 ## Remaining work queued in the handover
 

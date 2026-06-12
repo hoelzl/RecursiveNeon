@@ -77,7 +77,7 @@ cd backend
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect` with fd/stderr, `Pipeline.stderr_redirect`)
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
-- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`)
+- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`; command families split across `default_commands.py`, `isearch_commands.py`, `replace_commands.py`, `register_commands.py`)
 - Config loader: `backend/src/recursive_neon/editor/config_loader.py` (`ConfigNamespace`, `load_config`, sandboxed `~/.neon-edit.py` execution)
 - Faces: `backend/src/recursive_neon/editor/faces.py` (`FACES`, `resolve_face` — named face→ANSI mapping)
 - Language modes: `backend/src/recursive_neon/editor/modes/` (`python_mode`, `markdown_mode`, `sh_mode`, `AUTO_MODE_ALIST`, `detect_mode`)

@@ -23,7 +23,7 @@ from recursive_neon.editor.modes import MODES
 from recursive_neon.editor.variables import VARIABLES
 
 if TYPE_CHECKING:
-    from recursive_neon.editor.default_commands import _QueryReplaceSession
+    from recursive_neon.editor.replace_commands import _QueryReplaceSession
     from recursive_neon.editor.viewport import Viewport
     from recursive_neon.editor.window import Window, WindowTree
 
@@ -440,7 +440,7 @@ class Editor:
         if self._register_session is not None:
             session_r = self._register_session
             self._register_session = None
-            from recursive_neon.editor.default_commands import _do_register_action
+            from recursive_neon.editor.register_commands import _do_register_action
 
             _do_register_action(self, key, session_r)
             return
@@ -455,7 +455,7 @@ class Editor:
             self._query_replace_session is not None
             and not self._query_replace_session.paused_for_edit
         ):
-            from recursive_neon.editor.default_commands import _qr_handle_key
+            from recursive_neon.editor.replace_commands import _qr_handle_key
 
             _qr_handle_key(self, key)
             return
