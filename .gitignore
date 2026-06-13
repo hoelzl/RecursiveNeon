@@ -81,4 +81,4 @@ frontend/.vite/
 backend/*.pyc
 
 # Claude Code user-specific settings
-.claude/*.local.json
+.claude/
