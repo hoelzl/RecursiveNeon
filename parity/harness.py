@@ -30,6 +30,14 @@ class Snapshot:
     cursor: tuple[int, int]  # (x, y) — column, row, 0-indexed
     cols: int
     rows: int
+    # Highlight runs: (row, start_col, end_col_exclusive) for stretches of
+    # cells rendered with reverse video or a non-default background — the
+    # attributes Emacs's TTY uses for the modeline, the active region and
+    # search highlights. Foreground colors are deliberately ignored
+    # (syntax highlighting differs by design). Captured always; compared
+    # only by scenarios that declare ``COMPARE_HIGHLIGHTS = True`` — the
+    # global text-only comparison decision stands (see module docstring).
+    highlights: tuple[tuple[int, int, int], ...] = ()
 
     @property
     def echo_area(self) -> str:
@@ -53,6 +61,29 @@ class Snapshot:
                 rows.pop()
         # Right-strip each row but preserve column structure inside.
         return "\n".join(r.rstrip() for r in rows)
+
+
+def capture_highlights(screen: pyte.Screen) -> tuple[tuple[int, int, int], ...]:
+    """Highlight runs on ``screen``: ``(row, start, end_exclusive)``.
+
+    A cell counts as highlighted when it is reverse video or has a
+    non-default background — see :class:`Snapshot.highlights`.
+    """
+    runs: list[tuple[int, int, int]] = []
+    for row in range(screen.lines):
+        cells = screen.buffer[row]
+        start: int | None = None
+        for col in range(screen.columns):
+            ch = cells[col]
+            lit = bool(ch.reverse) or ch.bg != "default"
+            if lit and start is None:
+                start = col
+            elif not lit and start is not None:
+                runs.append((row, start, col))
+                start = None
+        if start is not None:
+            runs.append((row, start, screen.columns))
+    return tuple(runs)
 
 
 class Driver:
@@ -172,6 +203,7 @@ class Driver:
             cursor=(self.screen.cursor.x, self.screen.cursor.y),
             cols=self.cols,
             rows=self.rows,
+            highlights=capture_highlights(self.screen),
         )
 
     def close(self) -> None:

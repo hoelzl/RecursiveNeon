@@ -191,6 +191,9 @@ defmode(
     "shell-mode",
     is_major=True,
     doc="Major mode for interacting with the neon shell inside an editor buffer.",
+    # GNU Emacs's shell-mode modeline reads ``(Shell:run)`` while the
+    # process is live (probed against Emacs 29.3).
+    indicator="Shell:run",
 )
 
 
@@ -232,6 +235,10 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     km.bind("M-p", _comint_previous_input)
     km.bind("M-n", _comint_next_input)
     km.bind("Tab", _shell_complete)
+    # C-c prefix: comint's job-control bindings (only C-c C-c so far).
+    cc = Keymap("shell-mode C-c prefix")
+    cc.bind("C-c", _comint_interrupt_subjob)
+    km.bind("C-c", cc)
     buf.keymap = km
 
     # Enable text attributes for ANSI colour support
@@ -253,7 +260,9 @@ def setup_shell_buffer(editor: Editor, buf: Buffer, shell: Shell) -> None:
     # explicitly to the current point.
     input_start.move_to(buf.point.line, buf.point.col)
 
-    buf.mark_saved()
+    # Deliberately *not* mark_saved(): Emacs's shell buffer carries the
+    # ``**`` modified flag for its whole life (probed — ``-UUU:**-``).
+    buf.modified = True
 
     # Protect the banner + prompt from accidental modification
     buf.add_read_only_region(Mark(0, 0, kind="left"), input_start)
@@ -446,6 +455,39 @@ def _shell_complete(editor: Any, prefix: Any) -> None:
         editor.message = display
 
 
+def _comint_interrupt_subjob(editor: Any, prefix: Any) -> None:
+    """C-c C-c — interrupt the current input (comint-interrupt-subjob).
+
+    The game shell has no subprocesses, so the only interruptible thing
+    is typed-but-unsent input: like bash after ``^C``, the typed text
+    stays on its line unexecuted and a fresh prompt appears below
+    (deviation from Emacs: no pty ``^C`` job-control echo — there is no
+    pty). History navigation state is reset like ``Enter``'s.
+    """
+    buf = editor.buffer
+    state: ShellState | None = getattr(buf, "_shell_state", None)
+    if state is None:
+        return
+    if state.finished:
+        editor.message = "[Process shell finished]"
+        return
+
+    state.history_index = -1
+    state.saved_input = ""
+
+    buf._undo_recording = False
+    try:
+        buf.end_of_buffer()
+        prompt = strip_ansi(state.shell._build_prompt())
+        buf.insert_string("\n" + prompt)
+        state.input_start.move_to(buf.point.line, buf.point.col)
+    finally:
+        buf._undo_recording = True
+
+    buf.clear_read_only_regions()
+    buf.add_read_only_region(Mark(0, 0, kind="left"), state.input_start)
+
+
 # ------------------------------------------------------------------
 # Async command execution (called from on_after_key)
 # ------------------------------------------------------------------
@@ -498,7 +540,8 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
             state.input_start.move_to(buf.point.line, buf.point.col)
     finally:
         buf._undo_recording = True
-        buf.mark_saved()
+        # No mark_saved(): the shell buffer stays "modified" like
+        # Emacs's (see setup_shell_buffer).
 
     # Protect all historical output — everything before the current input
     if not state.finished:
@@ -514,21 +557,68 @@ async def execute_shell_command(buf: Buffer, state: ShellState, command: str) ->
 # ------------------------------------------------------------------
 
 
-@defcommand("shell", "Run the game shell in an editor buffer (M-x shell).")
-def cmd_shell(ed: Editor, prefix: int | None) -> None:
-    """Create or switch to a ``*shell*`` buffer."""
-    # Reuse existing *shell* buffer
-    if ed.switch_to_buffer("*shell*"):
-        return
-
-    # Need a shell factory (set by the edit shell program)
+def _create_shell_buffer(ed: Editor, name: str) -> None:
     factory = getattr(ed, "shell_factory", None)
     if factory is None:
         ed.message = "Shell not available in this context"
         return
-
-    # Create and configure the shell
     shell = factory()
-    buf = ed.create_buffer(name="*shell*")
+    buf = ed.create_buffer(name=name)
     setup_shell_buffer(ed, buf, shell)
     ed.message = ""
+
+
+def _next_shell_name(ed: Editor) -> str:
+    """The name Emacs offers as the C-u M-x shell default: ``*shell*``
+    when free, else the lowest free ``*shell*<n>`` (probed — with one
+    shell running the prompt reads ``Shell buffer (default
+    *shell*<2>): ``)."""
+    taken = {b.name for b in ed.buffers}
+    if "*shell*" not in taken:
+        return "*shell*"
+    n = 2
+    while f"*shell*<{n}>" in taken:
+        n += 1
+    return f"*shell*<{n}>"
+
+
+@defcommand("shell", "Run the game shell in an editor buffer (M-x shell).")
+def cmd_shell(ed: Editor, prefix: int | None) -> None:
+    """Create or switch to a ``*shell*`` buffer.
+
+    With a prefix argument (``C-u M-x shell``), prompt for the buffer
+    name instead, so several independent shells can run at once —
+    Emacs's ``shell`` reading a buffer with ``C-u``. An existing shell
+    buffer is switched to; an existing non-shell buffer is refused
+    (Emacs would start a process in it — meaningless for the in-game
+    shell, documented deviation).
+    """
+    if prefix is None:
+        # Reuse the canonical *shell* buffer
+        if ed.switch_to_buffer("*shell*"):
+            return
+        _create_shell_buffer(ed, "*shell*")
+        return
+
+    default = _next_shell_name(ed)
+
+    def completer(text: str) -> list[str]:
+        return [b.name for b in ed.buffers if b.name.startswith(text)]
+
+    def callback(name: str) -> None:
+        name = name.strip() or default
+        existing = next((b for b in ed.buffers if b.name == name), None)
+        if existing is not None:
+            if getattr(existing, "_shell_state", None) is not None:
+                ed.switch_to_buffer(name)
+            else:
+                ed.message = f"Buffer {name} is not a shell buffer"
+            return
+        _create_shell_buffer(ed, name)
+
+    ed.start_minibuffer(
+        f"Shell buffer (default {default}): ",
+        callback,
+        completer=completer,
+        history="buffer-name",
+    )

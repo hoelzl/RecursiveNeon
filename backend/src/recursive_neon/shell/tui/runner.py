@@ -102,15 +102,17 @@ async def run_tui_app(
     screen = app.on_start(cur_w, cur_h)
     _deliver_screen(screen, output, send_screen)
 
-    # Determine tick interval (0 = disabled)
-    tick_interval_ms: int = getattr(app, "tick_interval_ms", 0)
-    tick_timeout: float | None = (
-        tick_interval_ms / 1000.0 if tick_interval_ms > 0 else None
-    )
     last_tick = time.monotonic()
 
     try:
         while True:
+            # Tick interval (0 = disabled) — re-read every iteration so
+            # apps whose interval is dynamic (the editor only ticks
+            # while it hosts a periodic TUI app) take effect mid-run.
+            tick_interval_ms: int = getattr(app, "tick_interval_ms", 0)
+            tick_timeout: float | None = (
+                tick_interval_ms / 1000.0 if tick_interval_ms > 0 else None
+            )
             # --- Drain resize events ---
             if resize_source is not None:
                 new_size = resize_source()
@@ -222,12 +224,15 @@ async def _run_child_inline(
     screen = child_app.on_start(cur_w, cur_h)
     _deliver_screen(screen, output, send_screen)
 
-    child_tick_ms: int = getattr(child_app, "tick_interval_ms", 0)
-    child_timeout: float | None = child_tick_ms / 1000.0 if child_tick_ms > 0 else None
     last_tick = time.monotonic()
 
     try:
         while True:
+            # Re-read each iteration — see the parent loop's comment.
+            child_tick_ms: int = getattr(child_app, "tick_interval_ms", 0)
+            child_timeout: float | None = (
+                child_tick_ms / 1000.0 if child_tick_ms > 0 else None
+            )
             if resize_source is not None:
                 new_size = resize_source()
                 if new_size is not None:

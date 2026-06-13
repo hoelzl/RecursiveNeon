@@ -13,15 +13,18 @@ To make the *initial* render comparable, both targets:
    information about GNU Emacs..." line in the echo area on startup which
    has nothing to do with the buffer state and would obscure scenario
    diffs.
-3. Send a no-op ``C-f C-b`` after settle. Emacs only renders the *file*
+3. Send a no-op ``C-l`` after settle. Emacs only renders the *file*
    buffer after the first input event; without the kick, the initial
    screen still shows ``*scratch*`` even though point is in the file.
+   ``C-l`` is the kick because it leaves no trace (no motion, no echo)
+   even in an empty buffer.
 """
 
 from __future__ import annotations
 
 import os
 import shlex
+import time
 from pathlib import Path
 
 from parity.harness import Driver, TargetSpec
@@ -57,8 +60,16 @@ def make_emacs_target(
     cols: int = 80,
     rows: int = 24,
     settle_ms: int = 1200,
+    cwd: str | None = None,
 ) -> TargetSpec:
-    """Open ``file_path`` in Emacs ``-Q`` with a quiet startup."""
+    """Open ``file_path`` in Emacs ``-Q`` with a quiet startup.
+
+    ``cwd`` should be the scenario's staging directory: it becomes the
+    ``default-directory`` of non-file buffers (``*scratch*``), so a
+    relative ``C-x C-f`` in a scenario resolves inside the staged
+    sandbox rather than wherever the harness happens to run from
+    (scenario 27 once stray-wrote a file into the repo root this way).
+    """
 
     eval_forms = [
         "(menu-bar-mode -1)",
@@ -75,11 +86,43 @@ def make_emacs_target(
     args.append(file_path)
 
     def launch() -> Driver:
-        d = Driver(emacs_binary(), args=args, cols=cols, rows=rows)
-        d.settle(settle_ms=settle_ms, max_wait=6.0)
-        # Kick Emacs to flush its initial render of the file buffer.
-        d.send("C-f C-b")
+        d = Driver(emacs_binary(), args=args, cols=cols, rows=rows, cwd=cwd)
+        # Wait for the startup echo-area tip rather than relying on a
+        # silence window: on slow hosts Emacs's startup has silent gaps
+        # longer than ``settle_ms``, so a pure-silence settle can return
+        # mid-startup — the C-l kick is then consumed *before* the tip is
+        # displayed, leaving the tip on screen at snapshot time. The tip
+        # is the *last* thing startup paints and, under ``-Q``, always
+        # appears (``inhibit-startup-echo-area-message`` only takes
+        # effect when literally set in an init file — startup.el greps
+        # the init file for it — so the --eval above cannot suppress it).
+        d.wait_for(
+            "For information about GNU Emacs",
+            row=-1,
+            max_wait=30.0,
+            settle_ms=settle_ms,
+        )
+        # Kick Emacs to flush its initial render of the file buffer (any
+        # input event works); it also clears the tip. C-l (recenter) is
+        # used because it leaves no trace: no point motion and no echo.
+        # Exactly one C-l — repeats would cycle recenter-top-bottom and
+        # scroll windows whose point sits below the first screen line.
+        # The previous kick, C-f C-b, *errored* in an empty buffer
+        # (echoing "End of buffer") and made the launch states differ
+        # from neon-edit's, which gets no kick.
+        d.send("C-l")
         d.settle(settle_ms=settle_ms, max_wait=4.0)
+        # Under heavy host load the kick's repaint can outlast the
+        # settle window, leaving the pre-kick screen (tip visible,
+        # *scratch* still shown) for the first snapshot. The tip always
+        # clears once the kick is processed, so it doubles as the
+        # repaint-done condition — keep draining until it is gone.
+        deadline = time.time() + 20.0
+        while (
+            "For information about GNU Emacs" in d.screen.display[-1]
+            and time.time() < deadline
+        ):
+            d.settle(settle_ms=settle_ms, max_wait=2.0)
         return d
 
     return TargetSpec(name="emacs", launch=launch)

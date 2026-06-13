@@ -47,6 +47,8 @@ FACES: dict[str, str] = {
     # Shell
     "sh-variable": "\033[38;5;81m",  # sky blue
     "sh-redirect": "\033[38;5;204m",  # pinkish-red
+    # Editor UI
+    "region": "\033[48;5;238m",  # active-region background (dark slate)
 }
 
 

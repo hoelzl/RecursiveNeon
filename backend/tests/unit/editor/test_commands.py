@@ -98,6 +98,35 @@ class TestEditorMovement:
         ed.process_key("C-b")
         assert ed.buffer.point.col == 2
 
+    def test_forward_char_at_end_signals_end_of_buffer(self):
+        # GNU Emacs signals an error when C-f can't move (echoing "End
+        # of buffer"); verified via parity scenario 26.
+        ed = make_editor("hi")
+        ed.buffer.point.col = 2
+        ed.process_key("C-f")
+        assert ed.message == "End of buffer"
+        assert ed.buffer.point.col == 2
+
+    def test_backward_char_at_start_signals_beginning_of_buffer(self):
+        ed = make_editor("hi")
+        ed.process_key("C-b")
+        assert ed.message == "Beginning of buffer"
+        assert ed.buffer.point.col == 0
+
+    def test_forward_char_with_prefix_past_end_moves_then_signals(self):
+        # Emacs moves point as far as it can, then signals the error.
+        ed = make_editor("hi")
+        ed.process_key("C-u")
+        ed.process_key("9")
+        ed.process_key("C-f")
+        assert ed.buffer.point.col == 2
+        assert ed.message == "End of buffer"
+
+    def test_forward_char_mid_buffer_is_silent(self):
+        ed = make_editor("hello")
+        ed.process_key("C-f")
+        assert ed.message == ""
+
     def test_next_line(self):
         ed = make_editor("aaa\nbbb")
         ed.process_key("C-n")
@@ -250,7 +279,10 @@ class TestEditorPrefixKeys:
         ed.process_key("C-space")
         assert ed.buffer.mark is not None
         ed.process_key("C-g")
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed.message == "Quit"
 
 

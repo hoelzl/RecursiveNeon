@@ -57,6 +57,9 @@ parity/
     scenario_19_auto_fill_mode.py
     scenario_20_python_indent.py
     scenario_21_undo_save_point.py
+    ...
+    scenario_31_dired_basics.py
+    scenario_32_dired_ops.py
 ```
 
 Every scenario module exposes `NAME`, `DESCRIPTION`, and `run() -> ScenarioResult`,
@@ -274,7 +277,7 @@ Three flavours:
 
 ## Current scenario coverage
 
-(21 scenarios, 84 checkpoints. 75 are pixel-perfect; the 9 remaining
+(32 scenarios, 148 checkpoints. 121 are pixel-perfect; the 27 remaining
 diffs are content/semantic differences explained below, each baselined
 in its scenario's `EXPECTED_DIVERGENCES`.)
 
@@ -292,7 +295,7 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 10 | buffer switching | `C-x b` MRU default + empty-RET-to-default, `C-x k` `(default …)` prompt, silent create/kill |
 | 11 | fill paragraph | `M-q` re-wrap at fill-column, silent on success/no-op, point left at paragraph start |
 | 12 | modeline state flags | modified `**`, no-file `-UUU:`, `%12b` name padding, `C-x C-q` read-only `%%-` |
-| 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank gap |
+| 13 | kill-ring browse | multi-entry ring, `C-y`+repeated `M-y` cycle/wrap, kills split by a move don't coalesce, `M-y`-not-after-yank opens the picker |
 | 14 | query-replace | `M-%` two-prompt entry, per-match `y`/`n`, point at match end on deck, `Replaced N occurrence(s)` plural summary |
 | 15 | register basics | `C-x r SPC`/`C-x r j` point save/jump + name-read prompts; `M-<`/`M->`/jump push a mark (`Mark set`) |
 | 16 | minibuffer history | `M-x` command history; `M-p`/`M-n` recall + restore typed input; point at start of recalled element |
@@ -301,6 +304,17 @@ in its scenario's `EXPECTED_DIVERGENCES`.)
 | 19 | auto-fill-mode | `M-x auto-fill-mode` enable/disable echo, ` Fill` lighter, break-on-space past fill-column, off by default in text-mode |
 | 20 | python-mode indent | TAB `python-indent-line`: syntactic indent under a `:` header, cycle `[8,4,0]` on repeated TAB, `(Python ElDoc)` lighter |
 | 21 | undo save-point | modified flag through undo/redo across `C-x C-s`: undo-to-saved clears `**`, undo past a save stays `**` (stale generation), redo-to-saved clears again |
+| 22 | yank-from-kill-ring | `M-y` not after a yank → `Yank from kill-ring:` picker; `M-p`/`M-n` over ring entries, RET inserts + `Mark set`, re-`M-y` re-prompts, `C-g` quit |
+| 23 | register copy/insert | `C-x r s`/`C-x r i` text registers: silent copy, insert leaves point after + `Mark set`, empty/type-mismatch errors, point register inserts position number |
+| 24 | column-number-mode | global toggle (`Column-Number mode enabled`, no buffer suffix), `(l,c)` padded position field, odd-height `C-x 2` gives top window the extra row |
+| 25 | replace-string defaults | shares `query-replace-defaults` + history with `M-%` both ways: `(default a → b)` prompts, combined `M-p` entry, empty-RET reuse, `Replaced 0 occurrences` |
+| 26 | empty-file EOL | `-UUU:` mnemonic for newline-less visits, stays undecided through typing *and* saving; `C-f`/`C-b` boundary errors (`End of buffer`/`Beginning of buffer`) |
+| 27 | kill-buffer confirm | `C-x k` on a modified file buffer: `(yes/no/save and then kill)` prompt, unique-prefix RET completion (`y`→yes), no/yes/save paths, silent kill for non-file buffers |
+| 28 | list-buffers | `C-x C-b` pops *Buffer List* in the other window unselected: Buffer-menu table (`CRM`/name/size/mode/file columns), `(Buffer Menu)` modeline, silent echo |
+| 29 | python indent (full) | bracket alignment, dedenter candidates + `Closes …` echo, backslash continuations, `def`-paren `+8` scale and offset-chain cycling |
+| 30 | region + mark ring | **highlight-compared**: active-region face (with `:extend`-to-edge), C-g/M-w deactivate-not-clear, inactive `push-mark`, `C-x C-x` reactivate, `C-SPC C-SPC`, `C-u C-SPC` ring rotation |
+| 31 | dired basics | `edit <dir>` opens dired: `%17b` modeline + `(Dired by name)`, `n`/`p` onto filename column (`L<n>` compared), RET visits a file (pixel-perfect incl. the python `Can’t guess…` echo), `C-x b RET` back with point kept, RET descends, `^` lands on the child's line |
+| 32 | dired ops | `d` flag (`%*` modified flag), `x` → `Delete f (yes or no)` prompt (echo compared) + `Deleting...done`, `+`/`R`/`C` prompts and `Move:`/`Copy: 1 file done` messages, point line tracked through delete/insert |
 
 ## Known intentional divergences
 
@@ -353,18 +367,46 @@ These are the diffs that are *not* bugs — don't try to "fix" them:
   every *forward* undo all match. (Scenario 21's `after-redo-AB`
   checkpoint shares this deviation.)
 
-- **13 `M-y` not after a yank → `yank-from-kill-ring`** (checkpoint
-  `after-M-y-not-after-yank`). The buffer body matches (both leave it
-  untouched); only the minibuffer differs. GNU Emacs ≥28 rebinds `M-y` so
-  that, when the previous command was *not* a yank, it runs
-  `yank-from-kill-ring` — an interactive `Yank from kill-ring:` minibuffer
-  that lets you pick any ring entry (this *replaced* the pre-28 `Previous
-  command was not a yank` error). neon-edit has no such picker, so its
-  `yank-pop` is a silent no-op in that state. Implementing the picker
-  (minibuffer completion over the ring, multi-line entry display, M-n/M-p
-  navigation) is a feature in its own right — deferred to a future
-  `scenario_NN_yank_from_kill_ring` (see "Proposed next scenarios"). The
-  normal cycle (`C-y` then repeated `M-y`) is pixel-perfect.
+- ~~**13 `M-y` not after a yank → `yank-from-kill-ring`**~~ **FIXED in
+  scenario 22.** neon-edit now implements the Emacs ≥28 behaviour: `M-y`
+  when the previous command was not a yank opens the
+  `Yank from kill-ring:` minibuffer (ring entries as both M-p/M-n history
+  and TAB completion candidates; RET inserts literally at point and
+  pushes a mark; an immediately following `M-y` re-prompts rather than
+  rotating; empty ring → `Kill ring is empty`). Scenario 13's
+  `after-M-y-not-after-yank` checkpoint and all six scenario 22
+  checkpoints are pixel-perfect.
+
+- **27 `*scratch*` modeline after a kill** (checkpoints `after-y-kill`,
+  `after-save-kill`; the save path also has the usual `Wrote` path-text
+  echo diff). Killing the last file buffer drops both editors into
+  `*scratch*`, but Emacs's scratch runs Lisp Interaction mode with ElDoc
+  (`(Lisp Interaction ElDoc)`) while neon-edit's is `(Fundamental)` —
+  there is no Lisp in the game. Same content-gap class as scenario 05's
+  *Help* doc text.
+
+- **28 `*Buffer List*` body** (both checkpoints). The Buffer-menu
+  table's *rows* are environment-dependent: Emacs `-Q` always carries
+  `*scratch*`/`*Messages*`/`*Async-native-compile-log*` (the long name
+  also widens the dynamic name column), and the File column shows real
+  OS paths. neon-edit's column layout, flags, MRU ordering, name
+  truncation and self-exclusion are pinned by unit tests
+  (`test_list_buffers.py`); the harness verifies the shape — modeline,
+  unselected window, silent echo.
+
+- **31/32 dired listing body + cursor column** (every dired-listing
+  checkpoint). The header line shows the staged absolute path
+  (`/tmp/parity-XXXX/tree:` vs the VFS path), and the per-entry
+  metadata is real on the Emacs side but synthesized over the VFS
+  (`neon neon` owner/group, fictional link counts/free space — the VFS
+  models none of these), which also shifts the filename column the
+  cursor sits in. The *structure* is what the scenarios verify: point
+  line via the modeline `L<n>`, dired's `%17b` name padding,
+  `(Dired by name)`, `%%`/`%*` flags, and every path-free echo message.
+  The exact listing format, mark mechanics and line-rewrite behaviour
+  are pinned by `tests/unit/editor/test_dired.py`. The `+`/`R`/`C`
+  prompt checkpoints additionally baseline `echo_area` — the prompts
+  embed the host path (same class as scenario 04).
 
 ## Cosmetic items not yet polished
 
@@ -376,9 +418,11 @@ These are real divergences but low-impact:
    diffs in scenarios 10 (`second`, now pixel-perfect) and shrank 05
    (`*Help*`) / 03 (`*Completions*`) to their content-only diffs.
 
-2. **Split-window proportion when odd**. Emacs gives the *top* window
-   the extra row when total height is odd; neon-edit gives it to the
-   bottom. Fix is in the view's region computation for split nodes.
+2. ~~**Split-window proportion when odd**.~~ **FIXED in scenario 24.**
+   `view.py::_compute_layout` now rounds the *top* window up
+   (`(height + 1) // 2`), matching Emacs's split-window. Verified by
+   scenario 24's `after-C-x-2` checkpoint (modelines at rows 11/22 on a
+   24-row screen).
 
 3. ~~**Buffer-name padding in modeline** (`%12b`).~~ **FIXED in scenario
    12.** `_render_modeline` now right-pads the name to a 12-column minimum.
@@ -386,13 +430,14 @@ These are real divergences but low-impact:
    short no-file names (`*Help*`, `second`, …) changed — no file-buffer
    checkpoint was disturbed.
 
-4. **Empty-file EOL mnemonic** (`-UUU:` vs `-UU-:`). For an *empty* file
-   (no newline to sample), Emacs can't decide the EOL type and shows the
-   4th mule char as `U`; for a file with a Unix newline it shows `-`.
-   neon-edit always shows `-` for a file-visiting buffer. Surfaced while
-   probing scenario 19 (which sidesteps it with non-empty seed content).
-   Low-impact; the fix is in `view.py::_render_modeline` keying the 4th
-   char off "buffer has a trailing newline / detected EOL".
+4. ~~**Empty-file EOL mnemonic** (`-UUU:` vs `-UU-:`).~~ **FIXED in
+   scenario 26.** `Buffer.eol_decided` is sampled once at construction
+   (visit time): a file with no newline — empty or a single unterminated
+   line — stays undecided (`U` as the 4th mule char) for the buffer's
+   whole lifetime. Notably, *saving* newline-containing content does
+   **not** decide it in Emacs either — the first implementation guessed
+   it would, and scenario 26's `after-save` checkpoint failed until the
+   model matched. Live buffer content is never consulted.
 
 ## Proposed next scenarios
 
@@ -414,12 +459,15 @@ Each is sized for one session if the divergences turn out moderate.
    create/kill are now silent like Emacs. Added `Editor.other_buffer_name`
    + recency tracking. (The residual no-file-buffer modeline cosmetics were
    since fixed in scenario 12, so scenario 10 is now fully pixel-perfect.)
-   **Still TODO in a follow-up scenario:** `C-x C-b`
-   (list-buffers) — Emacs pops `*Buffer List*` in a *split* window with a
-   "CRM Buffer Size Mode File" table that also lists `*scratch*`/
-   `*Messages*` (neon-edit replaces the current window and has a different
-   table + buffer model); and `C-x k`'s confirm-if-modified flow ("Buffer
-   X modified; kill anyway? (yes or no)"), which neon-edit lacks.
+   **Follow-ups DONE in scenarios 27/28:** `C-x C-b` now pops a
+   Buffer-menu table (`CRM` flags, dynamic-width name column, size
+   right-aligned, mode, file) in the *other* window without selecting
+   it, replacing the legacy V1-style table that hijacked the current
+   window; and `C-x k` on a modified file-visiting buffer asks Emacs
+   29's `(yes/no/save and then kill)` long-form question (unique-prefix
+   RET completion, all three answer paths). **Still TODO** (own
+   scenario): the interactive Buffer-menu commands inside the list (RET
+   to visit, `d`/`x` mark-and-execute, `q` to quit the window).
 
 3. ~~**`scenario_11_indentation_and_auto_fill`**~~ → split. **DONE:
    `scenario_11_fill_paragraph`** — `M-q` re-wraps to fill-column (70),
@@ -442,10 +490,20 @@ Each is sized for one session if the divergences turn out moderate.
      indents to the syntactic level (prev-line indent + 4 after a `:`
      header) and cycles `[calc, calc-4, …, 0]` on repeated TAB. Also added
      the `(Python ElDoc)` modeline lighter (Emacs runs eldoc in python-mode;
-     the echo-area docs themselves are a future gap). **Still TODO:** the
-     full `python-indent-calculate-levels` (brackets, continuation lines,
-     dedenting keywords, the after-a-plain-statement cycle) — only the
-     `:`-header / simple-dedent case is replicated.
+     the echo-area docs themselves are a future gap). **Follow-up DONE in
+     scenario 29:** the full `python-indent-calculate-indentation` port —
+     bracket alignment (content-after-opener, newline-start `+4`,
+     `def`-block `+8` scale, closing-bracket-to-opening-line, nested,
+     string/comment-protected), backslash continuations (first `+4`,
+     later align-with-previous, block statements after-the-keyword),
+     after-block-end dedent, dedenter candidate lists (pairing table,
+     non-matching-opener shadowing, non-contiguous cycling) and the
+     `Closes …` echo on dedenter TAB. Each rule probed case-by-case
+     against Emacs 29.3 first; unit battery in
+     `test_python_indent_full.py`. **Documented deviations:**
+     `:inside-string` is not special-cased (TAB in a multi-line string
+     re-indents as code) and the dedenter walk pairs keywords lexically
+     rather than via real block navigation.
    - ~~**`auto-fill-mode` insertion**~~ **DONE** — `scenario_19_auto_fill_mode`.
      `M-x auto-fill-mode` toggles the minor mode with the Emacs message
      (`Auto-Fill mode enabled in current buffer`, derived in
@@ -461,8 +519,13 @@ Each is sized for one session if the divergences turn out moderate.
    command bound to `C-x C-q` (echoes `Read-Only mode enabled in current
    buffer`, flips the mnemonic to `%%-`). All 3 checkpoints pixel-perfect,
    and the fix resolved scenario 10's residual cosmetics and shrank 03/05.
-   **Still TODO in its own follow-up:** `column-number-mode` position
-   format. (The undo-to-saved modified-flag carry-over from scenario 09
+   **Follow-up DONE in scenario 24:** `column-number-mode` — a *global*
+   toggle command (`Column-Number mode enabled`, no "in current buffer"
+   suffix) switching the position readout to Emacs's padded `(%l,%c)`
+   field (zero-based column); the `L%l`/`(%l,%c)` fields are now
+   rendered with Emacs's min-width specs (6/10) rather than fixed
+   spacing, fixing a latent padding divergence for multi-digit line
+   numbers. (The undo-to-saved modified-flag carry-over from scenario 09
    was fixed in scenario 21 — `UndoSavePoint` tracking.)
 
 5. ~~**`scenario_13_kill_ring_browse`**~~ **DONE.** Built a three-entry
@@ -501,12 +564,20 @@ Each is sized for one session if the divergences turn out moderate.
    `jump-to-register` push a mark** (`Mark set`) in Emacs — neon-edit
    didn't — fixed by `_push_mark_for_big_motion` (push unless prefix arg /
    active region) and an unconditional push in the jump. All 5 checkpoints
-   pixel-perfect. **Documented deviation:** neon-edit has no inactive-mark
-   concept, so a pushed mark is *active* (the region renders highlighted)
-   whereas Emacs's push-mark is inactive — invisible to the text-only
-   harness, noted next to the code. **Still TODO** (own scenarios): the
-   rest of the `C-x r` family — `copy-to-register` (`s`), `insert-register`
-   (`i`), number / rectangle / window registers, and the register preview.
+   pixel-perfect. ~~**Documented deviation:** neon-edit has no
+   inactive-mark concept~~ — *resolved by item 11 / scenario 30:*
+   pushed marks are now inactive, exactly like Emacs's push-mark.
+   **Follow-up DONE in scenario 23:**
+   `copy-to-register` (`C-x r s`) and `insert-register` (`C-x r i`) —
+   registers now hold a point *or* text; copy is silent and deactivates
+   the region; insert leaves point after the text with the mark before
+   (`Mark set`, the Emacs ≥28 interactive behaviour); type mismatches
+   reproduce Emacs's errors verbatim (`Register does not contain text`,
+   `Register doesn’t contain a buffer position or configuration` — curly
+   apostrophe), and inserting a *point* register inserts the buffer
+   position as a number. All 7 checkpoints pixel-perfect. **Still TODO**
+   (own scenarios): number / rectangle / window registers and the
+   register preview popup.
 
 8. ~~**`scenario_16_minibuffer_history`**~~ **DONE.** The `Minibuffer`
    had no history at all, so this added per-prompt input history with
@@ -530,15 +601,25 @@ Each is sized for one session if the divergences turn out moderate.
    mechanism (the prompt reads `Query replace (default foo → bar): ` and
    `M-p` recalls the *pair*), deferred to item 10 below.
 
-9. **`scenario_NN_yank_from_kill_ring`** (deferred from scenario 13):
-   implement and verify `yank-from-kill-ring` — the command GNU Emacs ≥28
-   binds to `M-y` when the previous command was *not* a yank. It opens a
-   `Yank from kill-ring:` minibuffer with the ring entries as completion
-   candidates (multi-line entries shown with a separator), `M-n`/`M-p` to
-   navigate, `RET` to insert the chosen entry at point (and push a mark,
-   like yank). neon-edit currently no-ops `M-y` in that state. This is a
-   real feature, not a one-line fix, which is why scenario 13 left it as a
-   documented divergence rather than expanding scope.
+9. ~~**`scenario_NN_yank_from_kill_ring`**~~ **DONE** —
+   `scenario_22_yank_from_kill_ring`. `yank-pop` now dispatches to
+   `yank-from-kill-ring` when the previous command was not a yank
+   (Emacs ≥28): a `Yank from kill-ring:` minibuffer with the ring
+   entries (most recent first) as both the `M-p`/`M-n` history and the
+   TAB completion candidates; `RET` inserts the content literally at
+   point and pushes a mark (`Mark set`), even for empty input
+   (`completing-read` runs with `require-match` nil and `push-mark`
+   precedes the insert); the accept is *not* a yank, so a following
+   `M-y` re-prompts instead of rotating; an empty ring short-circuits
+   with `Kill ring is empty`. All edges probed against Emacs 29 before
+   implementation; scenario 13's `after-M-y-not-after-yank` baseline
+   entry was removed (now pixel-perfect). Unit contract:
+   `test_killring.py::TestYankFromKillRing`. **Deviation:** a recalled
+   multi-line ring entry grows Emacs's minibuffer to multiple rows;
+   neon's single-row minibuffer widget renders the embedded newlines as
+   `^J` instead (documented in `view.py::_render_message_line` — a raw
+   newline would corrupt the row layout). The inserted text keeps the
+   real newlines.
 
 10. ~~**`scenario_18_query_replace_defaults`**~~ **DONE.** `M-%` now keeps
     `query-replace-defaults` (the last `(from . to)` pair): a later prompt
@@ -548,44 +629,48 @@ Each is sized for one session if the divergences turn out moderate.
     from/to history (and splits it on submit). Added
     `Editor._query_replace_defaults`, a `history_list` param to
     `start_minibuffer` (transient `[default-pair] + history` navigation),
-    and `_qr_push_history`. All 4 checkpoints pixel-perfect. **Still TODO:**
-    wire `replace-string` to the same shared `query-replace-history`
-    (it remains unwired).
+    and `_qr_push_history`. All 4 checkpoints pixel-perfect.
+    **Follow-up DONE in scenario 25:** `replace-string` now reads its
+    args through the same `_replace_read_args` helper (the analogue of
+    Emacs's `query-replace-read-args`), sharing the defaults pair and
+    history with `M-%` in both directions, and reports `Replaced 0
+    occurrences` instead of a bespoke "No matches" message.
 
-11. **Inactive mark + mark ring + attribute-aware snapshots** (paired —
-    do these together, in one planned effort). neon-edit's mark is
-    always "active": `Buffer.region_active ⟺ mark is not None`, there is
-    no transient-mark-mode active/inactive distinction and no mark
-    ring. Consequences vs Emacs: a pushed mark (`M-<`, `M->`,
-    `jump-to-register`, yank, …) renders the region highlighted where
-    Emacs's `push-mark` is inactive (documented deviation next to
-    `_push_mark_for_big_motion` in `default_commands.py` and in
-    scenario 15); `C-g` cannot *deactivate* a mark distinct from
-    clearing it; `C-SPC C-SPC` (set-and-deactivate) and `C-u C-SPC`
-    (pop mark ring) are unimplementable.
+11. ~~**Inactive mark + mark ring + attribute-aware snapshots**~~
+    **DONE** — scenario 30, exactly as planned (paired, opt-in capture).
 
-    **Why paired**: every one of those behaviours is invisible to the
-    text-only harness — region highlighting is exactly an SGR
-    attribute. Fixing the editor without harness coverage would break
-    the verify-against-Emacs methodology; adding attribute snapshots
-    without a consumer is speculative. The harness side should be an
-    **opt-in, scoped** capture (e.g. a `Snapshot.highlight_runs` field
-    recording reverse-video runs per row, captured from pyte's per-cell
-    attributes, compared only by scenarios that ask for it) — do NOT
-    reverse the global text-only decision; full-attribute comparison
-    was deliberately rejected as too noisy (see "Don't compare attrs"
-    below).
+    **Harness side**: `Snapshot.highlights` records `(row, start,
+    end_exclusive)` runs of cells with reverse video or a non-default
+    *background* (foregrounds deliberately ignored — syntax colors
+    differ by design), captured from pyte's per-cell attributes on every
+    snapshot but **compared only by scenarios that declare
+    `COMPARE_HIGHLIGHTS = True`** — the global text-only decision
+    stands. `highlights` is a valid `EXPECTED_DIVERGENCES` field; the
+    report prints both targets' runs when they differ. Unit tests in
+    `parity/tests/test_highlights.py`.
 
-    **Editor side**: `mark_active` flag decoupled from mark existence;
-    `set_mark` activates, `push-mark` doesn't; `C-g` deactivates;
-    region rendering and region commands key off `mark_active`; a
-    per-buffer mark ring with `C-SPC C-SPC` / `C-u C-SPC`. Expect broad
-    test churn in everything that asserts `region_active`.
+    **Editor side** (`test_mark_ring.py` for the unit contract, every
+    rule probed against Emacs 29.3 first): `Buffer.mark_active`
+    decoupled from mark existence; `push_mark` (inactive, pushes the
+    old mark onto a 16-entry ring) vs `set_mark` (activates, no ring);
+    `pop_mark` *rotates* the ring (old mark to the back). C-SPC pushes
+    + activates (`Mark set`); `C-SPC C-SPC` deactivates
+    (`Mark deactivated`); `C-u C-SPC` jumps to the mark and rotates —
+    silent on a real jump, `Mark popped` when point is already there.
+    C-g and M-w *deactivate without clearing* (region commands still
+    work via the inactive mark — `mark-even-if-inactive`; C-w kills
+    after a C-g'd region); `C-x C-x` swaps and *reactivates*. All
+    push-mark sites (big motions, yank, yank-from-kill-ring, isearch's
+    "Mark saved", the register jump/insert) now push inactive.
 
-    **Size**: 2-3 sessions (one for the harness capture + a probe
-    scenario, one-two for the mark semantics). Lower urgency than it
-    looks: no current checkpoint can see the difference, so this only
-    blocks region-*rendering* parity, not any queued scenario.
+    **Region rendering** (new — neon-edit previously rendered no region
+    at all): the active region draws with the `region` face
+    (`faces.py`, background-only SGR), only in the selected window
+    (`highlight-nonselected-windows` nil), and **extends to the window
+    edge** on every row whose region segment spans the newline (the
+    face's `:extend`), including empty lines inside the region; the
+    final row stops at the region-end column. Verified run-for-run
+    against Emacs in scenario 30's seven checkpoints.
 
 ## Tips and gotchas
 
@@ -621,10 +706,14 @@ Each is sized for one session if the divergences turn out moderate.
   virtual filesystem ends up byte-identical to the host file. Use it
   rather than re-inventing setup per scenario.
 
-- **Don't compare attrs.** Snapshots are text-only by design. ANSI
-  colour comparison is noisier than it's worth at the parity level we
-  care about. If you need attribute-level checks, scope them to a
-  dedicated rendering test, not the parity scenarios.
+- **Don't compare attrs globally.** Snapshots are compared text-only by
+  default; full ANSI colour comparison is noisier than it's worth at
+  the parity level we care about. For behaviours that *are* attributes
+  — the active-region face, primarily — a scenario can opt in with
+  `COMPARE_HIGHLIGHTS = True`, which additionally compares
+  `Snapshot.highlights` (runs of reverse-video / non-default-background
+  cells; foregrounds stay ignored). See scenario 30. Keep the opt-in
+  scoped to scenarios that exist to verify highlighting.
 
 - **Run all scenarios after editor changes.** Fixes in shared code
   (`_resolve_keymap`, `_render_modeline`, etc.) can ripple. The full

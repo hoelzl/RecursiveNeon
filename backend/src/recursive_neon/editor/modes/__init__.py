@@ -61,6 +61,10 @@ class Mode:
     doc: str = ""
     indicator: str = ""  # short modeline string; falls back to name if empty
     syntax_rules: list[SyntaxRule] = field(default_factory=list)
+    # Minimum width of the buffer name in the modeline. GNU Emacs's
+    # default ``mode-line-buffer-identification`` is ``%12b``; some modes
+    # widen it — dired uses ``%17b`` (verified against Emacs 29.3).
+    buffer_id_width: int = 12
     # Per-mode TAB behaviour (Emacs's ``indent-line-function``). When set,
     # ``indent-for-tab-command`` calls it instead of the text-mode default
     # (``indent-relative``). python-mode uses it for syntactic indentation.
@@ -83,6 +87,7 @@ def defmode(
     indicator: str = "",
     syntax_rules: list[SyntaxRule] | None = None,
     indent_line_function: Callable[[Editor], None] | None = None,
+    buffer_id_width: int = 12,
 ) -> Mode:
     """Register a new mode and return it."""
     mode = Mode(
@@ -96,6 +101,7 @@ def defmode(
         indicator=indicator,
         syntax_rules=syntax_rules or [],
         indent_line_function=indent_line_function,
+        buffer_id_width=buffer_id_width,
     )
     MODES[name] = mode
     return mode
@@ -153,6 +159,12 @@ defmode(
     "completion-list-mode",
     doc="Major mode for ``*Completions*`` buffers; modeline reads ``(Completion List)``.",
     indicator="Completion List",
+)
+
+defmode(
+    "buffer-menu-mode",
+    doc="Major mode for the ``*Buffer List*`` buffer; modeline reads ``(Buffer Menu)``.",
+    indicator="Buffer Menu",
 )
 
 

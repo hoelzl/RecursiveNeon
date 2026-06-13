@@ -11,11 +11,9 @@ query-replace keys are consumed before the ESC state machine.
 from __future__ import annotations
 
 from recursive_neon.editor.commands import COMMANDS
-from recursive_neon.editor.default_commands import (
-    _QueryReplaceSession,
-    build_default_keymap,
-)
+from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
+from recursive_neon.editor.replace_commands import _QueryReplaceSession
 from recursive_neon.editor.view import EditorView
 
 

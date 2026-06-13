@@ -2,9 +2,9 @@
 
 ## Project
 
-Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend planned but not yet built.
+Futuristic RPG prototype: player interacts with a simulated desktop via a terminal/shell. LLM-powered NPCs (Ollama), virtual filesystem, Python (FastAPI) backend. React/TypeScript frontend: a working xterm.js browser terminal (Phase 8 tasks 1-3); desktop chrome still to come.
 
-**Status**: V2 reboot. Phases 0-7f complete. 2163 passing tests, 0 xfail. **Phase 8 (browser terminal + desktop GUI) is next**.
+**Status**: V2 reboot. Phases 0-7f complete plus the editor-as-game-shell roadmap (`docs/EDITOR_SHELL_ROADMAP.md`: dired, TuiApp window host, shell polish, browser terminal). 2477 passing backend tests + 42 frontend tests; parity 32 scenarios / 148 checkpoints. **Phase 8 tasks 4-6 (desktop chrome, GUI apps) are next** — re-evaluate their scope per the roadmap's §1.
 Read `docs/V2_HANDOVER.md` for full context, decisions, and implementation plan.
 
 ## V2 Direction
@@ -39,6 +39,13 @@ cd backend
 # Pre-commit hooks (from repo root)
 ../.venv/Scripts/pre-commit install        # Set up hooks (once after clone)
 ../.venv/Scripts/pre-commit run --all-files # Run all hooks manually
+
+# Frontend (from frontend/) — browser terminal (xterm.js → /ws/terminal)
+npm install                # once
+npm run dev                # Vite dev server on :5173 (proxies /ws to :8000)
+npm test -- run            # vitest (terminal protocol/key/line-editor units)
+npm run build              # tsc + production build
+# Run the backend for it: ../.venv/Scripts/python -m uvicorn recursive_neon.main:app --port 8000
 ```
 
 ## Critical Rules
@@ -77,11 +84,14 @@ cd backend
 - Pipeline parser: `backend/src/recursive_neon/shell/parser.py` (tokenizer, `Token`, `parse_pipeline`, `Redirect` with fd/stderr, `Pipeline.stderr_redirect`)
 - Raw key input: `backend/src/recursive_neon/shell/keys.py` (platform-specific keystroke reading, shared by CLI and WS client)
 - TUI framework: `backend/src/recursive_neon/shell/tui/` (`ScreenBuffer`, `TuiApp` protocol, `run_tui_app` runner)
-- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`)
+- Editor: `backend/src/recursive_neon/editor/` (`Buffer`, `Mark`, `Editor`, `EditorView`, `Viewport`, `Minibuffer`, commands, keymaps, variables, modes, `Window`, `WindowTree`; command families split across `default_commands.py`, `isearch_commands.py`, `replace_commands.py`, `register_commands.py`)
 - Config loader: `backend/src/recursive_neon/editor/config_loader.py` (`ConfigNamespace`, `load_config`, sandboxed `~/.neon-edit.py` execution)
 - Faces: `backend/src/recursive_neon/editor/faces.py` (`FACES`, `resolve_face` — named face→ANSI mapping)
 - Language modes: `backend/src/recursive_neon/editor/modes/` (`python_mode`, `markdown_mode`, `sh_mode`, `AUTO_MODE_ALIST`, `detect_mode`)
 - Shell-in-editor: `backend/src/recursive_neon/editor/shell_mode.py` (`BufferOutput`, `ShellState`, `ShellBufferInput`, `setup_shell_buffer`, comint commands, `execute_shell_command`)
+- Dired: `backend/src/recursive_neon/editor/dired.py` (`dired-mode` over the VFS — `DiredProvider` protocol, `open_dired`, C-x d / `edit <dir>` / find-file-on-directory; host side `shell/programs/edit.py::VfsDiredProvider`)
+- TUI app host: `backend/src/recursive_neon/editor/app_host.py` (M-x codebreaker/sysmon/portscan/fsbrowse/memdump in an editor window; term-char-mode C-c escape prefix; `editor.tui_app_factories` wired by edit.py)
+- Browser terminal: `frontend/src/terminal/` (`protocol.ts` message schema, `keys.ts` DOM→protocol encoding, `lineEditor.ts` cooked-mode readline, `session.ts` protocol brain, `NeonTerminal.tsx` xterm.js binding)
 - Text attributes: `backend/src/recursive_neon/editor/text_attr.py` (`TextAttr` — frozen SGR attribute type)
 - ANSI parser: `backend/src/recursive_neon/editor/ansi_parser.py` (`parse_ansi` — ANSI text to `(text, attr)` runs)
 - Game bridge: `backend/src/recursive_neon/editor/game_bridge.py` (`open-note`, `open-task-list`, `list-npcs` commands)

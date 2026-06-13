@@ -116,7 +116,9 @@ defvar(
 defvar(
     "column-number-mode",
     False,
-    "If True, the modeline shows the current column (``C<n>``) in "
-    "addition to the line number. Off by default, matching GNU Emacs.",
+    "If True, the modeline position readout shows line and column as "
+    "``(<line>,<col>)`` (column zero-based) instead of ``L<line>``. "
+    "Off by default, matching GNU Emacs. Toggled by the global "
+    "``column-number-mode`` command.",
     var_type=bool,
 )

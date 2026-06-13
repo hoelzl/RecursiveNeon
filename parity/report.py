@@ -37,12 +37,28 @@ def format_report(result: ScenarioResult) -> str:
                 b,
             )
         )
+        if snap_a.highlights != snap_b.highlights:
+            out.append(
+                _kv_diff(
+                    "highlights",
+                    _fmt_highlights(snap_a.highlights),
+                    _fmt_highlights(snap_b.highlights),
+                    a,
+                    b,
+                )
+            )
         out.append("")
         out.append("### Differences (body, line by line)")
         out.append("")
         out.append(_line_diff(snap_a, snap_b, a, b))
         out.append("")
     return "\n".join(out)
+
+
+def _fmt_highlights(runs: tuple[tuple[int, int, int], ...]) -> str:
+    if not runs:
+        return "(none)"
+    return " ".join(f"r{row}:{start}-{end}" for row, start, end in runs)
 
 
 def _side_by_side(name_a: str, sa: Snapshot, name_b: str, sb: Snapshot) -> str:

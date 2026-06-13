@@ -151,7 +151,10 @@ class TestQuitRegion:
 
         ed.process_key("C-g")
 
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed.message == "Quit"
 
     def test_cg_with_no_mark_is_harmless(self):
@@ -315,7 +318,10 @@ class TestQuitCommandDirect:
 
         ed.execute_command("keyboard-quit")
 
-        assert ed.buffer.mark is None
+        # C-g deactivates the mark but keeps it (Emacs's deactivate-mark;
+        # region commands still work via mark-even-if-inactive).
+        assert ed.buffer.mark is not None
+        assert not ed.buffer.region_active
         assert ed._prefix_arg is None
         assert ed._pending_keymap is None
         assert ed.message == "Quit"

@@ -61,18 +61,25 @@ Structurally sound for this work:
    binary). Already a *visible* parity diff — scenario 09's
    undo-to-saved modified-flag residual. First structural item worth
    scheduling.
-2. **Mark is always active** (`buffer.py` — `region_active ⟺ mark is
-   not None`; no inactive mark, no mark ring). Invisible to the
-   text-only harness — which means the harness *cannot* drive this part
-   of Emacs feel.
+2. ~~**Mark is always active**~~ **FIXED** (scenario 30, the planned
+   item-11 effort): `mark_active` decoupled from mark existence, a
+   16-entry mark ring (`C-SPC C-SPC` / `C-u C-SPC` rotation), inactive
+   push-mark everywhere, C-g/M-w deactivate-not-clear, and — new —
+   region *rendering* with Emacs's `:extend` semantics, verified via
+   the opt-in highlight capture (`COMPARE_HIGHLIGHTS`).
 3. **Minibuffer is a widget, not a buffer** (`minibuffer.py` — string +
    ad-hoc `key_handlers`, patched `process_key`). Fine and arguably
    cleaner for everything done so far; caps future parity at recursive
    minibuffers, minibuffer-local keymaps, richer completion styles. The
    `yank-from-kill-ring` picker will lean on this widget.
-4. **`default_commands.py` is ~2,750 lines** and the destination of
-   every new command. Not a god-module yet; isearch / query-replace /
-   registers are natural seams to split along before it becomes one.
+4. ~~**`default_commands.py` is ~2,750 lines**~~ **SPLIT** along
+   exactly the named seams: `isearch_commands.py` (~510),
+   `replace_commands.py` (M-% + replace-string, ~640) and
+   `register_commands.py` (~160) — `default_commands.py` is back to
+   ~1,800 lines, imports the three for registration, and re-exports the
+   handful of names `editor.py`/tests historically pulled from it.
+   Behaviour-neutral: full backend + parity suites green either side of
+   the split.
 
 ## Remaining work queued in the handover
 
@@ -125,11 +132,13 @@ undo-to-saved fix. All well-scoped.
   pixel-perfect) and added scenario 21 covering the
   save/undo/redo/stale-marker flows against real Emacs. Unit contract
   in `backend/tests/unit/editor/test_undo_savepoint.py`.
-- [ ] Inactive mark / mark ring — needs attribute-aware snapshots to be
-  harness-verifiable, so the two must land together as one planned
-  effort. Deliberately **not** attacked in this pass: it is a 2-3
-  session project (harness capture design + core mark semantics), no
-  current checkpoint can observe the difference, and Phase 8 (browser)
-  is the project's declared next priority. Fully specced as item 11 in
-  `PARITY_HARNESS.md` "Proposed next scenarios" for whoever picks it
-  up.
+- [x] Inactive mark / mark ring + attribute-aware snapshots — landed
+  together as one effort, exactly as specced (item 11 / scenario 30):
+  opt-in `Snapshot.highlights` capture (reverse-video / non-default-bg
+  runs from pyte's cell attributes, compared only by scenarios that
+  declare `COMPARE_HIGHLIGHTS = True`), `mark_active` + mark ring in
+  the buffer, inactive push-mark at every push site, and brand-new
+  region rendering (the editor previously drew no region at all) with
+  Emacs's extend-to-window-edge semantics. All seven scenario-30
+  checkpoints — including the highlight runs — match Emacs 29.3
+  exactly.

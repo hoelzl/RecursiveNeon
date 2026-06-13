@@ -44,6 +44,7 @@ _HIGHLIGHT_MATCH = "\033[43;30m"  # yellow background, black foreground
 _HIGHLIGHT_CURRENT = "\033[1;41;97m"  # bold + red background + bright white
 _SYNTAX_PRIORITY = 10  # syntax highlighting (below buffer attrs)
 _BUFFER_ATTR_PRIORITY = 15  # buffer-level text attributes (shell ANSI)
+_REGION_PRIORITY = 18  # active region (above text attrs, below matches)
 _HIGHLIGHT_PRIORITY = 20  # non-current match
 _HIGHLIGHT_PRIORITY_CURRENT = 25  # the match the point is on
 
@@ -123,6 +124,37 @@ class EditorView:
         self._width = width
         self._height = height
         return self._render()
+
+    @property
+    def tick_interval_ms(self) -> int:
+        """Tick only while a live hosted TUI app wants ticks (sysmon).
+
+        ``run_tui_app`` re-reads this each loop iteration, so the editor
+        runs untimed until an app that ticks is hosted.
+        """
+        from recursive_neon.editor.app_host import min_tick_interval_ms
+
+        return min_tick_interval_ms(self.editor)
+
+    def on_tick(self, dt_ms: int) -> ScreenBuffer | None:
+        """Drive hosted TUI apps' periodic updates (editor/app_host.py)."""
+        from recursive_neon.editor.app_host import tick_hosted_apps
+
+        if tick_hosted_apps(self.editor, dt_ms):
+            return self._render()
+        return None
+
+    def sync_active_window_to_buffer(self) -> None:
+        """Bind the active window to the editor's current buffer.
+
+        ``on_key`` only propagates buffer switches made *during* a
+        keystroke; hosts that switch buffers before the TUI loop starts
+        (e.g. ``edit <dir>`` opening a dired buffer on launch) call this
+        so the first render doesn't show the original buffer.
+        """
+        win = self._tree.active
+        if self.editor.buffer is not win.buffer:
+            self._update_window_buffer(win, self.editor.buffer)
 
     async def on_after_key(self) -> ScreenBuffer | None:
         """Process pending async work (e.g., shell command execution).
@@ -243,7 +275,10 @@ class EditorView:
             node._height = height
         else:
             if node.direction == SplitDirection.HORIZONTAL:
-                first_h = height // 2
+                # GNU Emacs gives the *top* window the extra row when the
+                # available height is odd (split-window halves round up
+                # for the upper window).
+                first_h = (height + 1) // 2
                 second_h = height - first_h
                 self._compute_layout(node.first, top, left, width, first_h)
                 self._compute_layout(node.second, top + first_h, left, width, second_h)
@@ -270,6 +305,14 @@ class EditorView:
         """
         buf = win.buffer
         text_h = win.text_height
+
+        # Window-geometry hook: buffers that track their window's text
+        # area (hosted TUI apps — editor/app_host.py) get told the
+        # current size before their lines are read, so a layout change
+        # re-renders the app at the new dimensions in the same frame.
+        size_hook = getattr(buf, "on_window_size", None)
+        if size_hook is not None:
+            size_hook(win._width, text_h)
 
         # Ensure cursor is visible (only for active window)
         if is_active:
@@ -298,6 +341,11 @@ class EditorView:
 
         # Compute buffer-attr spans (ANSI colours from shell output)
         self._compute_buffer_attr_spans(win, text_spans)
+
+        # Active-region face (only in the selected window, like Emacs's
+        # default highlight-nonselected-windows of nil)
+        if is_active:
+            self._compute_region_spans(win, text_spans)
 
         # Compute highlight spans for this window (isearch term etc.)
         self._compute_highlight_spans(win, text_spans)
@@ -436,6 +484,53 @@ class EditorView:
                     )
                 )
 
+    def _compute_region_spans(self, win: Window, text_spans: list[StyleSpan]) -> None:
+        """Append spans for the active region (transient-mark-mode face).
+
+        Matches GNU Emacs's TTY region rendering (verified via parity
+        scenario 30's highlight capture):
+
+        * only when the mark is *active* (``Buffer.region_active``);
+        * on every region row whose segment spans the newline — i.e. all
+          rows except the one holding the region end — the highlight
+          *extends to the window edge* (the region face's ``:extend``);
+        * the final row highlights up to the region-end column only, so
+          a region ending at column 0 adds no run on that row.
+        """
+        buf = win.buffer
+        if not buf.region_active or buf.mark is None:
+            return
+        a = (buf.point.line, buf.point.col)
+        b = (buf.mark.line, buf.mark.col)
+        (s_line, s_col), (e_line, e_col) = min(a, b), max(a, b)
+        first_visible = win.scroll_top
+        last_visible = first_visible + win.text_height - 1
+        style = resolve_face("region")
+        for ln in range(s_line, e_line + 1):
+            if ln < first_visible or ln > last_visible:
+                continue
+            c_start = s_col if ln == s_line else 0
+            # Final row: stop at the region end; earlier rows extend to
+            # the window edge (the region face's :extend).
+            width = e_col - c_start if ln == e_line else win._width - c_start
+            if width <= 0:
+                continue
+            screen_row = win._top + (ln - first_visible)
+            screen_col = win._left + c_start
+            win_right = win._left + win._width
+            if screen_col >= win_right:
+                continue
+            width = min(width, win_right - screen_col)
+            text_spans.append(
+                StyleSpan(
+                    row=screen_row,
+                    col=screen_col,
+                    width=width,
+                    style=style,
+                    priority=_REGION_PRIORITY,
+                )
+            )
+
     def _compute_highlight_spans(
         self, win: Window, text_spans: list[StyleSpan]
     ) -> None:
@@ -564,13 +659,14 @@ class EditorView:
 
         Layout (matches GNU Emacs's TTY default):
 
-            -UU-:<mod>  F1  <name>   <pos>   L<line>[  C<col>]     (<Mode>) ---
+            -UU-:<mod>  F1  <name>   <pos>   L<line>     (<Mode>) ---
 
         where ``<mod>`` is ``---`` for an unmodified writable buffer,
         ``**-`` for modified, ``%%-`` for read-only, ``%*-`` for both;
         ``<pos>`` is ``All`` / ``Top`` / ``Bot`` / ``<nn>%`` depending on
-        which part of the buffer is visible; and the ``C<col>`` segment
-        only appears when ``column-number-mode`` is enabled.
+        which part of the buffer is visible; and the ``L<line>`` segment
+        becomes ``(<line>,<col>)`` when ``column-number-mode`` is enabled
+        (both are width-padded fields — see below).
         """
         buf = win.buffer
         ed = self.editor
@@ -586,7 +682,9 @@ class EditorView:
         else:
             mod = "**-" if buf.modified else "---"
 
-        name = buf.filepath if buf.filepath else buf.name
+        # GNU Emacs shows the buffer *name* (%b) — never the visited
+        # path; find-file names the buffer after the file's basename.
+        name = buf.name
 
         # Position percent: which slice of the buffer is on screen.
         total = max(1, buf.line_count)
@@ -602,14 +700,23 @@ class EditorView:
             pct = int(round(100 * (top + th) / total))
             pos = f"{pct}%"
 
-        # Line / column readout (line-number-mode on by default).
+        # Line / column readout. GNU Emacs renders this as a width-padded
+        # field (``mode-line-position``): `` L%l`` right-padded to 6 with
+        # only line-number-mode (the default), `` (%l,%c)`` padded to 10
+        # with column-number-mode as well, `` C%c`` padded to 5 with the
+        # column alone — the leading space belongs to the field, and the
+        # column is zero-based (``column-number-indicator-zero-based``).
         pt = win._point
-        parts: list[str] = []
-        if bool(ed.get_variable("line-number-mode")):
-            parts.append(f"L{pt.line + 1}")
-        if bool(ed.get_variable("column-number-mode")):
-            parts.append(f"C{pt.col}")
-        pos_line = "  ".join(parts)
+        line_on = bool(ed.get_variable("line-number-mode"))
+        col_on = bool(ed.get_variable("column-number-mode"))
+        if line_on and col_on:
+            pos_field = f" ({pt.line + 1},{pt.col})".ljust(10)
+        elif line_on:
+            pos_field = f" L{pt.line + 1}".ljust(6)
+        elif col_on:
+            pos_field = f" C{pt.col}".ljust(5)
+        else:
+            pos_field = ""
 
         # Mode indicator (major + minor).
         if buf.major_mode:
@@ -624,21 +731,24 @@ class EditorView:
         )
         mode_str = f"({display}{minor_indicators})"
 
-        # Coding-system mnemonic: ``-UU-:`` for a file-visiting buffer;
-        # Emacs widens the third column to ``U`` (``-UUU:``) for a buffer
-        # with no associated file (``*scratch*``/``*Help*``/``*Completions*``
-        # or a fresh ``C-x b`` buffer).
-        mule = "-UU-:" if buf.filepath else "-UUU:"
+        # Coding-system mnemonic. The 4th mule char shows the end-of-line
+        # type — ``-`` once a Unix EOL has been detected, ``U`` while it
+        # is undecided. Emacs leaves it undecided for buffers not visiting a
+        # file (``*scratch*``/``*Help*``/``*Completions*``…) and for
+        # visited files with no newline to sample (empty files, or a
+        # single line without a trailing newline) — decided at visit or
+        # save time, never from live edits (``Buffer.eol_decided``).
+        mule = "-UU-:" if (buf.filepath and buf.eol_decided) else "-UUU:"
         # Emacs right-pads the buffer name to a 12-column minimum (``%12b``)
-        # so the position columns line up; long names are unaffected.
-        name_field = name.ljust(12)
+        # so the position columns line up; long names are unaffected. Some
+        # modes widen the field — dired uses ``%17b`` (Mode.buffer_id_width).
+        id_width = buf.major_mode.buffer_id_width if buf.major_mode else 12
+        name_field = name.ljust(id_width)
 
         # Assemble. The trailing dashes fill the row out to the window width,
         # matching the look of Emacs's ``mode-line-end-spaces`` padding.
         head = f"{mule}{mod}  F1  {name_field}   {pos}"
-        if pos_line:
-            head += f"   {pos_line}"
-        head += f"     {mode_str} "
+        head += f"  {pos_field}  {mode_str} "
 
         w = win._width
         if len(head) < w:
@@ -687,6 +797,15 @@ class EditorView:
 
         for row, row_spans in by_row.items():
             line = screen.lines[row]
+            # Pad the row out to the widest span so styles can extend past
+            # the end of the text — the region face highlights to the
+            # window edge on rows where the region spans the newline
+            # (Emacs's :extend), including empty lines inside the region.
+            max_end = max(
+                min(span.col + span.width, screen.width) for span in row_spans
+            )
+            if len(line) < max_end:
+                line = line.ljust(max_end)
             if not line:
                 continue
             n = len(line)
@@ -770,7 +889,15 @@ class EditorView:
 
         if self.editor.minibuffer is not None:
             mb = self.editor.minibuffer
-            screen.set_line(message_row, mb.display[: self._width])
+            # Deviation from GNU Emacs: a minibuffer input containing
+            # newlines (e.g. a multi-line kill-ring entry recalled in the
+            # yank-from-kill-ring picker) grows Emacs's minibuffer to
+            # multiple rows — our minibuffer is a single-row widget, so
+            # render embedded newlines as ``^J`` (Emacs's control-char
+            # notation) instead of writing a raw "\n" into the row, which
+            # would corrupt the screen layout. The underlying text is
+            # untouched; only the display is escaped.
+            screen.set_line(message_row, mb.display.replace("\n", "^J")[: self._width])
             # Isearch is a minibuffer-driven mode in our model, but Emacs
             # keeps the cursor on the *match position* in the buffer
             # (and only shows the prompt in the echo area). Detect the
@@ -784,7 +911,11 @@ class EditorView:
                 screen.cursor_col = win._left + min(pt.col, win._width - 1)
             else:
                 screen.cursor_row = message_row
-                screen.cursor_col = min(len(mb.prompt) + mb.cursor, self._width - 1)
+                # Each newline before the cursor renders as two cells (^J).
+                shift = mb.text[: mb.cursor].count("\n")
+                screen.cursor_col = min(
+                    len(mb.prompt) + mb.cursor + shift, self._width - 1
+                )
             screen.cursor_visible = True
         elif self.editor._describe_key_session is not None:
             # While ``C-h k`` is waiting for a follow-up key, Emacs parks

@@ -34,10 +34,11 @@ class TestReplaceString:
         assert "1 occurrence" in h.message_line()
         assert "occurrences" not in h.message_line()
 
-    def test_no_matches(self) -> None:
+    def test_no_matches_reports_zero_count(self) -> None:
+        """Emacs echoes "Replaced 0 occurrences", not a no-match message."""
         h = make_harness("hello world")
         self._do_replace(h, "xyz", "abc")
-        assert "No matches" in h.message_line()
+        assert "Replaced 0 occurrences" in h.message_line()
         assert h.buffer_text() == "hello world"
 
     def test_replaces_from_point_only(self) -> None:

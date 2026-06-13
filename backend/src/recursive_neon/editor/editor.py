@@ -23,7 +23,7 @@ from recursive_neon.editor.modes import MODES
 from recursive_neon.editor.variables import VARIABLES
 
 if TYPE_CHECKING:
-    from recursive_neon.editor.default_commands import _QueryReplaceSession
+    from recursive_neon.editor.replace_commands import _QueryReplaceSession
     from recursive_neon.editor.viewport import Viewport
     from recursive_neon.editor.window import Window, WindowTree
 
@@ -61,7 +61,8 @@ class _RegisterSession:
     """
 
     action: str
-    """``"point"`` (save point) or ``"jump"`` (restore point)."""
+    """``"point"`` (save point), ``"jump"`` (restore point), ``"copy"``
+    (region text into the register) or ``"insert"`` (register at point)."""
 
 
 class Editor:
@@ -151,14 +152,15 @@ class Editor:
         self._query_replace_session: _QueryReplaceSession | None = None
 
         # Registers (Emacs ``C-x r``).  ``_registers`` maps a register
-        # name (a single character) to a saved point location ``(line,
-        # col)``.  ``_register_session`` is set while ``point-to-register``
-        # / ``jump-to-register`` wait for the next key (the register name);
-        # the next keystroke is consumed as that name.  Cleared by
-        # ``_reset_transient_state``.  Note: we store a static ``(line,
-        # col)`` in the current buffer rather than an edit-tracking marker
-        # in a specific buffer — enough for point save/jump basics.
-        self._registers: dict[str, tuple[int, int]] = {}
+        # name (a single character) to either a saved point location
+        # ``(line, col)`` or copied text (``str``).  ``_register_session``
+        # is set while a register command waits for the next key (the
+        # register name); the next keystroke is consumed as that name.
+        # Cleared by ``_reset_transient_state``.  Note: we store a static
+        # ``(line, col)`` in the current buffer rather than an
+        # edit-tracking marker in a specific buffer — enough for point
+        # save/jump basics.
+        self._registers: dict[str, tuple[int, int] | str] = {}
         self._register_session: _RegisterSession | None = None
 
         # ESC-as-Meta state machine.  A bare Escape keystroke sets
@@ -223,6 +225,18 @@ class Editor:
         self.app_service: Any | None = None  # AppService
         self.npc_manager: Any | None = None  # INPCManager
         self.event_bus: Any | None = None  # GameEventBus
+
+        # Dired provider — virtual-filesystem access for dired buffers,
+        # injected by the hosting environment (edit.py).  ``None`` when
+        # running standalone; M-x dired then reports it is unavailable.
+        self.dired_provider: Any | None = None  # DiredProvider
+
+        # TUI app factories — name → () -> TuiApp, injected by the
+        # hosting environment (edit.py) so M-x codebreaker / sysmon / …
+        # can host the game's TUI apps in an editor window.  ``None``
+        # when running standalone; the commands then report the app as
+        # unavailable.  See editor/app_host.py.
+        self.tui_app_factories: dict[str, Any] | None = None
 
         # NPC notification style: "flash" shows a modeline flash,
         # "silent" appends silently.
@@ -438,7 +452,7 @@ class Editor:
         if self._register_session is not None:
             session_r = self._register_session
             self._register_session = None
-            from recursive_neon.editor.default_commands import _do_register_action
+            from recursive_neon.editor.register_commands import _do_register_action
 
             _do_register_action(self, key, session_r)
             return
@@ -453,10 +467,27 @@ class Editor:
             self._query_replace_session is not None
             and not self._query_replace_session.paused_for_edit
         ):
-            from recursive_neon.editor.default_commands import _qr_handle_key
+            from recursive_neon.editor.replace_commands import _qr_handle_key
 
             _qr_handle_key(self, key)
             return
+
+        # Hosted TUI app capture (Emacs term char mode): when the
+        # selected window shows a live hosted app, keys go to the app
+        # and ``C-c`` is the escape prefix (see editor/app_host.py).
+        # Runs before the ESC machine so the app sees raw Escape — but
+        # never while the minibuffer (``C-c b`` → switch-to-buffer
+        # prompt) or a pending prefix keymap (``C-c 4`` …) is consuming
+        # keys.
+        if (
+            self.minibuffer is None
+            and self._pending_keymap is None
+            and getattr(self.buffer, "_app_host_state", None) is not None
+        ):
+            from recursive_neon.editor.app_host import host_handle_key
+
+            if host_handle_key(self, key):
+                return
 
         # ESC-as-Meta state machine.  Runs before minibuffer routing so
         # a bare Escape does not reach the minibuffer and so that
@@ -1062,8 +1093,11 @@ class Editor:
         Does *not* touch the minibuffer — callers handle it explicitly
         because dismissal has a replay-key side effect.
         """
-        # Clear the region / mark
-        self.buffer.clear_mark()
+        # Deactivate the region. The mark itself survives — Emacs's C-g
+        # runs deactivate-mark, not a clear: region commands still work
+        # on the (inactive) mark afterwards (mark-even-if-inactive) and
+        # C-x C-x can reactivate it.
+        self.buffer.deactivate_mark()
         # Clear pending prefix keymap (mid C-x / C-h etc.)
         self._pending_keymap = None
         self._prefix_keys = ""
