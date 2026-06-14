@@ -16,10 +16,12 @@ from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
 from recursive_neon.models.process import ProcessTable
 from recursive_neon.services.app_service import AppService
+from recursive_neon.services.flag_service import FlagService
 from recursive_neon.services.game_event_bus import GameEventBus
 from recursive_neon.services.interfaces import (
     IAppService,
     IConnectionManager,
+    IFlagService,
     IGameEventBus,
     INPCManager,
     IOllamaClient,
@@ -50,6 +52,7 @@ class ServiceContainer:
     app_service: IAppService
     terminal_manager: ITerminalSessionManager
     connection_manager: IConnectionManager
+    flag_service: IFlagService
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)
     event_bus: IGameEventBus = field(default_factory=GameEventBus)
@@ -65,6 +68,7 @@ class ServiceContainer:
             f"app_service={type(self.app_service).__name__}, "
             f"terminal_manager={type(self.terminal_manager).__name__}, "
             f"connection_manager={type(self.connection_manager).__name__}, "
+            f"flag_service={type(self.flag_service).__name__}, "
             f"event_bus={type(self.event_bus).__name__}, "
             f"process_table={type(self.process_table).__name__}, "
             f"start_time={self.start_time.isoformat()})"
@@ -130,6 +134,8 @@ class ServiceFactory:
 
         system_state = SystemState()
         game_state = GameState()
+        event_bus = GameEventBus()
+        flag_service = FlagService(game_state=game_state, event_bus=event_bus)
         start_time = datetime.now(tz=UTC)
 
         app_service = AppService(game_state)
@@ -175,8 +181,10 @@ class ServiceFactory:
             app_service=app_service,
             terminal_manager=None,  # type: ignore[arg-type]
             connection_manager=ConnectionManager(),
+            flag_service=flag_service,
             start_time=start_time,
             process_table=ProcessTable.with_defaults(),
+            event_bus=event_bus,
         )
 
         terminal_manager = TerminalSessionManager(
@@ -215,6 +223,8 @@ class ServiceFactory:
         npc_manager = mock_npc_manager or Mock(spec=INPCManager)
         system_state = mock_system_state or SystemState()
         game_state = mock_game_state or GameState()
+        event_bus = GameEventBus()
+        flag_service = FlagService(game_state=game_state, event_bus=event_bus)
         app_service = mock_app_service or AppService(game_state)
         start_time = mock_start_time or datetime.now(tz=UTC)
 
@@ -232,7 +242,9 @@ class ServiceFactory:
             app_service=app_service,
             terminal_manager=None,  # type: ignore[arg-type]
             connection_manager=ConnectionManager(),
+            flag_service=flag_service,
             start_time=start_time,
+            event_bus=event_bus,
         )
 
         terminal_manager = TerminalSessionManager(container=container)
