@@ -135,8 +135,13 @@ chat).
     `AppService.read_file`.
   - `filesystem.write` → `{"path": str, "file_id": str, "operation": "create"|"update"|"delete"}`
     — published by `AppService` mutations.
-  - `npc.chat_sent` → `{"npc_id": str, "text": str}` — player→NPC.
-  - `npc.chat_received` → `{"npc_id": str, "text": str}` — NPC→player.
+  - `npc.chat_sent` → `{"target_npc_id": str, "text": str}` — player→NPC.
+  - `npc.chat_received` → `{"source_npc_id": str, "text": str}` — NPC→player.
+- Chat events are **filtered to the NPC by default**: a subscription to
+  `npc.chat_sent` / `npc.chat_received` only delivers events where the
+  NPC is the target (for `chat_sent`) or the sender (for `chat_received`).
+- An NPC can opt into eavesdropping on *all* chat by subscribing to the
+  explicit super-prefix `npc.chat_sent.all` / `npc.chat_received.all`.
 - Per-NPC config (added to `NPC` model):
   ```python
   class PerceptionConfig(BaseModel):
@@ -147,13 +152,15 @@ chat).
 - `NPCPerceptionTracker` subscribes to the bus on NPC creation,
   matches events by subscription prefix (`shell.*` matches all shell
   events), and pushes them into a `collections.deque(maxlen=...)` per
-  NPC.
+  NPC. For chat events the tracker additionally applies the default
+  own-NPC filter unless an `.all` eavesdropping subscription is present.
 - `NPCManager` calls `tracker.render_for(npc_id)` when building the
   system prompt — returns a short human-readable summary of recent
   events (last N lines, formatted as "Player ran `find /etc -name *.key`",
   "Player read `/Documents/pay_log.txt`", etc.).
 - Per the three NPC profiles in `docs/GAME_DESIGN.md` §7:
-  - `warden.subscriptions = ["shell.*", "filesystem.*", "npc.chat_sent"]`
+  - `warden.subscriptions = ["shell.*", "filesystem.*", "npc.chat_sent.all"]`
+    — deliberately eavesdrops on all player chats.
   - `archivist.subscriptions = ["filesystem.*"]`
   - `zero.subscriptions = ["npc.chat_sent"]` (only when targeted at zero)
 
@@ -172,13 +179,11 @@ chat).
 
 ### Open design question
 
-Per-NPC chat events: should `npc.chat_sent` carry `target_npc_id` so
-NPCs only hear chats addressed *to* them, or should all NPCs hear all
-chats so they can eavesdrop? Argument for filtered: realism, smaller
-context. Argument for unfiltered: lets `warden` overhear the player
-plotting with `zero`, which is gameplay gold for a honeypot premise.
-Defer to 9b implementation — try unfiltered first, see if NPCs get
-confused.
+Resolved: chat events are **own-NPC by default**; global eavesdropping
+is opt-in via the `npc.chat_sent.all` / `npc.chat_received.all`
+subscription prefixes. This keeps context small for most NPCs while
+still allowing a honeypot NPC such as `warden` to deliberately
+overhear player plotting.
 
 ### Success criteria
 
@@ -468,9 +473,10 @@ or during the sub-phase that needs each:
 
 Phase-9-specific:
 
-- `[?]` (blocks 9b) Cross-NPC chat eavesdropping: do all NPCs hear
-  all `chat` events, or only the addressed NPC? *Default: all hear
-  all; revisit if it confuses prompts.*
+- `[x]` (blocks 9b) Cross-NPC chat eavesdropping: do all NPCs hear
+  all `chat` events, or only the addressed NPC? *Resolved: only the
+  addressed NPC by default; eavesdropping is opt-in via the
+  `npc.chat_sent.all` / `npc.chat_received.all` subscriptions.*
 - `[?]` (blocks 9e) Does the Director have access to *future*
   interventions or only react to past state? Starting position:
   reactive only. Adding lookahead is an explicit later upgrade.
