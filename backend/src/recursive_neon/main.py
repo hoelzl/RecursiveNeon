@@ -121,7 +121,7 @@ async def lifespan(app: FastAPI):
         if container:
             container.system_state.status = SystemStatus.ERROR
             container.system_state.last_error = str(e)
-        raise
+        raise RuntimeError(f"Startup error: {e}") from e
 
     finally:
         logger.info("Shutting down...")
