@@ -709,6 +709,25 @@ class TestTerminalCleanup:
         assert mgr.active_count == 0
 
 
+class TestRawResizeWake:
+    async def test_resize_wakes_raw_input(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+
+        raw_input = WebSocketRawInput(session.key_queue)
+        raw_input.set_resize_event(asyncio.Event())
+
+        # No key queued; resize event wakes the wait
+        async def trigger_resize():
+            await asyncio.sleep(0.01)
+            raw_input._resize_event.set()
+
+        key_task = asyncio.create_task(raw_input.get_key())
+        await trigger_resize()
+        key = await key_task
+        assert key is None
+
+
 # ============================================================================
 # Test helpers
 # ============================================================================

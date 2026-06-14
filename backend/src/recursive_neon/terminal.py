@@ -76,12 +76,48 @@ class WebSocketRawInput:
 
     def __init__(self, key_queue: asyncio.Queue[str | None]) -> None:
         self._key_queue = key_queue
+        self._resize_event: asyncio.Event | None = None
+
+    def set_resize_event(self, event: asyncio.Event) -> None:
+        self._resize_event = event
 
     async def get_key(self, *, timeout: float | None = None) -> str | None:
-        try:
-            key = await asyncio.wait_for(self._key_queue.get(), timeout=timeout)
-        except TimeoutError:
+        if self._resize_event is not None and self._resize_event.is_set():
+            self._resize_event.clear()
             return None
+
+        key_task = asyncio.create_task(self._key_queue.get())
+        tasks: set[asyncio.Task] = {key_task}
+        resize_task: asyncio.Task | None = None
+        if self._resize_event is not None:
+            resize_task = asyncio.create_task(self._resize_event.wait())
+            tasks.add(resize_task)
+
+        try:
+            if timeout is None:
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+            else:
+                done, pending = await asyncio.wait_for(
+                    asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED),
+                    timeout=timeout,
+                )
+        except TimeoutError:
+            for task in tasks:
+                task.cancel()
+            return None
+
+        for task in pending:
+            task.cancel()
+
+        if resize_task in done:
+            if self._resize_event is not None:
+                self._resize_event.clear()
+            key_task.cancel()
+            return None
+
+        key = key_task.result()
         if key is None:
             raise EOFError
         return key
@@ -110,6 +146,7 @@ class TerminalSession:
     _shell_task: asyncio.Task | None = field(default=None, repr=False)
     _terminal_size: tuple[int, int] = (80, 24)
     _resize_pending: tuple[int, int] | None = field(default=None, repr=False)
+    _resize_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     async def start(self) -> None:
         """Start the shell REPL as a background task."""
@@ -122,6 +159,7 @@ class TerminalSession:
 
         def _run_tui_factory():
             raw_input = WebSocketRawInput(session.key_queue)
+            raw_input.set_resize_event(session._resize_event)
             w, h = session._terminal_size
 
             def _drain_resize() -> tuple[int, int] | None:
@@ -198,10 +236,14 @@ class TerminalSession:
         """Record a resize event from the WS client.
 
         The runner will pick it up on the next loop iteration via
-        ``_drain_resize`` and call ``app.on_resize``.
+        ``_drain_resize`` and call ``app.on_resize``.  In raw mode the
+        resize event also wakes ``WebSocketRawInput.get_key`` so the TUI
+        runner can process the new size without waiting for a keystroke.
         """
         self._terminal_size = (width, height)
         self._resize_pending = (width, height)
+        if self.mode == "raw":
+            self._resize_event.set()
 
     def _enter_raw_mode(self) -> None:
         """Switch to raw mode and notify the client."""
