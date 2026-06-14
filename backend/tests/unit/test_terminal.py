@@ -694,6 +694,21 @@ class TestConnectionLimits:
                 ws2.receive_json()
 
 
+class TestTerminalCleanup:
+    async def test_disconnect_cleans_up_tasks_and_queues(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+        await session.start()
+
+        assert session._shell_task is not None
+        assert not session._shell_task.done()
+
+        await mgr.remove_session(session.session_id)
+
+        assert session._shell_task.done() or session._shell_task.cancelled()
+        assert mgr.active_count == 0
+
+
 # ============================================================================
 # Test helpers
 # ============================================================================

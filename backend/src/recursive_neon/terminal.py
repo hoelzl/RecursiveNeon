@@ -10,6 +10,7 @@ without architectural changes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -162,19 +163,27 @@ class TerminalSession:
             self.output_queue.put_nowait({"type": "exit"})
 
     async def stop(self) -> None:
-        """Stop the shell (e.g. on WebSocket disconnect)."""
-        # Send EOF to both queues so the shell and any TUI app exit cleanly
+        """Stop the shell and drain queues."""
         self.input_queue.put_nowait(None)
         self.key_queue.put_nowait(None)
+
         if self._shell_task is not None:
-            # Give the shell a moment to shut down gracefully
             try:
                 await asyncio.wait_for(self._shell_task, timeout=2.0)
             except TimeoutError:
                 self._shell_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._shell_task
                 logger.warning(
                     "Shell task for %s cancelled after timeout", self.session_id
                 )
+
+        # Drain output queue to avoid "task destroyed but it is pending" warnings
+        while not self.output_queue.empty():
+            try:
+                self.output_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
     def feed_line(self, line: str) -> None:
         """Send a command line into the shell (called by the WS handler)."""
