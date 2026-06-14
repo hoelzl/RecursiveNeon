@@ -31,6 +31,7 @@ class GameState(BaseModel):
     completed_quests: list[str] = Field(default_factory=list)
     inventory: dict[str, int] = Field(default_factory=dict)
     stats: dict[str, Any] = Field(default_factory=dict)
+    flags: dict[str, Any] = Field(default_factory=dict)
 
     # App states
     notes: NotesState = Field(default_factory=NotesState)
