@@ -720,6 +720,28 @@ class AppService:
             logger.warning("Corrupt tasks.json: %s", e)
             return False
 
+    async def save_flags_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        """Save flag state to disk."""
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "flags.json",
+                {"flags": self.game_state.flags},
+            )
+
+    async def load_flags_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        """Load flag state from disk. Returns True if a file was found."""
+        data = await asyncio.to_thread(self._sync_load_json, data_dir, "flags.json")
+        if data is None:
+            return False
+        try:
+            self.game_state.flags = dict(data.get("flags", {}))
+            return True
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Corrupt flags.json: %s", e)
+            return False
+
     async def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
         """Save all state (filesystem, notes, tasks) to disk."""
         async with self._save_lock:
@@ -756,12 +778,19 @@ class AppService:
                     ],
                 },
             )
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "flags.json",
+                {"flags": self.game_state.flags},
+            )
 
     async def load_all_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         """Load all state from disk. Returns True if filesystem was loaded."""
         fs_loaded = await self.load_filesystem_from_disk(data_dir)
         await self.load_notes_from_disk(data_dir)
         await self.load_tasks_from_disk(data_dir)
+        await self.load_flags_from_disk(data_dir)
         return fs_loaded
 
     def _safe_roots(self) -> list[Path]:

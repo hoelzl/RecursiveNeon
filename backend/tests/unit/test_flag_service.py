@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import tempfile
+
 from recursive_neon.models.game_state import GameState
 from recursive_neon.services.flag_service import FlagService
 from recursive_neon.services.game_event_bus import GameEventBus
@@ -123,3 +125,20 @@ class TestFlagService:
 
         service.clear_flag("missing")
         assert events == []
+
+
+class TestFlagServicePersistence:
+    async def test_flags_round_trip_through_app_service(self):
+        from recursive_neon.dependencies import ServiceFactory
+
+        container = ServiceFactory.create_test_container()
+        container.flag_service.set_flag("door.unlocked", True)
+        container.flag_service.set_flag("counter", 42)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            await container.app_service.save_all_to_disk(tmpdir)
+
+            new_container = ServiceFactory.create_test_container()
+            await new_container.app_service.load_all_from_disk(tmpdir)
+            assert new_container.flag_service.get_flag("door.unlocked") is True
+            assert new_container.flag_service.get_flag("counter") == 42

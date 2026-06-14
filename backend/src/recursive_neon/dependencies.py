@@ -160,6 +160,9 @@ class ServiceFactory:
         await app_service.load_notes_from_disk(data_dir)
         await app_service.load_tasks_from_disk(data_dir)
 
+        # Load flags (non-fatal if missing)
+        await app_service.load_flags_from_disk(data_dir)
+
         # Load NPC state from disk, or create defaults
         if not await npc_manager.load_npcs_from_disk(data_dir):
             npc_manager.create_default_npcs()
