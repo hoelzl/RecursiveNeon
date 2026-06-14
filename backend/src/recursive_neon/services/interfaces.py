@@ -288,3 +288,18 @@ class IProcessManager(ABC):
     async def get_status(self) -> dict[str, Any]:
         """Get status information about the process."""
         pass
+
+
+# ============================================================================
+# Connection Manager Interface
+# ============================================================================
+
+
+@runtime_checkable
+class IConnectionManager(Protocol):
+    """Protocol for the generic WebSocket connection manager."""
+
+    async def connect(self, websocket: Any) -> bool: ...
+    def disconnect(self, websocket: Any) -> None: ...
+    async def send_personal(self, message: dict, websocket: Any) -> None: ...
+    async def broadcast(self, message: dict[str, Any]) -> None: ...
