@@ -44,13 +44,14 @@ class FlagService:
 
     def clear_flag(self, key: str) -> None:
         """Remove *key* and publish a ``flag.cleared`` event if it existed."""
-        old_value = self._game_state.flags.pop(key, None)
-        if old_value is not None:
-            self._event_bus.publish(
-                "flag.cleared",
-                {"key": key, "old_value": old_value},
-            )
-            logger.debug("Flag cleared: %s (was %r)", key, old_value)
+        if key not in self._game_state.flags:
+            return
+        old_value = self._game_state.flags.pop(key)
+        self._event_bus.publish(
+            "flag.cleared",
+            {"key": key, "old_value": old_value},
+        )
+        logger.debug("Flag cleared: %s (was %r)", key, old_value)
 
     def get_flag(self, key: str, default: Any = None) -> Any:
         """Return the value for *key*, or *default* if unset."""
