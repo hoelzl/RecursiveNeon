@@ -116,6 +116,22 @@ class IAppService(Protocol):
 
 
 # ============================================================================
+# Flag Service Interface
+# ============================================================================
+
+
+@runtime_checkable
+class IFlagService(Protocol):
+    """Protocol for the persistent world-flag / quest-state store."""
+
+    def set_flag(self, key: str, value: Any = True) -> None: ...
+    def clear_flag(self, key: str) -> None: ...
+    def get_flag(self, key: str, default: Any = None) -> Any: ...
+    def has_flag(self, key: str) -> bool: ...
+    def list_flags(self) -> dict[str, Any]: ...
+
+
+# ============================================================================
 # NPC Manager Interface
 # ============================================================================
 
