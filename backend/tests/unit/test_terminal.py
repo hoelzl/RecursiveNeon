@@ -230,6 +230,33 @@ class TestTerminalSessionManager:
 # ============================================================================
 
 
+class TestTerminalSessionIsolation:
+    async def test_two_terminal_sessions_have_independent_cwd(self, container):
+        mgr = TerminalSessionManager(container=container)
+        s1 = mgr.create_session()
+        s2 = mgr.create_session()
+
+        # s1 cd into Documents
+        s1.shell.session.cwd_id = s1.shell.session.resolve_path("Documents").id
+        # s2 should still be at root
+        assert s1.shell.session.get_cwd_path() == "/Documents"
+        assert s2.shell.session.get_cwd_path() == "/"
+
+        await mgr.remove_session(s1.session_id)
+        await mgr.remove_session(s2.session_id)
+
+    async def test_two_terminal_sessions_have_independent_env(self, container):
+        mgr = TerminalSessionManager(container=container)
+        s1 = mgr.create_session()
+        s2 = mgr.create_session()
+
+        s1.shell.session.env["FOO"] = "bar"
+        assert "FOO" not in s2.shell.session.env
+
+        await mgr.remove_session(s1.session_id)
+        await mgr.remove_session(s2.session_id)
+
+
 class TestTerminalSession:
     async def test_start_and_stop(self, container):
         mgr = TerminalSessionManager(container=container)

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from recursive_neon.dependencies import ServiceContainer
 from recursive_neon.shell.output import QueueOutput
+from recursive_neon.shell.session import ShellSession
 from recursive_neon.shell.shell import Shell
 from recursive_neon.shell.tui import TuiApp
 from recursive_neon.shell.tui.runner import run_tui_app
@@ -238,9 +239,15 @@ class TerminalSessionManager:
         be serialized via the service-layer lock in ``AppService``.
         """
         session_id = uuid.uuid4().hex[:12]
+        shell_session = ShellSession(
+            container=self._container,
+            username="user",
+            hostname="neon-proxy",
+        )
         shell = Shell(
             container=self._container,
             data_dir=self._data_dir,
+            session=shell_session,
         )
         ts = TerminalSession(session_id=session_id, shell=shell)
         self._sessions[session_id] = ts

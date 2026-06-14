@@ -190,9 +190,10 @@ class Shell:
         container: ServiceContainer,
         output: Output | None = None,
         data_dir: str | None = None,
+        session: ShellSession | None = None,
     ) -> None:
         self.output = output or Output()
-        self.session = ShellSession(container)
+        self.session = session or ShellSession(container)
         self.data_dir = data_dir
         self.builtins = get_builtins()
         self.programs = ProgramRegistry()
