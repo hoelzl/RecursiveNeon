@@ -92,6 +92,20 @@ class TestParsePipeline:
             parse_pipeline("echo hello > foo bar")
 
 
+@pytest.mark.unit
+class TestRedirectTargetQuoting:
+    def test_redirect_target_with_nested_quotes(self):
+        """A redirect target may contain nested/escaped quote characters."""
+        p = parse_pipeline("echo hello > \"my 'file'.txt\"")
+        assert p.redirect is not None
+        assert p.redirect.target == "my 'file'.txt"
+
+    def test_redirect_target_with_escaped_quote(self):
+        p = parse_pipeline('echo hello > "a\\"b.txt"')
+        assert p.redirect is not None
+        assert p.redirect.target == 'a"b.txt'
+
+
 # ---------------------------------------------------------------------------
 # _last_pipe_segment — completion scoping
 # ---------------------------------------------------------------------------

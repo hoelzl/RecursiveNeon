@@ -2,6 +2,8 @@
 Tests for desktop app service
 """
 
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 
@@ -123,36 +125,36 @@ class TestNotesPersistence:
         game_state = GameState()
         return AppService(game_state)
 
-    def test_save_and_load_notes(self, app_service, tmp_path):
+    async def test_save_and_load_notes(self, app_service, tmp_path):
         """Notes survive a save/load round-trip."""
         app_service.create_note({"title": "Note A", "content": "Content A"})
         app_service.create_note({"title": "Note B", "content": "Content B"})
-        app_service.save_notes_to_disk(str(tmp_path))
+        await app_service.save_notes_to_disk(str(tmp_path))
 
         # Load into fresh state
         fresh = AppService(GameState())
         assert fresh.get_notes() == []
-        assert fresh.load_notes_from_disk(str(tmp_path)) is True
+        assert await fresh.load_notes_from_disk(str(tmp_path)) is True
         notes = fresh.get_notes()
         assert len(notes) == 2
         assert notes[0].title == "Note A"
         assert notes[1].content == "Content B"
 
-    def test_load_notes_missing_file(self, app_service, tmp_path):
+    async def test_load_notes_missing_file(self, app_service, tmp_path):
         """Returns False when no saved file exists."""
-        assert app_service.load_notes_from_disk(str(tmp_path)) is False
+        assert await app_service.load_notes_from_disk(str(tmp_path)) is False
 
-    def test_save_empty_notes(self, app_service, tmp_path):
+    async def test_save_empty_notes(self, app_service, tmp_path):
         """Saving empty notes still creates valid file."""
-        app_service.save_notes_to_disk(str(tmp_path))
+        await app_service.save_notes_to_disk(str(tmp_path))
         fresh = AppService(GameState())
-        assert fresh.load_notes_from_disk(str(tmp_path)) is True
+        assert await fresh.load_notes_from_disk(str(tmp_path)) is True
         assert fresh.get_notes() == []
 
-    def test_load_corrupt_notes_json(self, app_service, tmp_path):
+    async def test_load_corrupt_notes_json(self, app_service, tmp_path):
         """Corrupt JSON returns False without crashing."""
         (tmp_path / "notes.json").write_text("{invalid json", encoding="utf-8")
-        assert app_service.load_notes_from_disk(str(tmp_path)) is False
+        assert await app_service.load_notes_from_disk(str(tmp_path)) is False
 
 
 class TestTasksPersistence:
@@ -163,15 +165,15 @@ class TestTasksPersistence:
         game_state = GameState()
         return AppService(game_state)
 
-    def test_save_and_load_tasks(self, app_service, tmp_path):
+    async def test_save_and_load_tasks(self, app_service, tmp_path):
         """Task lists and tasks survive a save/load round-trip."""
         tl = app_service.create_task_list({"name": "Work"})
         app_service.create_task(tl.id, {"title": "Task 1", "completed": False})
         app_service.create_task(tl.id, {"title": "Task 2", "completed": True})
-        app_service.save_tasks_to_disk(str(tmp_path))
+        await app_service.save_tasks_to_disk(str(tmp_path))
 
         fresh = AppService(GameState())
-        assert fresh.load_tasks_from_disk(str(tmp_path)) is True
+        assert await fresh.load_tasks_from_disk(str(tmp_path)) is True
         lists = fresh.get_task_lists()
         assert len(lists) == 1
         assert lists[0].name == "Work"
@@ -179,16 +181,16 @@ class TestTasksPersistence:
         assert lists[0].tasks[0].title == "Task 1"
         assert lists[0].tasks[1].completed is True
 
-    def test_load_tasks_missing_file(self, app_service, tmp_path):
+    async def test_load_tasks_missing_file(self, app_service, tmp_path):
         """Returns False when no saved file exists."""
-        assert app_service.load_tasks_from_disk(str(tmp_path)) is False
+        assert await app_service.load_tasks_from_disk(str(tmp_path)) is False
 
-    def test_load_corrupt_tasks_json(self, app_service, tmp_path):
+    async def test_load_corrupt_tasks_json(self, app_service, tmp_path):
         """Corrupt JSON returns False without crashing."""
         (tmp_path / "tasks.json").write_text("not json!", encoding="utf-8")
-        assert app_service.load_tasks_from_disk(str(tmp_path)) is False
+        assert await app_service.load_tasks_from_disk(str(tmp_path)) is False
 
-    def test_save_all_and_load_all(self, app_service, tmp_path):
+    async def test_save_all_and_load_all(self, app_service, tmp_path):
         """save_all/load_all round-trips filesystem, notes, and tasks."""
         app_service.init_filesystem()
         root_id = app_service.game_state.filesystem.root_id
@@ -198,10 +200,10 @@ class TestTasksPersistence:
         app_service.create_note({"title": "My Note", "content": "body"})
         app_service.create_task_list({"name": "Todo"})
 
-        app_service.save_all_to_disk(str(tmp_path))
+        await app_service.save_all_to_disk(str(tmp_path))
 
         fresh = AppService(GameState())
-        assert fresh.load_all_from_disk(str(tmp_path)) is True
+        assert await fresh.load_all_from_disk(str(tmp_path)) is True
         assert len(fresh.get_notes()) == 1
         assert len(fresh.get_task_lists()) == 1
         assert fresh.game_state.filesystem.root_id is not None
@@ -310,6 +312,51 @@ class TestFileSystemService:
         """Getting a non-existent file raises ValueError."""
         with pytest.raises(ValueError, match="File not found"):
             app_service.get_file("nonexistent-uuid")
+
+    def test_mutating_returned_file_node_does_not_affect_index(self, app_service):
+        """Callers cannot corrupt AppService indexes by mutating returned nodes."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        file = app_service.create_file(
+            {
+                "name": "test.txt",
+                "parent_id": root_id,
+                "content": "original",
+                "mime_type": "text/plain",
+            }
+        )
+        original_name = file.name
+        file.name = "hacked.txt"
+        file.content = "corrupted"
+
+        # Internal index and canonical list must be unchanged.
+        retrieved = app_service.get_file(file.id)
+        assert retrieved.name == original_name
+        assert retrieved.content == "original"
+        assert any(
+            n.name == original_name and n.id == file.id
+            for n in app_service.game_state.filesystem.nodes
+        )
+
+    def test_mutating_list_directory_result_does_not_affect_index(self, app_service):
+        """Mutating a node from list_directory must not change the index."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        app_service.create_file(
+            {
+                "name": "file1.txt",
+                "parent_id": root_id,
+                "content": "1",
+                "mime_type": "text/plain",
+            }
+        )
+        contents = app_service.list_directory(root_id)
+        assert len(contents) == 1
+        contents[0].name = "hacked.txt"
+
+        retrieved = app_service.list_directory(root_id)
+        assert len(retrieved) == 1
+        assert retrieved[0].name == "file1.txt"
 
     def test_move_file_into_self_raises(self, app_service):
         """Moving a directory into itself raises ValueError."""
@@ -421,7 +468,7 @@ class TestFilesystemIndexConsistency:
     def test_index_after_create(self, svc):
         root_id = svc.game_state.filesystem.root_id
         f = svc.create_file({"name": "x.txt", "parent_id": root_id, "content": ""})
-        assert svc._node_index[f.id] is f
+        assert svc._node_index[f.id].id == f.id
         assert f.id in svc._children_index[root_id]
 
     def test_index_after_delete(self, svc):
@@ -445,7 +492,7 @@ class TestFilesystemIndexConsistency:
         root_id = svc.game_state.filesystem.root_id
         f = svc.create_file({"name": "x.txt", "parent_id": root_id, "content": "old"})
         updated = svc.update_file(f.id, {"content": "new"})
-        assert svc._node_index[f.id] is updated
+        assert svc._node_index[f.id].content == "new"
         assert updated.content == "new"
 
     def test_index_after_load_from_disk(self, svc, tmp_path):
@@ -607,3 +654,80 @@ class TestNodeNameValidation:
         assert f.name == "hello.txt"
         d = svc.create_directory({"name": ".hidden", "parent_id": root.id})
         assert d.name == ".hidden"
+
+
+class TestPersistenceAsync:
+    """Tests that persistence methods are async and serialize concurrent writes."""
+
+    @pytest.fixture
+    def app_service(self):
+        game_state = GameState()
+        return AppService(game_state)
+
+    async def test_save_runs_in_thread(self, app_service, tmp_path, monkeypatch):
+        """Persistence should offload blocking I/O to asyncio.to_thread."""
+        called = False
+
+        async def fake_to_thread(fn, *args, **kwargs):
+            nonlocal called
+            called = True
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+        await app_service.save_notes_to_disk(str(tmp_path))
+        assert called
+
+    async def test_concurrent_save_is_serialized(self, app_service, tmp_path):
+        """Concurrent save_all calls should not interleave writes."""
+        app_service.init_filesystem()
+        root_id = app_service.game_state.filesystem.root_id
+        app_service.create_file(
+            {"name": "test.txt", "parent_id": root_id, "content": "hello"}
+        )
+        app_service.create_note({"title": "Note", "content": "body"})
+        app_service.create_task_list({"name": "Todo"})
+
+        tasks = [
+            asyncio.create_task(app_service.save_all_to_disk(str(tmp_path)))
+            for _ in range(5)
+        ]
+        await asyncio.gather(*tasks)
+
+        fresh = AppService(GameState())
+        assert await fresh.load_all_from_disk(str(tmp_path)) is True
+        assert len(fresh.get_notes()) == 1
+        assert len(fresh.get_task_lists()) == 1
+        assert fresh.game_state.filesystem.root_id is not None
+
+
+class TestHandleActionValidation:
+    """handle_action raises ValueError for missing required fields."""
+
+    @pytest.fixture
+    def svc(self):
+        svc = AppService(GameState())
+        svc.init_filesystem()
+        return svc
+
+    @pytest.mark.parametrize(
+        ("app_type", "action", "data"),
+        [
+            ("filesystem", "list", {}),
+            ("filesystem", "get", {}),
+            ("filesystem", "update", {}),
+            ("filesystem", "delete", {}),
+            ("filesystem", "copy", {"file_id": "x"}),
+            ("filesystem", "move", {"file_id": "x"}),
+            ("notes", "update", {}),
+            ("notes", "delete", {}),
+            ("tasks", "delete_list", {}),
+            ("tasks", "create_task", {}),
+            ("tasks", "update_task", {"list_id": "x"}),
+            ("tasks", "delete_task", {"list_id": "x"}),
+        ],
+    )
+    def test_handle_action_missing_fields_returns_valueerror(
+        self, svc, app_type, action, data
+    ):
+        with pytest.raises(ValueError, match="Missing required field"):
+            svc.handle_action(app_type, action, data)

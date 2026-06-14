@@ -40,8 +40,9 @@ def _reset_global_container():
 @pytest.fixture
 def container(mock_llm):
     """A test ServiceContainer with initialized filesystem."""
+    c = ServiceFactory.create_test_container()
     npc_manager = ServiceFactory.create_npc_manager(llm=mock_llm)
-    c = ServiceFactory.create_test_container(mock_npc_manager=npc_manager)
+    c.npc_manager = npc_manager
     c.app_service.load_initial_filesystem(initial_fs_dir=str(settings.initial_fs_path))
     npc_manager.create_default_npcs()
     c.system_state.status = SystemStatus.READY
@@ -196,7 +197,7 @@ class TestTerminalSessionManager:
         await mgr.remove_session(s2.session_id)
 
     async def test_auto_save_triggered(self, container, tmp_path):
-        """Auto-save task should start when a session is created."""
+        """Auto-save task should start when a session is created and write files."""
         mgr = TerminalSessionManager(
             container=container,
             data_dir=str(tmp_path),
@@ -210,6 +211,10 @@ class TestTerminalSessionManager:
 
         # Wait long enough for at least one auto-save cycle
         await asyncio.sleep(0.15)
+
+        # Auto-save should have written filesystem.json and npcs.json
+        assert (tmp_path / "filesystem.json").exists()
+        assert (tmp_path / "npcs.json").exists()
 
         # Clean up
         await mgr.remove_session(session.session_id)

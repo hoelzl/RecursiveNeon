@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     container = None
 
     try:
-        container = ServiceFactory.create_production_container()
+        container = await ServiceFactory.create_production_container()
         initialize_container(container)
         app.state.services = container
 
@@ -57,22 +57,28 @@ async def lifespan(app: FastAPI):
         )
         app.state.terminal_manager = terminal_manager
 
-        # Start ollama server
+        # Start ollama server. Failure is non-fatal: chat endpoints will
+        # return a clear error, but the rest of the backend stays usable.
         logger.info("Starting ollama server...")
-        if not await container.process_manager.start():
-            raise Exception("Failed to start ollama server")
+        try:
+            ollama_started = await container.process_manager.start()
+            if not ollama_started:
+                raise Exception("process_manager.start() returned False")
 
-        # Wait for ollama to be ready
-        logger.info("Waiting for ollama to be ready...")
-        if not await container.ollama_client.wait_for_ready(max_wait=30):
-            raise Exception("Ollama server did not become ready")
+            logger.info("Waiting for ollama to be ready...")
+            if not await container.ollama_client.wait_for_ready(max_wait=30):
+                raise Exception("Ollama server did not become ready")
 
-        container.system_state.ollama_running = True
+            container.system_state.ollama_running = True
 
-        # List available models
-        models = await container.ollama_client.list_models()
-        logger.info(f"Available models: {models}")
-        container.system_state.ollama_models_loaded = models
+            # List available models
+            models = await container.ollama_client.list_models()
+            logger.info(f"Available models: {models}")
+            container.system_state.ollama_models_loaded = models
+        except Exception as e:
+            logger.error(f"Ollama unavailable, continuing in degraded mode: {e}")
+            container.system_state.status = SystemStatus.DEGRADED
+            container.system_state.last_error = str(e)
 
         # NPC state is already loaded by create_production_container()
         # (from disk if available, otherwise defaults are created there).
@@ -80,10 +86,13 @@ async def lifespan(app: FastAPI):
         container.system_state.npcs_loaded = len(npcs)
         logger.info(f"Loaded {len(npcs)} NPCs")
 
-        # System ready
-        container.system_state.status = SystemStatus.READY
-        logger.info("=" * 60)
-        logger.info("Recursive://Neon Backend Ready!")
+        if container.system_state.status != SystemStatus.DEGRADED:
+            container.system_state.status = SystemStatus.READY
+            logger.info("=" * 60)
+            logger.info("Recursive://Neon Backend Ready!")
+        else:
+            logger.info("=" * 60)
+            logger.info("Recursive://Neon Backend Ready (degraded)")
         logger.info(f"WebSocket: ws://{settings.host}:{settings.port}/ws")
         logger.info(f"Terminal: ws://{settings.host}:{settings.port}/ws/terminal")
         logger.info(f"Health: http://{settings.host}:{settings.port}/health")
@@ -107,8 +116,8 @@ async def lifespan(app: FastAPI):
             logger.info("Saving game state...")
             try:
                 data_dir = str(settings.data_dir)
-                container.app_service.save_all_to_disk(data_dir)
-                container.npc_manager.save_npcs_to_disk(data_dir)
+                await container.app_service.save_all_to_disk(data_dir)
+                await container.npc_manager.save_npcs_to_disk(data_dir)
                 logger.info("Game state saved successfully")
             except Exception as e:
                 logger.error(f"Failed to save game state: {e}")
@@ -181,6 +190,11 @@ async def get_npc(npc_id: str, container: ServiceContainer = Depends(get_contain
 async def chat_with_npc(
     request: ChatRequest, container: ServiceContainer = Depends(get_container)
 ):
+    if not container.system_state.ollama_running:
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama service is unavailable; chat is disabled.",
+        )
     try:
         response = await container.npc_manager.chat(
             npc_id=request.npc_id, message=request.message, player_id=request.player_id
@@ -197,7 +211,7 @@ async def chat_with_npc(
 async def get_stats(container: ServiceContainer = Depends(get_container)):
     return {
         "system": container.system_state.model_dump(),
-        "ollama_process": container.process_manager.get_status(),
+        "ollama_process": await container.process_manager.get_status(),
         "npc_manager": container.npc_manager.get_stats(),
     }
 
@@ -298,6 +312,13 @@ async def handle_ws_message(
             }
 
         elif msg_type == "chat":
+            if not container.system_state.ollama_running:
+                return {
+                    "type": "error",
+                    "data": {
+                        "message": "Ollama service is unavailable; chat is disabled."
+                    },
+                }
             npc_id = str(msg_data.get("npc_id", ""))
             message = str(msg_data.get("message", ""))
             response = await container.npc_manager.chat(npc_id, message)

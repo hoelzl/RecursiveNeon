@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 
 from recursive_neon.config import settings
 from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
@@ -51,71 +50,23 @@ class NPCManager(INPCManager):
         manager = NPCManager(llm=mock_llm)
     """
 
-    def __init__(
-        self,
-        llm: LLMInterface | None = None,
-        ollama_host: str | None = None,
-        ollama_port: int | None = None,
-    ):
+    def __init__(self, llm: LLMInterface | None = None):
         """
         Initialize NPCManager with dependency injection.
 
         Args:
-            llm: Language model instance (injected dependency). If None, creates default ChatOllama.
-            ollama_host: Ollama server host (deprecated, use llm parameter instead)
-            ollama_port: Ollama server port (deprecated, use llm parameter instead)
+            llm: Language model instance (injected dependency).
         """
+        if llm is None:
+            raise TypeError("NPCManager requires an injected LLM instance")
         self.npcs: dict[str, NPC] = {}
         self._chat_locks: dict[str, asyncio.Lock] = {}
         # Callback notified after every NPC reply.  Set by the editor
         # (Phase 7e-2) to push messages into a per-NPC buffer.
         # Signature: (npc_id: str, npc_name: str, text: str) -> None
         self.on_message_callback: Callable[[str, str, str], None] | None = None
-
-        # Support both new dependency injection and legacy initialization
-        if llm is not None:
-            # New approach: injected dependency
-            self.llm = llm
-            logger.info("NPCManager initialized with injected LLM")
-        else:
-            # Legacy approach: create LLM internally (for backward compatibility)
-            self.ollama_host = (
-                ollama_host if ollama_host is not None else settings.ollama_host
-            )
-            self.ollama_port = (
-                ollama_port if ollama_port is not None else settings.ollama_port
-            )
-            self.llm = ChatOllama(
-                base_url=f"http://{self.ollama_host}:{self.ollama_port}",
-                model=settings.default_model,
-                temperature=0.7,
-            )
-            logger.info("NPCManager initialized with default LLM")
-
-    @classmethod
-    def create_with_ollama(
-        cls, ollama_host: str | None = None, ollama_port: int | None = None
-    ) -> "NPCManager":
-        """
-        Factory method to create NPCManager with Ollama LLM.
-
-        This is a convenience method for production use cases.
-
-        Args:
-            ollama_host: Ollama server host
-            ollama_port: Ollama server port
-
-        Returns:
-            NPCManager instance configured with ChatOllama
-        """
-        host = ollama_host if ollama_host is not None else settings.ollama_host
-        port = ollama_port if ollama_port is not None else settings.ollama_port
-        llm = ChatOllama(
-            base_url=f"http://{host}:{port}",
-            model=settings.default_model,
-            temperature=0.7,
-        )
-        return cls(llm=llm)
+        self.llm = llm
+        logger.info("NPCManager initialized with injected LLM")
 
     def register_npc(self, npc: NPC):
         """Register a new NPC"""
@@ -352,27 +303,41 @@ class NPCManager(INPCManager):
             ],
         }
 
-    def save_npcs_to_disk(self, data_dir: str = "backend/game_data") -> None:
+    async def save_npcs_to_disk(self, data_dir: str = "backend/game_data") -> None:
         """Save NPC state (definitions + memory) to disk."""
+        await asyncio.to_thread(self._sync_save_npcs, data_dir)
+
+    def _sync_save_npcs(self, data_dir: str) -> None:
         Path(data_dir).mkdir(parents=True, exist_ok=True)
         filepath = Path(data_dir) / "npcs.json"
         npcs_data = [npc.model_dump(mode="json") for npc in self.npcs.values()]
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump({"npcs": npcs_data}, f, indent=2, ensure_ascii=False)
 
-    def load_npcs_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+    async def load_npcs_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         """Load NPC state from disk. Returns False if missing or corrupt."""
-        filepath = Path(data_dir) / "npcs.json"
-        if not filepath.exists():
+        data = await asyncio.to_thread(self._sync_load_npcs, data_dir)
+        if data is None:
             return False
         try:
-            with open(filepath, encoding="utf-8") as f:
-                data = json.load(f)
             for npc_data in data.get("npcs", []):
                 npc = NPC(**npc_data)
                 self.register_npc(npc)
             logger.info(f"Loaded {len(self.npcs)} NPCs from disk")
             return True
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError, OSError) as e:
-            logger.warning("Failed to load NPCs from %s: %s", filepath, e)
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Failed to load NPCs from %s: %s", data_dir, e)
             return False
+
+    @staticmethod
+    def _sync_load_npcs(data_dir: str) -> dict | None:
+        filepath = Path(data_dir) / "npcs.json"
+        if not filepath.exists():
+            return None
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                result: dict = json.load(f)
+                return result
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load NPCs from %s: %s", filepath, e)
+            return None

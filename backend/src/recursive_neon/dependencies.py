@@ -5,12 +5,12 @@ Centralized container for managing service dependencies.
 Implements the Service Locator pattern for clean dependency injection.
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
-
-from langchain_ollama import ChatOllama
 
 from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
@@ -18,12 +18,15 @@ from recursive_neon.models.process import ProcessTable
 from recursive_neon.services.app_service import AppService
 from recursive_neon.services.game_event_bus import GameEventBus
 from recursive_neon.services.interfaces import (
+    IAppService,
+    IGameEventBus,
     INPCManager,
     IOllamaClient,
     IProcessManager,
+    LLMInterface,
 )
 from recursive_neon.services.npc_manager import NPCManager
-from recursive_neon.services.ollama_client import OllamaClient
+from recursive_neon.services.ollama_client import OllamaClient, OllamaLangChainAdapter
 from recursive_neon.services.process_manager import OllamaProcessManager
 
 logger = logging.getLogger(__name__)
@@ -42,17 +45,23 @@ class ServiceContainer:
     npc_manager: INPCManager
     system_state: SystemState
     game_state: GameState
-    app_service: AppService
+    app_service: IAppService
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)
-    event_bus: GameEventBus = field(default_factory=GameEventBus)
+    event_bus: IGameEventBus = field(default_factory=GameEventBus)
 
     def __repr__(self) -> str:
         return (
             f"ServiceContainer("
             f"process_manager={type(self.process_manager).__name__}, "
             f"ollama_client={type(self.ollama_client).__name__}, "
-            f"npc_manager={type(self.npc_manager).__name__})"
+            f"npc_manager={type(self.npc_manager).__name__}, "
+            f"system_state={type(self.system_state).__name__}, "
+            f"game_state={type(self.game_state).__name__}, "
+            f"app_service={type(self.app_service).__name__}, "
+            f"event_bus={type(self.event_bus).__name__}, "
+            f"process_table={type(self.process_table).__name__}, "
+            f"start_time={self.start_time.isoformat()})"
         )
 
 
@@ -87,28 +96,31 @@ class ServiceFactory:
 
     @staticmethod
     def create_npc_manager(
-        llm: Any | None = None,
-        ollama_host: str | None = None,
-        ollama_port: int | None = None,
+        ollama_client: IOllamaClient | None = None,
+        llm: LLMInterface | None = None,
     ) -> INPCManager:
-        if llm is None:
-            host = ollama_host if ollama_host is not None else settings.ollama_host
-            port = ollama_port if ollama_port is not None else settings.ollama_port
-            llm = ChatOllama(
-                base_url=f"http://{host}:{port}",
-                model=settings.default_model,
-                temperature=0.7,
+        if llm is not None:
+            return NPCManager(llm=llm)
+        if ollama_client is None:
+            raise TypeError(
+                "create_npc_manager requires either an ollama_client or an injected llm"
             )
-        return NPCManager(llm=llm)
+        adapter = OllamaLangChainAdapter(
+            client=ollama_client,
+            model=settings.default_model,
+            temperature=0.7,
+            max_tokens=settings.max_response_tokens,
+        )
+        return NPCManager(llm=adapter)
 
     @classmethod
-    def create_production_container(cls) -> ServiceContainer:
+    async def create_production_container(cls) -> ServiceContainer:
         """Create a service container configured for production use."""
         logger.info("Creating production service container")
 
         process_manager = cls.create_process_manager()
         ollama_client = cls.create_ollama_client()
-        npc_manager = cls.create_npc_manager()
+        npc_manager = cls.create_npc_manager(ollama_client=ollama_client)
 
         system_state = SystemState()
         game_state = GameState()
@@ -119,21 +131,25 @@ class ServiceFactory:
         # Initialize state: try to load from disk, otherwise load initial state
         data_dir = str(settings.data_dir)
         logger.info("Initializing game state...")
-        if not app_service.load_filesystem_from_disk(data_dir):
+        if not await app_service.load_filesystem_from_disk(data_dir):
             initial_fs_path = str(settings.initial_fs_path)
             logger.info(
                 f"No saved filesystem found, loading initial state from {initial_fs_path}"
             )
-            app_service.load_initial_filesystem(initial_fs_path)
+            # load_initial_filesystem is synchronous; run it in a thread so the
+            # async event loop is not blocked during startup.
+            await asyncio.to_thread(
+                app_service.load_initial_filesystem, initial_fs_path
+            )
         else:
             logger.info("Filesystem loaded from saved state")
 
         # Load notes and tasks (non-fatal if missing)
-        app_service.load_notes_from_disk(data_dir)
-        app_service.load_tasks_from_disk(data_dir)
+        await app_service.load_notes_from_disk(data_dir)
+        await app_service.load_tasks_from_disk(data_dir)
 
         # Load NPC state from disk, or create defaults
-        if not npc_manager.load_npcs_from_disk(data_dir):
+        if not await npc_manager.load_npcs_from_disk(data_dir):
             npc_manager.create_default_npcs()
             logger.info("Created default NPCs")
         else:

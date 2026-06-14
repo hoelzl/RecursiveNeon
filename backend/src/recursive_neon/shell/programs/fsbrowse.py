@@ -20,7 +20,7 @@ from recursive_neon.shell.programs import ProgramContext, ProgramRegistry
 from recursive_neon.shell.tui import ScreenBuffer
 
 if TYPE_CHECKING:
-    from recursive_neon.services.app_service import AppService
+    from recursive_neon.services.interfaces import IAppService
 
 PREVIEW_MAX_LINES = 200
 DIR_ICON = "\u25b8"  # ▸
@@ -31,7 +31,7 @@ FILE_ICON = "\u2500"  # ─
 class FsBrowseState:
     """Mutable state for the file browser."""
 
-    app_service: AppService
+    app_service: IAppService
     cwd_id: str
     entries: list[FileNode] = field(default_factory=list)
     cursor: int = 0
@@ -111,7 +111,7 @@ class FsBrowseApp:
 
     def __init__(
         self,
-        app_service: AppService,
+        app_service: IAppService,
         start_dir_id: str,
     ) -> None:
         self.state = FsBrowseState(app_service=app_service, cwd_id=start_dir_id)

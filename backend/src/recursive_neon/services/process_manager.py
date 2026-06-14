@@ -89,7 +89,7 @@ class OllamaProcessManager(IProcessManager):
             # Start the process
             kwargs: dict[str, Any] = {
                 "env": env,
-                "stdout": subprocess.PIPE,
+                "stdout": subprocess.DEVNULL,
                 "stderr": subprocess.PIPE,
             }
             if platform.system() == "Windows":
@@ -190,7 +190,7 @@ class OllamaProcessManager(IProcessManager):
 
         return True
 
-    def get_status(self) -> dict:
+    async def get_status(self) -> dict:
         """Get current status of the ollama process"""
         if not self.is_running():
             return {"running": False, "pid": None, "memory_mb": 0, "cpu_percent": 0}
@@ -198,11 +198,13 @@ class OllamaProcessManager(IProcessManager):
         try:
             assert self.process is not None  # guaranteed by is_running() above
             proc = psutil.Process(self.process.pid)
+            memory_info = await asyncio.to_thread(proc.memory_info)
+            cpu_percent = await asyncio.to_thread(proc.cpu_percent, 0.1)
             return {
                 "running": True,
                 "pid": self.process.pid,
-                "memory_mb": proc.memory_info().rss / 1024 / 1024,
-                "cpu_percent": proc.cpu_percent(interval=0.1),
+                "memory_mb": memory_info.rss / 1024 / 1024,
+                "cpu_percent": cpu_percent,
             }
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             logger.error(f"Error getting process status: {e}")

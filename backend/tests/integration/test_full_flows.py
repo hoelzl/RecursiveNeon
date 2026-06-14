@@ -180,8 +180,8 @@ class TestPersistenceRoundTrip:
             mock_npc_manager=ServiceFactory.create_npc_manager(llm=mock_llm),
         )
         # Load state from disk instead of initial filesystem
-        container2.app_service.load_all_from_disk(data_dir)
-        container2.npc_manager.load_npcs_from_disk(data_dir)
+        await container2.app_service.load_all_from_disk(data_dir)
+        await container2.npc_manager.load_npcs_from_disk(data_dir)
 
         output2 = CapturedOutput()
         s2 = Shell(container=container2, output=output2, data_dir=data_dir)

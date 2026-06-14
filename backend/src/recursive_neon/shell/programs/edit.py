@@ -315,10 +315,12 @@ async def _run_edit(ctx: ProgramContext) -> int:
         "fsbrowse": _fsbrowse,
     }
 
-    # Load user config (~/.neon-edit.py) — errors surface in *Messages*
+    # Load user config from the controlled data_dir path.
+    # Errors surface in *Messages* and cannot escape the data_dir boundary.
+    from recursive_neon.config import settings
     from recursive_neon.editor.config_loader import load_config
 
-    load_config(view.editor)
+    load_config(view.editor, settings.editor_config_path)
 
     # A directory argument opens its dired buffer on top of the initial
     # *scratch* buffer (Emacs launched on a directory does the same).

@@ -5,6 +5,7 @@ Manages state for game applications: virtual filesystem, notes, and tasks.
 Presentation-agnostic — works with CLI, TUI, and GUI interfaces.
 """
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -14,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from recursive_neon.config import settings
 from recursive_neon.models.app_models import (
     FileNode,
     FileSystemState,
@@ -55,6 +57,7 @@ class AppService:
         self._node_index: dict[str, FileNode] = {}
         self._children_index: dict[str | None, list[str]] = {}
         self._position_index: dict[str, int] = {}  # node_id → index in nodes list
+        self._save_lock = asyncio.Lock()
         self._rebuild_indexes()
 
     def _rebuild_indexes(self) -> None:
@@ -82,12 +85,21 @@ class AppService:
             with contextlib.suppress(ValueError):
                 children.remove(node.id)
 
+    @staticmethod
+    def _copy_node(node: FileNode) -> FileNode:
+        """Return a defensive copy of a FileNode.
+
+        Public methods return copies so callers cannot corrupt the internal
+        indexes by mutating returned nodes.
+        """
+        return node.model_copy()
+
     def _find_child_by_name(self, parent_id: str | None, name: str) -> FileNode | None:
         """O(n) scan of *parent_id*'s children for a child named *name*."""
         for cid in self._children_index.get(parent_id, []):
             child = self._node_index.get(cid)
             if child is not None and child.name == name:
-                return child
+                return self._copy_node(child)
         return None
 
     def _check_name_collision(
@@ -102,6 +114,13 @@ class AppService:
             raise FileExistsError(
                 f"A file or directory named {name!r} already exists in this directory"
             )
+
+    @staticmethod
+    def _require(data: dict, *keys: str) -> None:
+        """Raise ``ValueError`` if any required key is missing from *data*."""
+        for key in keys:
+            if key not in data:
+                raise ValueError(f"Missing required field: {key}")
 
     def handle_action(self, app_type: str, action: str, data: dict) -> dict:
         """Route an app action to the appropriate handler."""
@@ -170,9 +189,11 @@ class AppService:
             note = self.create_note(data)
             return {"note": note.model_dump(mode="json")}
         elif action == "update":
+            self._require(data, "note_id")
             note = self.update_note(data["note_id"], data)
             return {"note": note.model_dump(mode="json")}
         elif action == "delete":
+            self._require(data, "note_id")
             self.delete_note(data["note_id"])
             return {"success": True}
         raise ValueError(f"Unknown notes action: {action}")
@@ -270,15 +291,19 @@ class AppService:
             tl = self.create_task_list(data)
             return {"list": tl.model_dump(mode="json")}
         elif action == "delete_list":
+            self._require(data, "list_id")
             self.delete_task_list(data["list_id"])
             return {"success": True}
         elif action == "create_task":
+            self._require(data, "list_id")
             task = self.create_task(data["list_id"], data)
             return {"task": task.model_dump(mode="json")}
         elif action == "update_task":
+            self._require(data, "list_id", "task_id")
             task = self.update_task(data["list_id"], data["task_id"], data)
             return {"task": task.model_dump(mode="json")}
         elif action == "delete_task":
+            self._require(data, "list_id", "task_id")
             self.delete_task(data["list_id"], data["task_id"])
             return {"success": True}
         raise ValueError(f"Unknown tasks action: {action}")
@@ -303,13 +328,13 @@ class AppService:
         self.game_state.filesystem.nodes.append(root)
         self.game_state.filesystem.root_id = root.id
         self._index_node(root)
-        return root
+        return self._copy_node(root)
 
     def get_file(self, file_id: str) -> FileNode:
         node = self._node_index.get(file_id)
         if node is None:
             raise ValueError(f"File not found: {file_id}")
-        return node
+        return self._copy_node(node)
 
     @staticmethod
     def _validate_node_name(name: str) -> None:
@@ -349,7 +374,7 @@ class AppService:
         )
         self.game_state.filesystem.nodes.append(directory)
         self._index_node(directory)
-        return directory
+        return self._copy_node(directory)
 
     def create_file(self, data: dict[str, Any]) -> FileNode:
         parent_id = data.get("parent_id")
@@ -375,7 +400,7 @@ class AppService:
         )
         self.game_state.filesystem.nodes.append(file)
         self._index_node(file)
-        return file
+        return self._copy_node(file)
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
         node = self.get_file(file_id)  # O(1) fail-fast via index
@@ -403,7 +428,7 @@ class AppService:
         pos = self._position_index[file_id]
         self.game_state.filesystem.nodes[pos] = updated
         self._node_index[file_id] = updated
-        return updated
+        return self._copy_node(updated)
 
     def delete_file(self, file_id: str) -> None:
         self.get_file(file_id)  # validate exists
@@ -469,7 +494,7 @@ class AppService:
             self._position_index = {
                 n.id: i for i, n in enumerate(self.game_state.filesystem.nodes)
             }
-        return copy
+        return self._copy_node(copy)
 
     def move_file(
         self,
@@ -513,12 +538,20 @@ class AppService:
         self._node_index[updated.id] = updated
         self._children_index.setdefault(updated.parent_id, []).append(updated.id)
         self._position_index[updated.id] = pos
-        return updated
+        return self._copy_node(updated)
 
     def list_directory(self, dir_id: str) -> list[FileNode]:
         self.get_file(dir_id)  # validate dir exists
         child_ids = self._children_index.get(dir_id, [])
-        return [self._node_index[cid] for cid in child_ids if cid in self._node_index]
+        return [
+            self._copy_node(self._node_index[cid])
+            for cid in child_ids
+            if cid in self._node_index
+        ]
+
+    def get_filesystem_root_id(self) -> str | None:
+        """Return the root directory ID of the virtual filesystem."""
+        return self.game_state.filesystem.root_id
 
     @staticmethod
     def _pick_keys(data: dict, allowed: set[str]) -> dict:
@@ -530,9 +563,11 @@ class AppService:
             root = self.init_filesystem()
             return {"root": root.model_dump(mode="json")}
         elif action == "list":
+            self._require(data, "dir_id")
             nodes = self.list_directory(data["dir_id"])
             return {"nodes": [n.model_dump(mode="json") for n in nodes]}
         elif action == "get":
+            self._require(data, "file_id")
             node = self.get_file(data["file_id"])
             return {"node": node.model_dump(mode="json")}
         elif action == "create_file":
@@ -544,18 +579,22 @@ class AppService:
             node = self.create_directory(safe)
             return {"node": node.model_dump(mode="json")}
         elif action == "update":
+            self._require(data, "file_id")
             safe = self._pick_keys(data, {"name", "content", "mime_type"})
             node = self.update_file(data["file_id"], safe)
             return {"node": node.model_dump(mode="json")}
         elif action == "delete":
+            self._require(data, "file_id")
             self.delete_file(data["file_id"])
             return {"success": True}
         elif action == "copy":
+            self._require(data, "file_id", "target_parent_id")
             node = self.copy_file(
                 data["file_id"], data["target_parent_id"], data.get("new_name")
             )
             return {"node": node.model_dump(mode="json")}
         elif action == "move":
+            self._require(data, "file_id", "target_parent_id")
             node = self.move_file(
                 data["file_id"], data["target_parent_id"], data.get("new_name")
             )
@@ -567,16 +606,16 @@ class AppService:
     # ============================================================================
 
     @staticmethod
-    def _save_json(data_dir: str, filename: str, data: dict) -> None:
-        """Write a dict to a JSON file in data_dir."""
+    def _sync_save_json(data_dir: str, filename: str, data: dict) -> None:
+        """Write a dict to a JSON file in data_dir (synchronous)."""
         Path(data_dir).mkdir(parents=True, exist_ok=True)
         filepath = Path(data_dir) / filename
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     @staticmethod
-    def _load_json(data_dir: str, filename: str) -> dict | None:
-        """Read a JSON file from data_dir. Returns None if missing or corrupt."""
+    def _sync_load_json(data_dir: str, filename: str) -> dict | None:
+        """Read a JSON file from data_dir (synchronous). Returns None if missing or corrupt."""
         filepath = Path(data_dir) / filename
         if not filepath.exists():
             return None
@@ -588,21 +627,29 @@ class AppService:
             logger.warning("Failed to load %s: %s", filepath, e)
             return None
 
-    def save_filesystem_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(
-            data_dir,
-            "filesystem.json",
-            {
-                "nodes": [
-                    node.model_dump(mode="json")
-                    for node in self.game_state.filesystem.nodes
-                ],
-                "root_id": self.game_state.filesystem.root_id,
-            },
-        )
+    async def save_filesystem_to_disk(
+        self, data_dir: str = "backend/game_data"
+    ) -> None:
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "filesystem.json",
+                {
+                    "nodes": [
+                        node.model_dump(mode="json")
+                        for node in self.game_state.filesystem.nodes
+                    ],
+                    "root_id": self.game_state.filesystem.root_id,
+                },
+            )
 
-    def load_filesystem_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        data = self._load_json(data_dir, "filesystem.json")
+    async def load_filesystem_from_disk(
+        self, data_dir: str = "backend/game_data"
+    ) -> bool:
+        data = await asyncio.to_thread(
+            self._sync_load_json, data_dir, "filesystem.json"
+        )
         if data is None:
             return False
         try:
@@ -616,19 +663,22 @@ class AppService:
             logger.warning("Corrupt filesystem.json: %s", e)
             return False
 
-    def save_notes_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(
-            data_dir,
-            "notes.json",
-            {
-                "notes": [
-                    note.model_dump(mode="json") for note in self.game_state.notes.notes
-                ],
-            },
-        )
+    async def save_notes_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "notes.json",
+                {
+                    "notes": [
+                        note.model_dump(mode="json")
+                        for note in self.game_state.notes.notes
+                    ],
+                },
+            )
 
-    def load_notes_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        data = self._load_json(data_dir, "notes.json")
+    async def load_notes_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        data = await asyncio.to_thread(self._sync_load_json, data_dir, "notes.json")
         if data is None:
             return False
         try:
@@ -642,19 +692,21 @@ class AppService:
             logger.warning("Corrupt notes.json: %s", e)
             return False
 
-    def save_tasks_to_disk(self, data_dir: str = "backend/game_data") -> None:
-        self._save_json(
-            data_dir,
-            "tasks.json",
-            {
-                "lists": [
-                    tl.model_dump(mode="json") for tl in self.game_state.tasks.lists
-                ],
-            },
-        )
+    async def save_tasks_to_disk(self, data_dir: str = "backend/game_data") -> None:
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "tasks.json",
+                {
+                    "lists": [
+                        tl.model_dump(mode="json") for tl in self.game_state.tasks.lists
+                    ],
+                },
+            )
 
-    def load_tasks_from_disk(self, data_dir: str = "backend/game_data") -> bool:
-        data = self._load_json(data_dir, "tasks.json")
+    async def load_tasks_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+        data = await asyncio.to_thread(self._sync_load_json, data_dir, "tasks.json")
         if data is None:
             return False
         try:
@@ -668,18 +720,66 @@ class AppService:
             logger.warning("Corrupt tasks.json: %s", e)
             return False
 
-    def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
+    async def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
         """Save all state (filesystem, notes, tasks) to disk."""
-        self.save_filesystem_to_disk(data_dir)
-        self.save_notes_to_disk(data_dir)
-        self.save_tasks_to_disk(data_dir)
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "filesystem.json",
+                {
+                    "nodes": [
+                        node.model_dump(mode="json")
+                        for node in self.game_state.filesystem.nodes
+                    ],
+                    "root_id": self.game_state.filesystem.root_id,
+                },
+            )
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "notes.json",
+                {
+                    "notes": [
+                        note.model_dump(mode="json")
+                        for note in self.game_state.notes.notes
+                    ],
+                },
+            )
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "tasks.json",
+                {
+                    "lists": [
+                        tl.model_dump(mode="json") for tl in self.game_state.tasks.lists
+                    ],
+                },
+            )
 
-    def load_all_from_disk(self, data_dir: str = "backend/game_data") -> bool:
+    async def load_all_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         """Load all state from disk. Returns True if filesystem was loaded."""
-        fs_loaded = self.load_filesystem_from_disk(data_dir)
-        self.load_notes_from_disk(data_dir)
-        self.load_tasks_from_disk(data_dir)
+        fs_loaded = await self.load_filesystem_from_disk(data_dir)
+        await self.load_notes_from_disk(data_dir)
+        await self.load_tasks_from_disk(data_dir)
         return fs_loaded
+
+    def _safe_roots(self) -> list[Path]:
+        """Return the directories that are allowed as initial filesystem roots.
+
+        Only paths inside the packaged ``initial_fs/`` directory or the
+        configured ``data_dir`` may be loaded.  This prevents a
+        misconfigured ``INITIAL_FS_PATH`` from reading arbitrary host files.
+        """
+        return [
+            settings.initial_fs_path.resolve(),
+            settings.data_dir.resolve(),
+        ]
+
+    def _is_under_safe_root(self, path: Path) -> bool:
+        """Return True if *path* is contained within one of the safe roots."""
+        resolved = path.resolve()
+        return any(resolved.is_relative_to(root) for root in self._safe_roots())
 
     def load_initial_filesystem(
         self, initial_fs_dir: str = "backend/initial_fs"
@@ -688,6 +788,11 @@ class AppService:
         if not initial_path.exists():
             self.init_filesystem()
             return
+        if not self._is_under_safe_root(initial_path):
+            raise ValueError(
+                f"Initial filesystem path {initial_path.resolve()} is outside safe "
+                f"roots: {self._safe_roots()}"
+            )
         self.game_state.filesystem.nodes.clear()
         self.game_state.filesystem.root_id = None
         root = self.init_filesystem()
@@ -704,6 +809,9 @@ class AppService:
         WARNING: This method appends to the nodes list but does NOT update
         the lookup indexes.  Callers MUST call ``_rebuild_indexes()`` after
         all recursive loading is complete.
+
+        Symlinks are resolved and skipped if they escape the safe roots, so
+        a malicious symlink cannot read files outside the controlled areas.
         """
         if depth > self._MAX_LOAD_DEPTH:
             logger.warning(
@@ -716,6 +824,9 @@ class AppService:
             return
         for item in sorted(source_path.iterdir()):
             if item.name.startswith("."):
+                continue
+            if not self._is_under_safe_root(item):
+                logger.warning("Skipping %s: resolved path is outside safe roots", item)
                 continue
             timestamp = datetime.now(tz=UTC)
             if item.is_dir():

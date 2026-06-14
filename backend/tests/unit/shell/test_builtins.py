@@ -82,6 +82,20 @@ class TestExport:
         assert result == 0
         assert session.env["NEWVAR"] == ""
 
+    async def test_export_hides_underscore_variables(self, session, output):
+        session.env["_INTERNAL"] = "secret"
+        result = await builtin_export(session, ["export"], output)
+        assert result == 0
+        assert "_INTERNAL" not in output.text
+        assert "USER=" in output.text
+
+    async def test_export_all_shows_internal_variables(self, session, output):
+        session.env["_INTERNAL"] = "secret"
+        result = await builtin_export(session, ["export", "-a"], output)
+        assert result == 0
+        assert "_INTERNAL=secret" in output.text
+        assert "USER=" in output.text
+
 
 # ---------------------------------------------------------------------------
 # Builtins in pipes — Phase 7b-3

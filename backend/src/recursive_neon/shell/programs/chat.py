@@ -8,7 +8,6 @@ Uses NPCManager from the service container.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 from recursive_neon.models.npc import NPC
 from recursive_neon.shell.completion import CompletionContext
@@ -66,30 +65,17 @@ class ChatProgram:
 
         player_id = ctx.env.get("USER", "player_1")
 
-        # Create a prompt_toolkit session as fallback for local terminal
-        # (when ctx.get_line is not available, e.g. in tests or direct use).
-        _chat_session: Any | None = None
         if ctx.get_line is None:
-            try:
-                from prompt_toolkit import PromptSession
-                from prompt_toolkit.formatted_text import ANSI
-
-                _chat_session = PromptSession()
-            except ImportError:
-                pass
+            ctx.stderr.error("chat: interactive input is not available in this context")
+            return 1
 
         # Sub-REPL for chat
         while True:
             try:
                 prompt = f"{ctx.stdout.styled(npc_id, YELLOW)}> "
-                if ctx.get_line is not None:
-                    user_input = await ctx.get_line(
-                        prompt, complete=False, history_id="chat"
-                    )
-                elif _chat_session is not None:
-                    user_input = await _chat_session.prompt_async(ANSI(prompt))
-                else:
-                    user_input = input(f"{npc_id}> ")
+                user_input = await ctx.get_line(
+                    prompt, complete=False, history_id="chat"
+                )
             except (EOFError, KeyboardInterrupt):
                 ctx.stdout.writeln()
                 break

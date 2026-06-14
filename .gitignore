@@ -82,3 +82,6 @@ backend/*.pyc
 
 # Claude Code user-specific settings
 .claude/
+
+# Isolated worktrees
+.worktrees/

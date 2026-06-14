@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState
 from recursive_neon.services.app_service import AppService
 
@@ -64,7 +65,9 @@ class TestFilesystemSecurity:
         with pytest.raises(ValueError, match="Invalid node name"):
             app_service.create_file({"name": "foo/bar.txt", "parent_id": root.id})
 
-    def test_persistence_uses_only_controlled_directory(self, app_service, tmp_path):
+    async def test_persistence_uses_only_controlled_directory(
+        self, app_service, tmp_path
+    ):
         """Verify that persistence only writes to the designated game_data directory"""
         root = app_service.init_filesystem()
         app_service.create_file(
@@ -78,7 +81,7 @@ class TestFilesystemSecurity:
 
         # Save to a temporary directory
         test_data_dir = str(tmp_path / "test_game_data")
-        app_service.save_filesystem_to_disk(test_data_dir)
+        await app_service.save_filesystem_to_disk(test_data_dir)
 
         # Verify it created the directory
         assert Path(test_data_dir).exists()
@@ -95,10 +98,10 @@ class TestFilesystemSecurity:
     def test_initial_filesystem_only_reads_from_controlled_directory(
         self, app_service, tmp_path
     ):
-        """Verify that initial filesystem loading only reads from the specified directory"""
-        # Create a test initial filesystem directory
-        test_initial_dir = tmp_path / "test_initial_fs"
-        test_initial_dir.mkdir()
+        """Verify that initial filesystem loading only reads from a safe directory."""
+        # Create a unique test initial filesystem directory under data_dir.
+        test_initial_dir = settings.data_dir / f"test_initial_fs_{tmp_path.name}"
+        test_initial_dir.mkdir(parents=True, exist_ok=True)
 
         # Create a test file
         test_file = test_initial_dir / "test.txt"
@@ -106,7 +109,7 @@ class TestFilesystemSecurity:
 
         # Create a subdirectory
         test_subdir = test_initial_dir / "subdir"
-        test_subdir.mkdir()
+        test_subdir.mkdir(exist_ok=True)
         (test_subdir / "nested.txt").write_text("nested content")
 
         # Load from the test directory
@@ -261,3 +264,44 @@ def test_no_real_filesystem_access():
     assert allowed_fs_methods.issubset(methods), (
         f"Expected filesystem methods missing: {allowed_fs_methods - methods}"
     )
+
+
+class TestInitialFilesystemPathValidation:
+    """load_initial_filesystem rejects paths outside safe roots."""
+
+    @pytest.fixture
+    def app_service(self):
+        game_state = GameState()
+        return AppService(game_state)
+
+    def test_load_initial_filesystem_rejects_path_outside_root(
+        self, app_service, tmp_path
+    ):
+        """A path outside the safe roots is rejected with a clear error."""
+        outside_path = tmp_path / "evil_initial_fs"
+        outside_path.mkdir()
+        with pytest.raises(ValueError, match="outside safe"):
+            app_service.load_initial_filesystem(str(outside_path))
+
+    def test_load_initial_filesystem_rejects_symlink_escape(
+        self, app_service, tmp_path
+    ):
+        """Symlinks in the initial FS tree that escape the safe root are skipped."""
+        safe_dir = settings.data_dir / "safe_initial_fs"
+        safe_dir.mkdir(parents=True, exist_ok=True)
+
+        evil_dir = tmp_path / "evil"
+        evil_dir.mkdir()
+        (evil_dir / "secret.txt").write_text("secret")
+
+        link = safe_dir / "link_to_evil"
+        try:
+            link.symlink_to(evil_dir)
+        except OSError:
+            pytest.skip("Symlink creation not supported on this platform")
+
+        app_service.load_initial_filesystem(str(safe_dir))
+        root = app_service.get_file(app_service.game_state.filesystem.root_id)
+        contents = app_service.list_directory(root.id)
+        assert not any(n.name == "link_to_evil" for n in contents)
+        assert not any(n.name == "secret.txt" for n in contents)

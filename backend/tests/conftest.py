@@ -24,7 +24,9 @@ def mock_llm():
 
     default_response = "Mock response from LLM"
 
-    mock = Mock()
+    from recursive_neon.services.interfaces import LLMInterface
+
+    mock = Mock(spec=LLMInterface)
     mock.invoke = Mock(return_value=AIMessage(content=default_response))
     mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
 
@@ -83,11 +85,11 @@ def mock_ollama_client():
 
     Returns a mock OllamaClient with common methods mocked.
     """
-    mock = AsyncMock()
-    mock.list_models = AsyncMock(
-        return_value=[{"name": "llama3.2:3b"}, {"name": "llama3.2:1b"}]
-    )
-    mock.check_health = AsyncMock(return_value=True)
+    from recursive_neon.services.interfaces import IOllamaClient
+
+    mock = AsyncMock(spec=IOllamaClient)
+    mock.list_models = AsyncMock(return_value=["llama3.2:3b", "llama3.2:1b"])
+    mock.health_check = AsyncMock(return_value=True)
     return mock
 
 

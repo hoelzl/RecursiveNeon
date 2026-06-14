@@ -59,6 +59,12 @@ class ShellSession:
             "PS1": r"\u@\h:\w\$ ",
         }
 
+    def add_history(self, line: str) -> None:
+        """Append a command line to history, keeping a bounded size."""
+        self.history.append(line)
+        if len(self.history) > 1000:
+            self.history.pop(0)
+
     def resolve_path(self, path: str) -> FileNode:
         """Resolve a path string to a FileNode."""
         return resolve_path(path, self.cwd_id, self.container.app_service)

@@ -14,9 +14,8 @@ from recursive_neon.shell.session import ShellSession
 @pytest.fixture
 def test_container(mock_llm):
     """A test ServiceContainer with initialized filesystem."""
-    container = ServiceFactory.create_test_container(
-        mock_npc_manager=ServiceFactory.create_npc_manager(llm=mock_llm),
-    )
+    container = ServiceFactory.create_test_container()
+    container.npc_manager = ServiceFactory.create_npc_manager(llm=mock_llm)
     container.app_service.load_initial_filesystem(
         initial_fs_dir=str(settings.initial_fs_path)
     )

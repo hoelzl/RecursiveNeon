@@ -235,7 +235,7 @@ class TerminalSessionManager:
         All sessions share the same ``ServiceContainer`` (and thus the same
         ``GameState``).  Concurrent mutations are safe for individual method
         calls (synchronous, no await points), but compound operations should
-        acquire ``container.app_service.lock`` to prevent interleaving.
+        be serialized via the service-layer lock in ``AppService``.
         """
         session_id = uuid.uuid4().hex[:12]
         shell = Shell(
@@ -256,7 +256,7 @@ class TerminalSessionManager:
         ts = self._sessions.pop(session_id, None)
         if ts is not None:
             await ts.stop()
-            self._save_game_state()
+            await self._save_game_state()
             logger.info("Terminal session removed: %s", session_id)
 
         # Stop auto-save if no sessions remain
@@ -282,16 +282,16 @@ class TerminalSessionManager:
             while self._sessions:
                 await asyncio.sleep(self.AUTO_SAVE_INTERVAL_SECONDS)
                 if self._sessions:
-                    self._save_game_state()
+                    await self._save_game_state()
         except asyncio.CancelledError:
             pass
 
-    def _save_game_state(self) -> None:
+    async def _save_game_state(self) -> None:
         if not self._data_dir:
             return
         try:
-            self._container.app_service.save_all_to_disk(self._data_dir)
-            self._container.npc_manager.save_npcs_to_disk(self._data_dir)
+            await self._container.app_service.save_all_to_disk(self._data_dir)
+            await self._container.npc_manager.save_npcs_to_disk(self._data_dir)
             logger.info("Auto-save: game state saved to %s", self._data_dir)
         except Exception:
             logger.exception("Auto-save failed")

@@ -117,8 +117,8 @@ async def prog_save(ctx: ProgramContext) -> int:
         ctx.stderr.error("save: no data directory configured")
         return 1
     try:
-        ctx.services.app_service.save_all_to_disk(data_dir)
-        ctx.services.npc_manager.save_npcs_to_disk(data_dir)
+        await ctx.services.app_service.save_all_to_disk(data_dir)
+        await ctx.services.npc_manager.save_npcs_to_disk(data_dir)
         ctx.stdout.writeln("Game state saved.")
         return 0
     except Exception as e:

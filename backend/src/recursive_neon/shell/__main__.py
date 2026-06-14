@@ -12,7 +12,7 @@ from recursive_neon.dependencies import ServiceFactory
 from recursive_neon.shell.shell import Shell
 
 
-def main() -> None:
+async def _async_main() -> int:
     """Launch the interactive shell."""
     logging.basicConfig(
         level=logging.WARNING,
@@ -20,17 +20,22 @@ def main() -> None:
     )
 
     try:
-        container = ServiceFactory.create_production_container()
+        container = await ServiceFactory.create_production_container()
     except Exception as e:
         print(f"Failed to initialize services: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     data_dir = str(settings.data_dir)
     shell = Shell(container, data_dir=data_dir)
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(shell.run())
+        await shell.run()
 
-    sys.exit(shell.session.last_exit_code)
+    return shell.session.last_exit_code
+
+
+def main() -> None:
+    """Synchronous entry point."""
+    sys.exit(asyncio.run(_async_main()))
 
 
 if __name__ == "__main__":

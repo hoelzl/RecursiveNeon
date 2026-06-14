@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from fnmatch import fnmatch
 
-from recursive_neon.services.app_service import AppService
+from recursive_neon.services.interfaces import IAppService
 from recursive_neon.shell.parser import Token
 from recursive_neon.shell.path_resolver import resolve_path
 
@@ -31,7 +31,7 @@ def has_glob_chars(s: str) -> bool:
 def expand_globs(
     tokens: list[Token],
     cwd_id: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> list[str]:
     """Expand glob patterns in unquoted tokens.
 
@@ -67,7 +67,7 @@ def expand_globs(
 def _match_glob(
     pattern: str,
     cwd_id: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> list[str]:
     """Match a glob pattern against the virtual filesystem.
 
@@ -87,7 +87,7 @@ def _match_glob(
     # Determine the starting directory and prefix for results
     if pattern.startswith("/"):
         # Absolute path — resolve from root
-        root_id = app_service.game_state.filesystem.root_id
+        root_id = app_service.get_filesystem_root_id()
         if root_id is None:
             return []
         start_id = root_id
@@ -113,7 +113,7 @@ def _match_glob(
 def _match_simple(
     pattern: str,
     cwd_id: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> list[str]:
     """Match a non-recursive glob pattern (no ``**``).
 
@@ -159,7 +159,7 @@ def _match_recursive(
     segments: list[str],
     dir_id: str,
     prefix: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> list[str]:
     """Match a glob pattern containing ``**`` segments.
 
@@ -250,7 +250,7 @@ def _match_recursive(
 def _collect_all(
     dir_id: str,
     prefix: str,
-    app_service: AppService,
+    app_service: IAppService,
     results: list[str],
 ) -> None:
     """Collect all files and directories recursively under *dir_id*."""

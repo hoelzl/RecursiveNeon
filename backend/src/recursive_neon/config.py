@@ -4,7 +4,7 @@ Configuration for Recursive://Neon backend
 
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/ directory — resolved once at import time
@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     data_dir: Path = _BACKEND_DIR / "game_data"
     chromadb_dir: Path = _BACKEND_DIR / "data" / "chromadb"
     initial_fs_path: Path = Path(__file__).resolve().parent / "initial_fs"
+
+    # Editor config — stored inside data_dir so it cannot escape the
+    # controlled game-data boundary.  The value is resolved relative to
+    # data_dir by the config loader, which rejects paths outside data_dir.
+    editor_config_path: Path = Field(default=Path(".neon-edit.py"))
 
     # Game Configuration
     max_npcs: int = 20
@@ -64,6 +69,8 @@ class Settings(BaseSettings):
             self.data_dir = bd / "game_data"
         if "chromadb_dir" not in self.model_fields_set:
             self.chromadb_dir = bd / "data" / "chromadb"
+        if "editor_config_path" not in self.model_fields_set:
+            self.editor_config_path = self.data_dir / ".neon-edit.py"
         return self
 
 

@@ -6,7 +6,7 @@ dependency injection. The NPCManager can now be tested in complete isolation
 without requiring a running Ollama server.
 """
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -20,16 +20,18 @@ class TestNPCManagerWithDependencyInjection:
     @pytest.fixture
     def mock_llm(self):
         """
-        Create a mock LLM compatible with LangChain's Runnable interface.
+        Create a mock LLM compatible with :class:`LLMInterface`.
 
-        This mock replaces the real ChatOllama instance and provides
+        This mock replaces the real Ollama adapter and provides
         invoke/ainvoke returning AIMessage objects.
         """
         from langchain_core.messages import AIMessage
 
+        from recursive_neon.services.interfaces import LLMInterface
+
         default_response = "Hello! I'm happy to help you."
 
-        mock = Mock()
+        mock = Mock(spec=LLMInterface)
         mock.invoke = Mock(return_value=AIMessage(content=default_response))
         mock.ainvoke = AsyncMock(return_value=AIMessage(content=default_response))
 
@@ -61,12 +63,10 @@ class TestNPCManagerWithDependencyInjection:
         assert npc_manager.llm is mock_llm
         assert len(npc_manager.npcs) == 0
 
-    def test_initialization_with_default_llm(self):
-        """Test that NPCManager can still create default LLM for backward compatibility."""
-        # This will create a real ChatOllama instance (may fail without Ollama running)
-        # In a real test environment, you might skip this or mock ChatOllama
-        manager = NPCManager()
-        assert manager.llm is not None
+    def test_npc_manager_requires_llm(self):
+        """NPCManager must receive an injected LLM."""
+        with pytest.raises(TypeError, match="NPCManager requires an injected LLM"):
+            NPCManager()  # type: ignore[arg-type]
 
     def test_register_npc(self, npc_manager, sample_npc):
         """Test registering an NPC stores it correctly."""
@@ -223,26 +223,6 @@ class TestNPCManagerWithDependencyInjection:
         assert "conversation_length" in stats["npcs"][0]
         assert "relationship_level" in stats["npcs"][0]
 
-    def test_factory_method(self):
-        """Test the factory method for creating NPCManager with Ollama."""
-        # This creates a real ChatOllama instance, so it might fail without Ollama
-        # In practice, you'd mock ChatOllama or skip this test
-        with patch(
-            "recursive_neon.services.npc_manager.ChatOllama"
-        ) as mock_ollama_class:
-            mock_llm_instance = Mock()
-            mock_ollama_class.return_value = mock_llm_instance
-
-            manager = NPCManager.create_with_ollama(
-                ollama_host="localhost", ollama_port=11434
-            )
-
-            # Verify ChatOllama was created with correct parameters
-            mock_ollama_class.assert_called_once()
-            call_kwargs = mock_ollama_class.call_args[1]
-            assert "localhost:11434" in call_kwargs["base_url"]
-            assert manager.llm is mock_llm_instance
-
 
 class TestStripThinkTags:
     """Tests for think-tag stripping."""
@@ -371,7 +351,7 @@ class TestNPCPersistence:
 
     # Uses shared mock_llm fixture from conftest.py
 
-    def test_save_and_load_npcs(self, mock_llm, tmp_path):
+    async def test_save_and_load_npcs(self, mock_llm, tmp_path):
         """NPCs with memory survive a save/load round-trip."""
         manager = NPCManager(llm=mock_llm)
         npc = NPC(
@@ -391,12 +371,12 @@ class TestNPCPersistence:
         npc.memory.relationship_level = 10
         manager.register_npc(npc)
 
-        manager.save_npcs_to_disk(str(tmp_path))
+        await manager.save_npcs_to_disk(str(tmp_path))
 
         # Load into fresh manager
         fresh = NPCManager(llm=mock_llm)
         assert len(fresh.npcs) == 0
-        assert fresh.load_npcs_from_disk(str(tmp_path)) is True
+        assert await fresh.load_npcs_from_disk(str(tmp_path)) is True
         assert len(fresh.npcs) == 1
 
         loaded = fresh.get_npc("test_persist")
@@ -406,43 +386,26 @@ class TestNPCPersistence:
         assert len(loaded.memory.conversation_history) == 2
         assert loaded.memory.conversation_history[0].content == "Hello"
 
-    def test_load_npcs_missing_file(self, mock_llm, tmp_path):
+    async def test_load_npcs_missing_file(self, mock_llm, tmp_path):
         """Returns False when no saved file exists."""
         manager = NPCManager(llm=mock_llm)
-        assert manager.load_npcs_from_disk(str(tmp_path)) is False
+        assert await manager.load_npcs_from_disk(str(tmp_path)) is False
 
-    def test_save_default_npcs(self, mock_llm, tmp_path):
+    async def test_save_default_npcs(self, mock_llm, tmp_path):
         """Default NPCs can be saved and reloaded."""
         manager = NPCManager(llm=mock_llm)
         manager.create_default_npcs()
-        manager.save_npcs_to_disk(str(tmp_path))
+        await manager.save_npcs_to_disk(str(tmp_path))
 
         fresh = NPCManager(llm=mock_llm)
-        assert fresh.load_npcs_from_disk(str(tmp_path)) is True
+        assert await fresh.load_npcs_from_disk(str(tmp_path)) is True
         assert len(fresh.npcs) == 5
 
-    def test_load_corrupt_npcs_json(self, mock_llm, tmp_path):
+    async def test_load_corrupt_npcs_json(self, mock_llm, tmp_path):
         """Corrupt JSON returns False without crashing."""
         (tmp_path / "npcs.json").write_text("{bad", encoding="utf-8")
         manager = NPCManager(llm=mock_llm)
-        assert manager.load_npcs_from_disk(str(tmp_path)) is False
-
-
-class TestNPCManagerBackwardCompatibility:
-    """Test that NPCManager maintains backward compatibility."""
-
-    def test_legacy_initialization(self):
-        """Test legacy initialization pattern still works."""
-        with patch("recursive_neon.services.npc_manager.ChatOllama") as mock_ollama:
-            mock_llm = Mock()
-            mock_ollama.return_value = mock_llm
-
-            # Old-style initialization
-            manager = NPCManager(ollama_host="localhost", ollama_port=11434)
-
-            # Should have created LLM internally
-            assert manager.llm is mock_llm
-            mock_ollama.assert_called_once()
+        assert await manager.load_npcs_from_disk(str(tmp_path)) is False
 
 
 class TestNPCChatConcurrency:

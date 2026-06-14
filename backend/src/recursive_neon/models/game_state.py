@@ -17,6 +17,7 @@ class SystemStatus(StrEnum):
     INITIALIZING = "initializing"
     READY = "ready"
     BUSY = "busy"
+    DEGRADED = "degraded"
     ERROR = "error"
     SHUTTING_DOWN = "shutting_down"
 

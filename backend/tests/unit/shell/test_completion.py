@@ -77,6 +77,18 @@ class TestGetCurrentArgument:
         replace_len = len(text) - pos
         assert replace_len == 13  # len('"My Folder"/a')
 
+    def test_escaped_quotes_are_literal(self):
+        """An escaped double quote is part of the argument, not a boundary."""
+        pos, raw = _get_current_argument('cat "file\\"name".txt')
+        assert pos == 4
+        assert raw == 'file"name.txt'
+
+    def test_completion_with_escaped_quotes(self):
+        """Backslash-escaped quotes inside quotes are unescaped correctly."""
+        pos, raw = _get_current_argument('cat "a\\"b')
+        assert pos == 4
+        assert raw == 'a"b'
+
 
 @pytest.mark.unit
 class TestQuotePath:

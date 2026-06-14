@@ -6,7 +6,7 @@ Mocks prompt_toolkit.PromptSession to test the interactive loop.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -49,36 +49,45 @@ class TestChatUnknownNPC:
         assert "unknown NPC" in output.error_text
 
 
+class TestChatInputSource:
+    """Test input-source requirements."""
+
+    async def test_chat_without_input_source_returns_error(
+        self, chat, make_ctx, output
+    ):
+        """chat must return a clear error when no async input source is available."""
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        # get_line defaults to None in ProgramContext
+        assert ctx.get_line is None
+        code = await chat.run(ctx)
+        assert code == 1
+        assert "input" in output.error_text.lower()
+
+
 class TestChatConversation:
     """Test the interactive chat conversation loop."""
 
     async def test_exit_command(self, chat, make_ctx, output):
         """User types '/exit' to leave chat."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/exit"])
+        code = await chat.run(ctx)
         assert code == 0
         assert "Connection closed" in output.text
 
     async def test_eof_exits(self, chat, make_ctx, output):
         """Ctrl+D (EOFError) exits chat."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=EOFError)
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=EOFError)
+        code = await chat.run(ctx)
         assert code == 0
         assert "Connection closed" in output.text
 
     async def test_keyboard_interrupt_exits(self, chat, make_ctx, output):
         """Ctrl+C exits chat."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=KeyboardInterrupt)
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=KeyboardInterrupt)
+        code = await chat.run(ctx)
         assert code == 0
 
     async def test_chat_sends_message(self, chat, make_ctx, output, mock_llm):
@@ -88,11 +97,9 @@ class TestChatConversation:
         response_text = "Welcome to the lobby!"
         mock_llm.ainvoke.return_value = AIMessage(content=response_text)
 
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["Hello!", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["Hello!", "/exit"])
+        code = await chat.run(ctx)
 
         assert code == 0
         assert "Aria" in output.text
@@ -100,60 +107,48 @@ class TestChatConversation:
 
     async def test_empty_input_skipped(self, chat, make_ctx, output):
         """Empty input lines are skipped."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["", "   ", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["", "   ", "/exit"])
+        code = await chat.run(ctx)
         assert code == 0
 
     async def test_slash_help(self, chat, make_ctx, output):
         """/help shows chat commands."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/help", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/help", "/exit"])
+        code = await chat.run(ctx)
         assert code == 0
         assert "/relationship" in output.text
         assert "/status" in output.text
 
     async def test_slash_relationship(self, chat, make_ctx, output):
         """/relationship shows level."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/relationship", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/relationship", "/exit"])
+        code = await chat.run(ctx)
         assert code == 0
         assert "Relationship" in output.text
 
     async def test_slash_status(self, chat, make_ctx, output):
         """/status shows NPC info."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/status", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/status", "/exit"])
+        code = await chat.run(ctx)
         assert code == 0
         assert "Aria" in output.text
         assert "Location" in output.text
 
     async def test_unknown_slash_command(self, chat, make_ctx, output):
         """/bogus shows error."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/bogus", "/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            code = await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/bogus", "/exit"])
+        code = await chat.run(ctx)
         assert code == 0
         assert "Unknown command" in output.error_text
 
     async def test_greeting_displayed(self, chat, make_ctx, output):
         """NPC greeting is shown when entering chat."""
-        with patch("prompt_toolkit.PromptSession") as MockSession:
-            session = MockSession.return_value
-            session.prompt_async = AsyncMock(side_effect=["/exit"])
-            ctx = make_ctx(["chat", "receptionist_aria"])
-            await chat.run(ctx)
+        ctx = make_ctx(["chat", "receptionist_aria"])
+        ctx.get_line = AsyncMock(side_effect=["/exit"])
+        await chat.run(ctx)
         assert "Welcome! How can I assist you today?" in output.text

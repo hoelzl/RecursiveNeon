@@ -33,7 +33,6 @@ from recursive_neon.shell.output import (
     RED,
     RESET,
     CapturedOutput,
-    MergedStderrOutput,
     Output,
 )
 from recursive_neon.shell.parser import (
@@ -109,6 +108,14 @@ class InputSource(Protocol):
 
 
 logger = logging.getLogger(__name__)
+
+
+class ShellError(Exception):
+    """Base class for user-facing shell errors."""
+
+
+class ProgramNotFoundError(ShellError):
+    """Raised when a command is not found."""
 
 
 WELCOME_BANNER = """\
@@ -256,7 +263,7 @@ class Shell:
             if not line:
                 continue
 
-            self.session.history.append(line)
+            self.session.add_history(line)
             exit_code = await self.execute_line(line)
 
             if exit_code == -1:
@@ -266,16 +273,16 @@ class Shell:
             self.session.last_exit_code = exit_code
 
         # Save game state on exit
-        self._save_game_state()
+        await self._save_game_state()
 
-    def _save_game_state(self) -> None:
+    async def _save_game_state(self) -> None:
         """Save all game state to disk."""
         if not self.data_dir:
             return
         try:
             container = self.session.container
-            container.app_service.save_all_to_disk(self.data_dir)
-            container.npc_manager.save_npcs_to_disk(self.data_dir)
+            await container.app_service.save_all_to_disk(self.data_dir)
+            await container.npc_manager.save_npcs_to_disk(self.data_dir)
             logger.info("Game state saved to %s", self.data_dir)
         except Exception as e:
             logger.error("Failed to save game state: %s", e)
@@ -352,7 +359,7 @@ class Shell:
                 # Capture stdout for piping or redirect
                 captured = CapturedOutput()
                 if merge_stderr:
-                    seg_stderr = MergedStderrOutput(captured)
+                    seg_stderr = captured.merge_stderr()
                 last_exit = await self._execute_tokens(
                     tokens,
                     captured,
@@ -363,7 +370,7 @@ class Shell:
             else:
                 # Last segment, no stdout redirect — write to real output
                 if merge_stderr:
-                    seg_stderr = MergedStderrOutput(self.output)
+                    seg_stderr = self.output.merge_stderr()
                 last_exit = await self._execute_tokens(
                     tokens,
                     self.output,
@@ -425,19 +432,19 @@ class Shell:
             # calls to the stderr target by swapping the error stream.
             builtin_output = output
             if stderr_output is not None and stderr_output is not output:
-                builtin_output = Output(
-                    stream=output._stream,
-                    err_stream=stderr_output._err_stream,
-                    color=stderr_output._color,
-                )
+                builtin_output = output.with_stderr(stderr_output)
             try:
                 return await self.builtins[name](
                     self.session,
                     tokens,
                     builtin_output,
                 )
-            except Exception as e:
+            except (ShellError, NotADirectoryError, FileNotFoundError) as e:
                 err_out.error(f"{name}: {e}")
+                return 1
+            except Exception:
+                logger.exception("Unexpected error executing builtin %s", name)
+                err_out.error("Internal error")
                 return 1
 
         # 2. Check system programs
@@ -451,8 +458,12 @@ class Shell:
             )
             try:
                 return await program.run(ctx)
-            except Exception as e:
+            except (ShellError, NotADirectoryError, FileNotFoundError) as e:
                 err_out.error(f"{name}: {e}")
+                return 1
+            except Exception:
+                logger.exception("Unexpected error executing program %s", name)
+                err_out.error("Internal error")
                 return 1
 
         err_out.error(f"nsh: command not found: {name}")
@@ -597,21 +608,42 @@ class Shell:
         return items, replace_len
 
     def _build_prompt(self) -> str:
-        """Build the colored shell prompt string."""
+        """Build the colored shell prompt string.
+
+        Honors the ``PS1`` environment variable, replacing bash-style
+        escape sequences with live session values. Unknown escapes are
+        left in place.
+        """
         cwd = self.session.get_cwd_path()
         user = self.session.username
         host = self.session.hostname
 
         sigil_color = RED if self.session.last_exit_code != 0 else MAGENTA
+        sigil = f"{sigil_color}${RESET}"
 
-        return (
-            f"{GREEN}{user}{RESET}"
-            f"{DIM}@{RESET}"
-            f"{CYAN}{host}{RESET}"
-            f"{DIM}:{RESET}"
-            f"{BOLD}{cwd}{RESET}"
-            f"{sigil_color}${RESET} "
-        )
+        ps1 = self.session.env.get("PS1")
+        if ps1 is None:
+            ps1 = (
+                f"{GREEN}{user}{RESET}"
+                f"{DIM}@{RESET}"
+                f"{CYAN}{host}{RESET}"
+                f"{DIM}:{RESET}"
+                f"{BOLD}{cwd}{RESET}"
+                f"{sigil} "
+            )
+        else:
+            prompt = (
+                ps1.replace(r"\u", user)
+                .replace(r"\h", host)
+                .replace(r"\w", cwd)
+                .replace(r"\$", sigil)
+            )
+            # Preserve a trailing space for readline separation.
+            if not prompt.endswith(" "):
+                prompt += " "
+            return prompt
+
+        return ps1
 
 
 # ---------------------------------------------------------------------------

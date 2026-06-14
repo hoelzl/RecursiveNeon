@@ -9,13 +9,13 @@ ShellSession, ProgramContext, and (future) virtual_open() without coupling.
 from __future__ import annotations
 
 from recursive_neon.models.app_models import FileNode
-from recursive_neon.services.app_service import AppService
+from recursive_neon.services.interfaces import IAppService
 
 
 def resolve_path(
     path: str,
     cwd_id: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> FileNode:
     """Resolve a path string to a FileNode.
 
@@ -31,7 +31,7 @@ def resolve_path(
         FileNotFoundError: If a path segment doesn't match any child.
         NotADirectoryError: If traversing through a file.
     """
-    root_id = app_service.game_state.filesystem.root_id
+    root_id = app_service.get_filesystem_root_id()
     if root_id is None:
         raise FileNotFoundError("Filesystem not initialized")
 
@@ -89,7 +89,7 @@ def resolve_path(
 def resolve_parent_and_name(
     path: str,
     cwd_id: str,
-    app_service: AppService,
+    app_service: IAppService,
 ) -> tuple[FileNode, str]:
     """Resolve all but the last segment, returning (parent_dir, name).
 
@@ -119,7 +119,7 @@ def resolve_parent_and_name(
         name = path
     elif last_slash == 0:
         # /name — parent is root
-        root_id = app_service.game_state.filesystem.root_id
+        root_id = app_service.get_filesystem_root_id()
         if root_id is None:
             raise FileNotFoundError("Filesystem not initialized")
         parent = app_service.get_file(root_id)
@@ -139,7 +139,7 @@ def resolve_parent_and_name(
     return parent, name
 
 
-def get_node_path(node_id: str, app_service: AppService) -> str:
+def get_node_path(node_id: str, app_service: IAppService) -> str:
     """Get the full path string for a node by walking parent links.
 
     Args:
@@ -149,7 +149,7 @@ def get_node_path(node_id: str, app_service: AppService) -> str:
     Returns:
         Full path string (e.g., "/Documents/readme.txt").
     """
-    root_id = app_service.game_state.filesystem.root_id
+    root_id = app_service.get_filesystem_root_id()
     parts: list[str] = []
     current_id: str | None = node_id
     visited: set[str] = set()

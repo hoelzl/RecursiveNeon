@@ -28,7 +28,7 @@ class FileNode(BaseModel):
 
 ### 2. Controlled File System Access
 
-The system **only** accesses the real file system in three specific, controlled ways:
+The system **only** accesses the real file system in four specific, controlled ways:
 
 #### a) Initial State Loading (Read-Only)
 - **Source:** `backend/initial_fs/` directory
@@ -61,6 +61,21 @@ npc_manager.save_npcs_to_disk("backend/game_data")
 ```python
 app_service.load_all_from_disk("backend/game_data")
 npc_manager.load_npcs_from_disk("backend/game_data")
+```
+
+#### d) Editor Config Loading (Read-Only, Sandboxed)
+- **Source:** `backend/game_data/.neon-edit.py` (configurable via `EDITOR_CONFIG_PATH`)
+- **Purpose:** Allow trusted game configuration for the neon-edit TUI editor (key bindings, commands, modes)
+- **Access:** Read-only at editor startup and on `M-x reload-config`
+- **Safety:**
+  - The configured path is resolved relative to `settings.data_dir` and rejected if it escapes `data_dir`
+  - The file is executed in a restricted namespace with dangerous builtins removed (`open`, `exec`, `eval`, `compile`, `__import__`, `globals`, `locals`, `breakpoint`)
+  - Only a small whitelist of safe standard-library modules may be imported (`re`, `string`, `textwrap`, `math`, `functools`, `itertools`, `collections`, `dataclasses`, `enum`, `typing`, `operator`, `copy`)
+  - The file must be trusted — the sandbox is accident-protection, not an adversarial boundary
+
+```python
+# from backend/src/recursive_neon/editor/config_loader.py
+path = _config_path()  # resolves inside settings.data_dir
 ```
 
 ### 3. File Operations

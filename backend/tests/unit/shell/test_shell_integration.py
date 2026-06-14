@@ -1,5 +1,7 @@
 """Integration tests for the shell — full command flows."""
 
+from unittest.mock import patch
+
 import pytest
 
 from recursive_neon.shell.output import CapturedOutput
@@ -140,3 +142,24 @@ class TestShellExecuteLine:
         text = shell.output.text
         assert "pwd:" in text
         assert "Print current working directory" in text
+
+    async def test_program_not_found_returns_user_friendly_error(self, shell):
+        """Unknown commands return a user-friendly error message."""
+        code = await shell.execute_line("notacommand")
+        assert code == 127
+        assert "command not found: notacommand" in shell.output.error_text
+
+    async def test_unexpected_exception_logs_traceback(self, shell):
+        """Unexpected programming errors are logged, not shown to the user."""
+
+        async def _crash(session, args, output):
+            raise RuntimeError("boom")
+
+        shell.builtins["crash"] = _crash
+        with patch("recursive_neon.shell.shell.logger.exception") as mock_log:
+            code = await shell.execute_line("crash")
+
+        assert code == 1
+        assert "Internal error" in shell.output.error_text
+        assert "boom" not in shell.output.error_text
+        mock_log.assert_called_once()

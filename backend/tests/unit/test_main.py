@@ -4,6 +4,8 @@ Tests for the FastAPI application — HTTP endpoints and WebSocket handling.
 Covers the biggest coverage gap identified in the code review (main.py was at 0%).
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -31,13 +33,16 @@ def container(mock_llm):
     c.app_service.init_filesystem()
     npc_manager.create_default_npcs()
     c.system_state.status = SystemStatus.READY
+    c.system_state.ollama_running = True
     # Configure mock return values for endpoints that call these
-    c.process_manager.get_status.return_value = {
-        "running": False,
-        "pid": None,
-        "memory_mb": 0,
-        "cpu_percent": 0,
-    }
+    c.process_manager.get_status = AsyncMock(
+        return_value={
+            "running": False,
+            "pid": None,
+            "memory_mb": 0,
+            "cpu_percent": 0,
+        }
+    )
     return c
 
 
@@ -128,6 +133,19 @@ class TestNPCEndpoints:
             },
         )
         assert resp.status_code == 404
+
+    def test_chat_returns_503_when_ollama_degraded(self, client, container):
+        container.system_state.ollama_running = False
+        resp = client.post(
+            "/chat",
+            json={
+                "npc_id": "receptionist_aria",
+                "message": "Hi",
+                "player_id": "player_1",
+            },
+        )
+        assert resp.status_code == 503
+        assert "chat is disabled" in resp.json()["detail"]
 
 
 class TestStatsEndpoint:

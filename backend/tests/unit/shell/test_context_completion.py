@@ -196,6 +196,17 @@ class TestFindCompletion:
         items = _completions(shell, "find D")
         assert "Documents/" in items
 
+    def test_find_complete_after_name_returns_empty(self, shell):
+        """After -name, a glob pattern is expected — no path completion."""
+        items = _completions(shell, "find . -name ")
+        assert items == []
+
+    def test_find_complete_path_returns_directories(self, shell):
+        """find without a preceding pattern option still completes directories."""
+        items = _completions(shell, "find ")
+        assert "Documents/" in items
+        assert "welcome.txt" not in items
+
 
 # ---------------------------------------------------------------------------
 # write — first arg path, rest no completion

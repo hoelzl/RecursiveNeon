@@ -12,6 +12,63 @@ Splits a raw input line into argv-style tokens, handling:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Iterator
+
+
+@dataclass
+class QuoteState:
+    """Quote/escape state at a given character position."""
+
+    in_double_quote: bool = False
+    in_single_quote: bool = False
+    escaped: bool = False
+
+
+class QuoteWalker:
+    """Iterate over a line, tracking quote and escape state.
+
+    Yields ``(character, state)`` tuples where *state* reflects the
+    quoting context **before** the character is consumed.  Backslash
+    escapes are resolved: the backslash is skipped and the escaped
+    character is yielded with ``state.escaped == True``.
+    """
+
+    def __init__(self, text: str, start: int = 0) -> None:
+        self.text = text
+        self.pos = start
+        self.end = len(text)
+        self.state = QuoteState()
+
+    def __iter__(self) -> Iterator[tuple[str, QuoteState]]:
+        return self
+
+    def __next__(self) -> tuple[str, QuoteState]:
+        if self.pos >= self.end:
+            raise StopIteration
+        ch = self.text[self.pos]
+        state = QuoteState(
+            in_double_quote=self.state.in_double_quote,
+            in_single_quote=self.state.in_single_quote,
+            escaped=self.state.escaped,
+        )
+        if self.state.escaped:
+            self.state.escaped = False
+            self.pos += 1
+            return ch, state
+        if ch == "\\" and not self.state.in_single_quote and self.pos + 1 < self.end:
+            self.state.escaped = True
+            self.pos += 1
+            return self.__next__()
+        if ch == '"' and not self.state.in_single_quote:
+            self.state.in_double_quote = not self.state.in_double_quote
+            self.pos += 1
+            return ch, state
+        if ch == "'" and not self.state.in_double_quote:
+            self.state.in_single_quote = not self.state.in_single_quote
+            self.pos += 1
+            return ch, state
+        self.pos += 1
+        return ch, state
 
 
 def _skip_double_quoted(text: str, i: int) -> tuple[int, bool]:
@@ -377,37 +434,16 @@ def _extract_redirect_target(line: str, start: int) -> tuple[str, int]:
     if i >= n:
         return "", i - start
 
-    # Find end of the target token
+    # Find end of the target token using the shared quote walker.
     token_start = i
-    in_dq = False
-    in_sq = False
-    while i < n:
-        ch = line[i]
-        if in_dq:
-            if ch == "\\" and i + 1 < n:
-                i += 2
-                continue
-            if ch == '"':
-                in_dq = False
-            i += 1
-            continue
-        if in_sq:
-            if ch == "'":
-                in_sq = False
-            i += 1
-            continue
-        if ch == '"':
-            in_dq = True
-            i += 1
-            continue
-        if ch == "'":
-            in_sq = True
-            i += 1
-            continue
-        if ch in (" ", "\t"):
+    walker = QuoteWalker(line, start=i)
+    for ch, state in walker:
+        if ch in (" ", "\t") and not (
+            state.in_double_quote or state.in_single_quote or state.escaped
+        ):
             break
-        i += 1
 
+    i = walker.pos
     token_text = line[token_start:i].strip()
     if not token_text:
         return "", i - start

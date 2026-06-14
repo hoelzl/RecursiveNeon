@@ -9,8 +9,10 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from recursive_neon.services.interfaces import IOllamaClient
 
@@ -237,3 +239,51 @@ class OllamaClient(IOllamaClient):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
+
+
+class OllamaLangChainAdapter:
+    """Wraps an :class:`IOllamaClient` so it satisfies :class:`LLMInterface`.
+
+    NPCManager expects a LangChain-compatible chat model (``ainvoke`` accepting
+    a list of LangChain messages and returning an ``AIMessage``). This adapter
+    converts those messages to the plain dict format used by
+    :meth:`IOllamaClient.chat` and wraps the returned string back into an
+    ``AIMessage``.
+    """
+
+    def __init__(
+        self,
+        client: IOllamaClient,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 200,
+    ):
+        self.client = client
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+    @staticmethod
+    def _to_dict(message: BaseMessage) -> dict[str, str]:
+        if isinstance(message, SystemMessage):
+            return {"role": "system", "content": str(message.content)}
+        if isinstance(message, HumanMessage):
+            return {"role": "user", "content": str(message.content)}
+        if isinstance(message, AIMessage):
+            return {"role": "assistant", "content": str(message.content)}
+        return {"role": "user", "content": str(message.content)}
+
+    async def ainvoke(self, prompt: Any, *args: Any, **kwargs: Any) -> Any:
+        messages = [self._to_dict(m) for m in prompt]
+        text = await self.client.chat(
+            messages=messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return AIMessage(content=text)
+
+    def invoke(self, prompt: Any, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError(
+            "Synchronous invocation is not supported; use ainvoke"
+        )

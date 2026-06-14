@@ -199,7 +199,7 @@ async def prog_mkdir(ctx: ProgramContext) -> int:
 def _mkdir_parents(ctx: ProgramContext, path: str) -> None:
     """Create directory and all parent directories as needed."""
     if path.startswith("/"):
-        root_id = ctx.services.app_service.game_state.filesystem.root_id
+        root_id = ctx.services.app_service.get_filesystem_root_id()
         if root_id is None:
             raise FileNotFoundError("Filesystem has no root directory")
         current_id = root_id
@@ -281,7 +281,7 @@ async def prog_rm(ctx: ProgramContext) -> int:
             return 1
 
         # Don't allow removing root
-        root_id = ctx.services.app_service.game_state.filesystem.root_id
+        root_id = ctx.services.app_service.get_filesystem_root_id()
         if node.id == root_id:
             ctx.stderr.error("rm: cannot remove root directory")
             return 1
@@ -348,7 +348,7 @@ async def prog_mv(ctx: ProgramContext) -> int:
         return 1
 
     # Don't allow moving root
-    root_id = ctx.services.app_service.game_state.filesystem.root_id
+    root_id = ctx.services.app_service.get_filesystem_root_id()
     if src_node.id == root_id:
         ctx.stderr.error("mv: cannot move root directory")
         return 1
@@ -583,9 +583,14 @@ def _complete_grep(ctx: CompletionContext) -> list[str]:
     return complete_paths(ctx)
 
 
+_FIND_PATTERN_OPTIONS = {"-name", "-iname", "-path", "-regex"}
+
+
 def _complete_find(ctx: CompletionContext) -> list[str]:
     if ctx.current.startswith("-"):
         return ["-name"]
+    if ctx.args and ctx.args[-1] in _FIND_PATTERN_OPTIONS:
+        return []
     return complete_paths(ctx, dirs_only=True)
 
 

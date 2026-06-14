@@ -69,6 +69,21 @@ class Output:
         prefix = "".join(codes)
         return f"{prefix}{text}{RESET}"
 
+    def flush(self) -> None:
+        """Flush any buffered output to the underlying streams."""
+        self._stream.flush()
+        self._err_stream.flush()
+
+    def with_stderr(self, other: Output) -> Output:
+        """Return an output that writes stdout to self and stderr to *other*."""
+        return Output(
+            stream=self._stream, err_stream=other._err_stream, color=other._color
+        )
+
+    def merge_stderr(self) -> Output:
+        """Return an output that routes stderr into the stdout stream."""
+        return Output(stream=self._stream, err_stream=self._stream, color=False)
+
 
 class CapturedOutput(Output):
     """Output that captures to in-memory buffers for testing."""
@@ -101,6 +116,30 @@ class CapturedOutput(Output):
         self._err_buf.seek(0)
 
 
+class _ComposedOutput(Output):
+    """Output that delegates stdout to one target and stderr to another."""
+
+    def __init__(self, stdout: Output, stderr: Output) -> None:
+        super().__init__(stream=io.StringIO(), err_stream=io.StringIO(), color=False)
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def write(self, text: str) -> None:
+        self._stdout.write(text)
+
+    def writeln(self, text: str = "") -> None:
+        self._stdout.writeln(text)
+
+    def error(self, text: str) -> None:
+        self._stderr.error(text)
+
+    def styled(self, text: str, *codes: str) -> str:
+        return self._stdout.styled(text, *codes)
+
+    def merge_stderr(self) -> Output:
+        return self._stdout.merge_stderr()
+
+
 class MergedStderrOutput(Output):
     """Output that routes ``error()`` calls to the stdout stream.
 
@@ -112,11 +151,18 @@ class MergedStderrOutput(Output):
     def __init__(self, stdout_stream: Output) -> None:
         # Pass the stdout stream's underlying stream for both stdout and
         # stderr so that error() writes go to the same buffer.
+        self._stdout_stream = stdout_stream
         super().__init__(
             stream=stdout_stream._stream,
             err_stream=stdout_stream._stream,
             color=False,
         )
+
+    def with_stderr(self, other: Output) -> Output:
+        return self._stdout_stream.with_stderr(other)
+
+    def merge_stderr(self) -> Output:
+        return self
 
 
 class QueueOutput(Output):
@@ -149,3 +195,9 @@ class QueueOutput(Output):
             return text
         prefix = "".join(codes)
         return f"{prefix}{text}{RESET}"
+
+    def with_stderr(self, other: Output) -> Output:
+        return _ComposedOutput(self, other)
+
+    def merge_stderr(self) -> Output:
+        return QueueOutput(self._queue)

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 
+import pytest
+
+from recursive_neon.config import settings
 from recursive_neon.editor.commands import COMMANDS
 from recursive_neon.editor.config_loader import (
     ConfigNamespace,
@@ -14,12 +18,22 @@ from recursive_neon.editor.config_loader import (
 )
 from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
+from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.modes import MODES
 from recursive_neon.editor.variables import VARIABLES
 
 
 def _editor() -> Editor:
     return Editor(global_keymap=build_default_keymap())
+
+
+def _patch_config_paths(
+    monkeypatch, data_dir: Path, editor_config_path: Path | str
+) -> Path:
+    """Point settings at a temporary data directory and config path."""
+    monkeypatch.setattr(settings, "data_dir", data_dir)
+    monkeypatch.setattr(settings, "editor_config_path", Path(editor_config_path))
+    return data_dir
 
 
 class TestSafeBuiltins:
@@ -202,6 +216,7 @@ class TestExecConfig:
         _exec_config(ed, source, "<test>")
         cx = ed.global_keymap.lookup("C-x")
         assert cx is not None
+        assert isinstance(cx, Keymap)
         assert cx.lookup("z") == "forward-char"
         # Clean up
         cx.unbind("z")
@@ -313,30 +328,67 @@ class TestExecConfig:
         assert result is False
 
 
-class TestLoadConfig:
-    """load_config integration with filesystem."""
+class TestConfigPath:
+    """Controlled config path resolution."""
 
-    def test_missing_config_is_noop(self, tmp_path, monkeypatch):
-        """Missing config file is silently ignored."""
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(tmp_path / "nope.py"))
-        ed = _editor()
-        load_config(ed)
-        assert not ed.message
+    def test_default_config_path_is_inside_data_dir(self, monkeypatch, tmp_path):
+        """The default config path lives under settings.data_dir."""
+        _patch_config_paths(monkeypatch, tmp_path, ".neon-edit.py")
+        path = _config_path()
+        assert path.resolve().is_relative_to(tmp_path.resolve())
 
-    def test_loads_config_from_env_path(self, tmp_path, monkeypatch):
-        """Config file is loaded from RECURSIVE_NEON_CONFIG_PATH."""
-        config = tmp_path / "my_config.py"
+    def test_config_loader_reads_controlled_path(self, monkeypatch, tmp_path):
+        """Config file is loaded from the path under settings.data_dir."""
+        _patch_config_paths(monkeypatch, tmp_path, ".neon-edit.py")
+        config = tmp_path / ".neon-edit.py"
         config.write_text('editor.message = "loaded"', encoding="utf-8")
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         load_config(ed)
         assert ed.message == "loaded"
 
-    def test_reload_picks_up_changes(self, tmp_path, monkeypatch):
+    def test_config_loader_rejects_path_outside_data_dir(self, monkeypatch, tmp_path):
+        """A config path that escapes data_dir is rejected."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        _patch_config_paths(monkeypatch, data_dir, Path("..") / "evil.py")
+        with pytest.raises(ValueError, match="outside data_dir"):
+            _config_path()
+
+    def test_config_loader_rejects_absolute_path_outside_data_dir(
+        self, monkeypatch, tmp_path
+    ):
+        """An absolute config path outside data_dir is rejected."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        _patch_config_paths(monkeypatch, data_dir, tmp_path / "evil.py")
+        with pytest.raises(ValueError, match="outside data_dir"):
+            _config_path()
+
+
+class TestLoadConfig:
+    """load_config integration with filesystem."""
+
+    def test_missing_config_is_noop(self, monkeypatch, tmp_path):
+        """Missing config file is silently ignored."""
+        _patch_config_paths(monkeypatch, tmp_path, "nope.py")
+        ed = _editor()
+        load_config(ed)
+        assert not ed.message
+
+    def test_loads_config_from_controlled_path(self, monkeypatch, tmp_path):
+        """Config file is loaded from the controlled path."""
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
+        config = tmp_path / "config.py"
+        config.write_text('editor.message = "loaded"', encoding="utf-8")
+        ed = _editor()
+        load_config(ed)
+        assert ed.message == "loaded"
+
+    def test_reload_picks_up_changes(self, monkeypatch, tmp_path):
         """reload-config re-executes the config file."""
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
         config = tmp_path / "config.py"
         config.write_text('editor.message = "v1"', encoding="utf-8")
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         load_config(ed)
         assert ed.message == "v1"
@@ -345,13 +397,9 @@ class TestLoadConfig:
         load_config(ed)
         assert ed.message == "v2"
 
-    def test_env_var_overrides_default_path(self, tmp_path, monkeypatch):
-        """RECURSIVE_NEON_CONFIG_PATH overrides the default."""
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(tmp_path / "alt.py"))
-        assert _config_path() == tmp_path / "alt.py"
-
-    def test_config_adds_command_available_in_editor(self, tmp_path, monkeypatch):
+    def test_config_adds_command_available_in_editor(self, monkeypatch, tmp_path):
         """A command defined in config is usable by the editor."""
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
         config = tmp_path / "config.py"
         config.write_text(
             textwrap.dedent("""\
@@ -361,7 +409,6 @@ class TestLoadConfig:
             """),
             encoding="utf-8",
         )
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         load_config(ed)
         try:
@@ -370,8 +417,9 @@ class TestLoadConfig:
         finally:
             COMMANDS.pop("config-hello", None)
 
-    def test_config_can_define_mode_with_syntax_rules(self, tmp_path, monkeypatch):
+    def test_config_can_define_mode_with_syntax_rules(self, monkeypatch, tmp_path):
         """Config can define a mode with syntax rules."""
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
         config = tmp_path / "config.py"
         config.write_text(
             textwrap.dedent("""\
@@ -381,7 +429,6 @@ class TestLoadConfig:
             """),
             encoding="utf-8",
         )
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         load_config(ed)
         try:
@@ -390,6 +437,15 @@ class TestLoadConfig:
         finally:
             MODES.pop("todo-mode", None)
 
+    def test_load_config_reports_path_escape_error(self, monkeypatch, tmp_path):
+        """A config path outside data_dir surfaces as a message, not a crash."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        _patch_config_paths(monkeypatch, data_dir, Path("..") / "evil.py")
+        ed = _editor()
+        load_config(ed)
+        assert "outside data_dir" in ed.message
+
 
 class TestReloadConfigCommand:
     """M-x reload-config command."""
@@ -397,24 +453,24 @@ class TestReloadConfigCommand:
     def test_reload_config_command_exists(self):
         assert "reload-config" in COMMANDS
 
-    def test_reload_config_no_file(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(tmp_path / "nope.py"))
+    def test_reload_config_no_file(self, monkeypatch, tmp_path):
+        _patch_config_paths(monkeypatch, tmp_path, "nope.py")
         ed = _editor()
         ed.execute_command("reload-config")
         assert "No config file" in ed.message
 
-    def test_reload_config_success(self, tmp_path, monkeypatch):
+    def test_reload_config_success(self, monkeypatch, tmp_path):
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
         config = tmp_path / "config.py"
         config.write_text("x = 1", encoding="utf-8")
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         ed.execute_command("reload-config")
         assert "reloaded" in ed.message.lower()
 
-    def test_reload_config_reports_error(self, tmp_path, monkeypatch):
+    def test_reload_config_reports_error(self, monkeypatch, tmp_path):
+        _patch_config_paths(monkeypatch, tmp_path, "config.py")
         config = tmp_path / "config.py"
         config.write_text("1/0", encoding="utf-8")
-        monkeypatch.setenv("RECURSIVE_NEON_CONFIG_PATH", str(config))
         ed = _editor()
         ed.execute_command("reload-config")
         assert "Config error" in ed.message

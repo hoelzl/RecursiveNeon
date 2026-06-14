@@ -1,18 +1,23 @@
 """
-Config loader — execute user configuration from ``~/.neon-edit.py``.
+Config loader — execute user configuration from a file inside ``data_dir``.
 
-The config loader runs a user-provided Python file in a curated
+The config loader runs a trusted game config Python file in a curated
 namespace that exposes the editor's public extension API.  This gives
-users the same level of customisation as Emacs's ``~/.emacs``:
+players the same level of customisation as Emacs's ``~/.emacs``:
 defining commands, binding keys, registering modes, and setting
 variables.
+
+**Location**: The config path is taken from ``settings.editor_config_path``
+and is always resolved inside ``settings.data_dir``.  A path that escapes
+``data_dir`` is rejected, so the editor can no longer be made to execute
+arbitrary files from the player's home directory.
 
 **Sandboxing**: The namespace uses a restricted ``__builtins__`` that
 excludes ``open``, ``exec``, ``eval``, ``compile``, ``__import__``,
 ``globals``, and ``locals``.  This is *accidental-mistake protection*
 (preventing copy-pasted snippets from doing unexpected I/O), **not**
 adversarial sandboxing — a determined attacker who can write arbitrary
-Python files has already won.
+Python files into ``data_dir`` has already won.
 
 **Error handling**: Any exception during config loading is caught and
 written to the ``*Messages*`` buffer.  The editor always starts
@@ -35,10 +40,10 @@ The loader is structured as two layers:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from recursive_neon.config import settings
 from recursive_neon.editor.buffer import Buffer
 from recursive_neon.editor.commands import COMMANDS, defcommand
 from recursive_neon.editor.keymap import Keymap
@@ -48,9 +53,6 @@ from recursive_neon.editor.variables import defvar
 
 if TYPE_CHECKING:
     from recursive_neon.editor.editor import Editor
-
-# Default config path — overridable via RECURSIVE_NEON_CONFIG_PATH.
-_DEFAULT_CONFIG = Path.home() / ".neon-edit.py"
 
 # Builtins to exclude from the config namespace.  This is
 # accidental-mistake protection, not adversarial sandboxing.
@@ -89,12 +91,22 @@ _SAFE_MODULES = frozenset(
 )
 
 
-def _config_path() -> Path:
-    """Return the config file path, respecting the env var override."""
-    env = os.environ.get("RECURSIVE_NEON_CONFIG_PATH")
-    if env:
-        return Path(env)
-    return _DEFAULT_CONFIG
+def _config_path(config_path: Path | None = None) -> Path:
+    """Return the resolved, validated config file path.
+
+    The path is resolved relative to ``settings.data_dir``.  If the
+    resulting absolute path is not inside ``settings.data_dir``, a
+    ``ValueError`` is raised.
+    """
+    data_dir = settings.data_dir.resolve()
+    raw = config_path if config_path is not None else settings.editor_config_path
+    resolved = raw if raw.is_absolute() else (data_dir / raw)
+    resolved = resolved.resolve()
+    if not resolved.is_relative_to(data_dir):
+        raise ValueError(
+            f"Editor config path {resolved} is outside data_dir {data_dir}"
+        )
+    return resolved
 
 
 def _make_restricted_import() -> Any:
@@ -219,13 +231,18 @@ class ConfigNamespace:
         self._editor.message = text
 
 
-def load_config(editor: Editor) -> None:
+def load_config(editor: Editor, config_path: Path | None = None) -> None:
     """Load and execute the user's config file.
 
     Safe to call at any time.  Errors are caught and reported in the
     editor message area.  A missing config file is silently ignored.
     """
-    path = _config_path()
+    try:
+        path = _config_path(config_path)
+    except ValueError as e:
+        editor.message = f"Config load error: {e}"
+        return
+
     if not path.is_file():
         return
 
@@ -261,7 +278,10 @@ def _exec_config(editor: Editor, source: str, filename: str) -> bool:
 # ── M-x reload-config command ────────────────────────────────────────
 
 
-@defcommand("reload-config", "Re-execute the user config file (~/.neon-edit.py).")
+@defcommand(
+    "reload-config",
+    "Re-execute the user config file from the controlled data_dir path.",
+)
 def reload_config(ed: Editor, prefix: int | None) -> None:
     path = _config_path()
     if not path.is_file():

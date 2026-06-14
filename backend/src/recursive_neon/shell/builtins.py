@@ -60,14 +60,30 @@ async def builtin_exit(session: ShellSession, args: list[str], output: Output) -
 
 
 async def builtin_export(session: ShellSession, args: list[str], output: Output) -> int:
-    """Set environment variables. Usage: export VAR=value"""
-    if len(args) < 2:
+    """Set environment variables. Usage: export [-a|--all] [VAR=value ...]
+
+    With no arguments, print all exported variables. By default internal
+    variables whose names start with ``_`` are hidden; pass ``-a`` or
+    ``--all`` to show them.
+    """
+    show_all = False
+    arg_iter = iter(args[1:])
+    export_args: list[str] = []
+    for arg in arg_iter:
+        if arg in ("-a", "--all"):
+            show_all = True
+        else:
+            export_args.append(arg)
+
+    if not export_args:
         # export with no args → print all env vars (same as env program)
         for key in sorted(session.env):
+            if not show_all and key.startswith("_"):
+                continue
             output.writeln(f"{key}={session.env[key]}")
         return 0
 
-    for arg in args[1:]:
+    for arg in export_args:
         if "=" in arg:
             key, _, value = arg.partition("=")
             if not key:
