@@ -488,6 +488,34 @@ class TestWebSocketCompleter:
         assert sent == {"type": "complete", "line": "ls D"}
 
 
+class TestTerminalMessageValidation:
+    def test_malformed_message_returns_typed_error(self, client):
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            ws.send_json({"type": "input"})  # missing "line"
+            resp = ws.receive_json()
+            assert resp["type"] == "error"
+            assert "Invalid message" in resp["message"]
+
+    def test_resize_message_validated(self, client):
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            ws.send_json({"type": "resize", "width": -1, "height": 24})
+            resp = ws.receive_json()
+            assert resp["type"] == "error"
+
+    def test_unknown_message_returns_typed_error(self, client):
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            ws.send_json({"type": "bogus"})
+            resp = ws.receive_json()
+            assert resp["type"] == "error"
+            assert "Unknown message type" in resp["message"]
+
+
 # ============================================================================
 # /ws/terminal integration tests
 # ============================================================================

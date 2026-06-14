@@ -26,6 +26,13 @@ from recursive_neon.dependencies import (
 )
 from recursive_neon.models.game_state import StatusResponse, SystemStatus
 from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
+from recursive_neon.models.ws_messages import (
+    CompleteMessage,
+    InputMessage,
+    KeyMessage,
+    ResizeMessage,
+    parse_client_message,
+)
 from recursive_neon.services.interfaces import IConnectionManager
 from recursive_neon.terminal import TerminalSessionManager
 
@@ -343,7 +350,7 @@ async def terminal_websocket(
         Server → Client:
             {"type": "output", "text": "..."}
             {"type": "prompt", "text": "user@neon:~$ "}
-            {"type": "completions", "items": ["Documents/"]}
+            {"type": "completions", "items": ["Documents/"], "replace": 0}
             {"type": "mode", "mode": "raw"|"cooked"}    # mode switch
             {"type": "screen", "lines": [...], ...}      # raw mode frame
             {"type": "exit"}
@@ -386,37 +393,29 @@ async def terminal_websocket(
 async def _ws_reader(websocket: WebSocket, session) -> None:
     """Read messages from the WebSocket and feed them into the shell."""
     while True:
-        data = await websocket.receive_json()
-        msg_type = data.get("type")
+        try:
+            msg = parse_client_message(await websocket.receive_json())
+        except ValueError as e:
+            await websocket.send_json({"type": "error", "message": str(e)})
+            continue
 
-        if msg_type == "input":
+        if isinstance(msg, InputMessage):
             if session.mode == "cooked":
-                line = data.get("line", "")
-                session.feed_line(line)
-            # Ignore input messages in raw mode
-
-        elif msg_type == "key":
+                session.feed_line(msg.line)
+        elif isinstance(msg, KeyMessage):
             if session.mode == "raw":
-                key = data.get("key", "")
-                session.feed_key(key)
-            # Ignore key messages in cooked mode
-
-        elif msg_type == "resize":
-            width = data.get("width", 80)
-            height = data.get("height", 24)
-            session.feed_resize(width, height)
-
-        elif msg_type == "complete":
+                session.feed_key(msg.key)
+        elif isinstance(msg, ResizeMessage):
+            session.feed_resize(msg.width, msg.height)
+        elif isinstance(msg, CompleteMessage):
             if session.mode == "cooked":
-                line = data.get("line", "")
-                items, replace = session.shell.get_completions_ext(line)
+                items, replace = session.shell.get_completions_ext(msg.line)
                 await websocket.send_json(
                     {"type": "completions", "items": items, "replace": replace}
                 )
-
         else:
             await websocket.send_json(
-                {"type": "error", "message": f"Unknown message type: {msg_type}"}
+                {"type": "error", "message": f"Unknown message type: {msg.type}"}
             )
 
 
