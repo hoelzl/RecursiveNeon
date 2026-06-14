@@ -643,6 +643,39 @@ class TestTerminalWebSocket:
             assert "/" in "".join(output_texts)
 
 
+class TestCompletionLocking:
+    async def test_completion_uses_async_lock_path(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+
+        items, replace = await session.shell.get_completions_ext_async("l")
+        assert "ls" in items
+        assert replace == 1
+
+        await mgr.remove_session(session.session_id)
+
+    async def test_completion_and_execution_are_mutually_exclusive(self, container):
+        mgr = TerminalSessionManager(container=container)
+        session = mgr.create_session()
+
+        lock_acquired = []
+
+        async def slow_command():
+            async with session.shell._state_lock:
+                lock_acquired.append("execute")
+                await asyncio.sleep(0.05)
+
+        async def completion():
+            await asyncio.sleep(0.01)
+            await session.shell.get_completions_ext_async("l")
+            lock_acquired.append("complete")
+
+        await asyncio.gather(slow_command(), completion())
+        assert lock_acquired == ["execute", "complete"]
+
+        await mgr.remove_session(session.session_id)
+
+
 # ============================================================================
 # Test helpers
 # ============================================================================

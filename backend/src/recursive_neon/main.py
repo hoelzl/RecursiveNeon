@@ -33,8 +33,10 @@ from recursive_neon.models.ws_messages import (
     ResizeMessage,
     parse_client_message,
 )
-from recursive_neon.services.interfaces import IConnectionManager
-from recursive_neon.terminal import TerminalSessionManager
+from recursive_neon.services.interfaces import (
+    IConnectionManager,
+    ITerminalSessionManager,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -46,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 async def get_terminal_manager(
     container: ServiceContainer = Depends(get_container),
-) -> TerminalSessionManager:
+) -> ITerminalSessionManager:
     return container.terminal_manager
 
 
@@ -337,7 +339,7 @@ async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dic
 @app.websocket("/ws/terminal")
 async def terminal_websocket(
     websocket: WebSocket,
-    terminal_manager: TerminalSessionManager = Depends(get_terminal_manager),
+    terminal_manager: ITerminalSessionManager = Depends(get_terminal_manager),
 ):
     """WebSocket endpoint for interactive terminal sessions.
 
@@ -409,7 +411,7 @@ async def _ws_reader(websocket: WebSocket, session) -> None:
             session.feed_resize(msg.width, msg.height)
         elif isinstance(msg, CompleteMessage):
             if session.mode == "cooked":
-                items, replace = session.shell.get_completions_ext(msg.line)
+                items, replace = await session.shell.get_completions_ext_async(msg.line)
                 await websocket.send_json(
                     {"type": "completions", "items": items, "replace": replace}
                 )

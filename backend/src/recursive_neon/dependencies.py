@@ -11,7 +11,6 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
@@ -25,14 +24,12 @@ from recursive_neon.services.interfaces import (
     INPCManager,
     IOllamaClient,
     IProcessManager,
+    ITerminalSessionManager,
     LLMInterface,
 )
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient, OllamaLangChainAdapter
 from recursive_neon.services.process_manager import OllamaProcessManager
-
-if TYPE_CHECKING:
-    from recursive_neon.terminal import TerminalSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +48,7 @@ class ServiceContainer:
     system_state: SystemState
     game_state: GameState
     app_service: IAppService
-    terminal_manager: TerminalSessionManager
+    terminal_manager: ITerminalSessionManager
     connection_manager: IConnectionManager
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)

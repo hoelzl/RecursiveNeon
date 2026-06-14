@@ -199,6 +199,7 @@ class Shell:
         self.programs = ProgramRegistry()
         self._input_source: InputSource | None = None
         self._run_tui_factory: RunTuiFactory | None = None
+        self._state_lock = asyncio.Lock()
 
         # Register all system programs
         register_filesystem_programs(self.programs)
@@ -289,6 +290,11 @@ class Shell:
             logger.error("Failed to save game state: %s", e)
 
     async def execute_line(self, line: str) -> int:
+        """Parse and execute a single command line under the shell state lock."""
+        async with self._state_lock:
+            return await self._execute_line_unsafe(line)
+
+    async def _execute_line_unsafe(self, line: str) -> int:
         """Parse and execute a single command line.
 
         Supports pipes (``|``), stdout redirection (``>``, ``>>``),
@@ -607,6 +613,11 @@ class Shell:
 
         items = completer(ctx) if completer is not None else complete_paths(ctx)
         return items, replace_len
+
+    async def get_completions_ext_async(self, text: str) -> tuple[list[str], int]:
+        """Async version of get_completions_ext that holds the shell state lock."""
+        async with self._state_lock:
+            return self.get_completions_ext(text)
 
     def _build_prompt(self) -> str:
         """Build the colored shell prompt string.
