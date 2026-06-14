@@ -54,6 +54,21 @@ class NPCMemory(BaseModel):
     last_interaction: datetime | None = None
 
 
+class PerceptionConfig(BaseModel):
+    """Configuration for which game events an NPC perceives."""
+
+    subscriptions: list[str] = Field(
+        default_factory=list,
+        description="Event-type prefixes this NPC subscribes to",
+    )
+    buffer_size: int = Field(
+        default=50, description="Maximum perceived events to retain"
+    )
+    include_in_prompt: bool = Field(
+        default=True, description="Whether to include perceptions in the system prompt"
+    )
+
+
 class NPC(BaseModel):
     """NPC definition"""
 
@@ -89,6 +104,9 @@ class NPC(BaseModel):
 
     # Memory
     memory: NPCMemory = Field(default_factory=lambda: NPCMemory(npc_id=""))
+
+    # Perception
+    perception: PerceptionConfig = Field(default_factory=PerceptionConfig)
 
     def model_post_init(self, __context: object) -> None:
         """Sync memory.npc_id with self.id after construction."""

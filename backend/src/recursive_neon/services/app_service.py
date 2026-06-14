@@ -24,6 +24,7 @@ from recursive_neon.models.app_models import (
     TaskList,
 )
 from recursive_neon.models.game_state import GameState
+from recursive_neon.services.interfaces import IGameEventBus
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,9 @@ class AppService:
     serialize compound operations).
     """
 
-    def __init__(self, game_state: GameState):
+    def __init__(self, game_state: GameState, event_bus: IGameEventBus | None = None):
         self.game_state = game_state
+        self._event_bus = event_bus
         # O(1) lookup indexes — mirrors game_state.filesystem.nodes
         self._node_index: dict[str, FileNode] = {}
         self._children_index: dict[str | None, list[str]] = {}
@@ -69,6 +71,32 @@ class AppService:
             self._node_index[node.id] = node
             self._children_index.setdefault(node.parent_id, []).append(node.id)
             self._position_index[node.id] = i
+
+    def _node_path(self, node: FileNode) -> str:
+        """Return the absolute virtual path for *node* by walking parents."""
+        parts: list[str] = []
+        current: FileNode | None = node
+        while current is not None and current.parent_id is not None:
+            parts.append(current.name)
+            parent = self._node_index.get(current.parent_id)
+            current = parent
+        if not parts:
+            return "/"
+        parts.reverse()
+        return "/" + "/".join(parts)
+
+    def _publish_filesystem_event(
+        self, event_type: str, file_id: str, path: str, **kwargs: Any
+    ) -> None:
+        """Publish a filesystem event if an event bus is attached."""
+        if self._event_bus is None:
+            return
+        payload: dict[str, Any] = {"file_id": file_id, "path": path}
+        payload.update(kwargs)
+        try:
+            self._event_bus.publish(event_type, payload)
+        except Exception:
+            logger.exception("Failed to publish %s event", event_type)
 
     def _index_node(self, node: FileNode) -> None:
         """Add a single node to the lookup indexes."""
@@ -336,6 +364,18 @@ class AppService:
             raise ValueError(f"File not found: {file_id}")
         return self._copy_node(node)
 
+    def read_file(self, file_id: str) -> FileNode:
+        """Read a file and publish a `filesystem.read` event.
+
+        Use this instead of `get_file` when the player's action is
+        explicitly reading file contents (e.g. ``cat``).
+        """
+        node = self.get_file(file_id)
+        self._publish_filesystem_event(
+            "filesystem.read", file_id=file_id, path=self._node_path(node)
+        )
+        return node
+
     @staticmethod
     def _validate_node_name(name: str) -> None:
         """Reject names containing path separators or reserved segments.
@@ -374,6 +414,12 @@ class AppService:
         )
         self.game_state.filesystem.nodes.append(directory)
         self._index_node(directory)
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=directory.id,
+            path=self._node_path(directory),
+            operation="create",
+        )
         return self._copy_node(directory)
 
     def create_file(self, data: dict[str, Any]) -> FileNode:
@@ -400,6 +446,12 @@ class AppService:
         )
         self.game_state.filesystem.nodes.append(file)
         self._index_node(file)
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=file.id,
+            path=self._node_path(file),
+            operation="create",
+        )
         return self._copy_node(file)
 
     def update_file(self, file_id: str, data: dict[str, Any]) -> FileNode:
@@ -428,18 +480,25 @@ class AppService:
         pos = self._position_index[file_id]
         self.game_state.filesystem.nodes[pos] = updated
         self._node_index[file_id] = updated
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=updated.id,
+            path=self._node_path(updated),
+            operation="update",
+        )
         return self._copy_node(updated)
 
     def delete_file(self, file_id: str) -> None:
-        self.get_file(file_id)  # validate exists
+        node = self.get_file(file_id)  # validate exists and get path before removal
+        path = self._node_path(node)
         # Collect all IDs to remove (descendants + self)
         ids_to_remove = self._collect_descendant_ids(file_id)
         ids_to_remove.add(file_id)
         # Unindex all nodes before removing from canonical list
         for nid in ids_to_remove:
-            node = self._node_index.get(nid)
-            if node is not None:
-                self._unindex_node(node)
+            to_unindex = self._node_index.get(nid)
+            if to_unindex is not None:
+                self._unindex_node(to_unindex)
         # Single bulk removal from canonical list
         self.game_state.filesystem.nodes = [
             n for n in self.game_state.filesystem.nodes if n.id not in ids_to_remove
@@ -448,6 +507,12 @@ class AppService:
         self._position_index = {
             n.id: i for i, n in enumerate(self.game_state.filesystem.nodes)
         }
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=file_id,
+            path=path,
+            operation="delete",
+        )
 
     def _collect_descendant_ids(self, dir_id: str) -> set[str]:
         """Recursively collect all descendant node IDs."""
@@ -494,6 +559,14 @@ class AppService:
             self._position_index = {
                 n.id: i for i, n in enumerate(self.game_state.filesystem.nodes)
             }
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=copy.id,
+            path=self._node_path(copy),
+            operation="copy",
+            source_file_id=source.id,
+            source_path=self._node_path(source),
+        )
         return self._copy_node(copy)
 
     def move_file(
@@ -505,6 +578,7 @@ class AppService:
         overwrite: bool = False,
     ) -> FileNode:
         file = self.get_file(file_id)  # O(1) fail-fast via index
+        old_path = self._node_path(file)
         if new_name is not None:
             self._validate_node_name(new_name)
         final_name = new_name or file.name
@@ -538,6 +612,13 @@ class AppService:
         self._node_index[updated.id] = updated
         self._children_index.setdefault(updated.parent_id, []).append(updated.id)
         self._position_index[updated.id] = pos
+        self._publish_filesystem_event(
+            "filesystem.write",
+            file_id=updated.id,
+            path=self._node_path(updated),
+            operation="move",
+            old_path=old_path,
+        )
         return self._copy_node(updated)
 
     def list_directory(self, dir_id: str) -> list[FileNode]:

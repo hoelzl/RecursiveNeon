@@ -108,9 +108,10 @@ class ServiceFactory:
     def create_npc_manager(
         ollama_client: IOllamaClient | None = None,
         llm: LLMInterface | None = None,
+        event_bus: IGameEventBus | None = None,
     ) -> INPCManager:
         if llm is not None:
-            return NPCManager(llm=llm)
+            return NPCManager(llm=llm, event_bus=event_bus)
         if ollama_client is None:
             raise TypeError(
                 "create_npc_manager requires either an ollama_client or an injected llm"
@@ -121,7 +122,7 @@ class ServiceFactory:
             temperature=0.7,
             max_tokens=settings.max_response_tokens,
         )
-        return NPCManager(llm=adapter)
+        return NPCManager(llm=adapter, event_bus=event_bus)
 
     @classmethod
     async def create_production_container(cls) -> ServiceContainer:
@@ -130,7 +131,6 @@ class ServiceFactory:
 
         process_manager = cls.create_process_manager()
         ollama_client = cls.create_ollama_client()
-        npc_manager = cls.create_npc_manager(ollama_client=ollama_client)
 
         system_state = SystemState()
         game_state = GameState()
@@ -138,7 +138,10 @@ class ServiceFactory:
         flag_service = FlagService(game_state=game_state, event_bus=event_bus)
         start_time = datetime.now(tz=UTC)
 
-        app_service = AppService(game_state)
+        app_service = AppService(game_state, event_bus=event_bus)
+        npc_manager = cls.create_npc_manager(
+            ollama_client=ollama_client, event_bus=event_bus
+        )
 
         # Initialize state: try to load from disk, otherwise load initial state
         data_dir = str(settings.data_dir)
@@ -228,7 +231,7 @@ class ServiceFactory:
         game_state = mock_game_state or GameState()
         event_bus = GameEventBus()
         flag_service = FlagService(game_state=game_state, event_bus=event_bus)
-        app_service = mock_app_service or AppService(game_state)
+        app_service = mock_app_service or AppService(game_state, event_bus=event_bus)
         start_time = mock_start_time or datetime.now(tz=UTC)
 
         import dataclasses

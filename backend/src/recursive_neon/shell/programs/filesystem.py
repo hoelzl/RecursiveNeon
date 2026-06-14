@@ -134,6 +134,7 @@ async def prog_cat(ctx: ProgramContext) -> int:
     for path in ctx.args[1:]:
         try:
             node = ctx.resolve_path(path)
+            ctx.services.app_service.read_file(node.id)
         except (FileNotFoundError, NotADirectoryError) as e:
             ctx.stderr.error(f"cat: {e}")
             exit_code = 1

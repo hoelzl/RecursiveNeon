@@ -16,7 +16,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from recursive_neon.config import settings
 from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
-from recursive_neon.services.interfaces import INPCManager, LLMInterface
+from recursive_neon.services.interfaces import IGameEventBus, INPCManager, LLMInterface
+from recursive_neon.services.npc_perception import NPCPerceptionTracker
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,21 @@ class NPCManager(INPCManager):
         manager = NPCManager(llm=mock_llm)
     """
 
-    def __init__(self, llm: LLMInterface | None = None):
+    def __init__(
+        self,
+        llm: LLMInterface | None = None,
+        event_bus: IGameEventBus | None = None,
+        perception_tracker: NPCPerceptionTracker | None = None,
+    ):
         """
         Initialize NPCManager with dependency injection.
 
         Args:
             llm: Language model instance (injected dependency).
+            event_bus: Optional event bus for publishing NPC chat events.
+            perception_tracker: Optional tracker for NPC perception buffers.
+                If omitted and an event bus is provided, a tracker is created
+                automatically and subscribed to game events.
         """
         if llm is None:
             raise TypeError("NPCManager requires an injected LLM instance")
@@ -66,11 +76,27 @@ class NPCManager(INPCManager):
         # Signature: (npc_id: str, npc_name: str, text: str) -> None
         self.on_message_callback: Callable[[str, str, str], None] | None = None
         self.llm = llm
+        self._event_bus = event_bus
+        self._perception_tracker = perception_tracker
+        if self._perception_tracker is None and self._event_bus is not None:
+            self._perception_tracker = NPCPerceptionTracker()
+            for event_type in (
+                "shell.command_run",
+                "filesystem.read",
+                "filesystem.write",
+                "npc.chat_sent",
+                "npc.chat_received",
+            ):
+                self._event_bus.subscribe(
+                    event_type, self._perception_tracker.handle_event
+                )
         logger.info("NPCManager initialized with injected LLM")
 
     def register_npc(self, npc: NPC):
         """Register a new NPC"""
         self.npcs[npc.id] = npc
+        if self._perception_tracker is not None:
+            self._perception_tracker.register_npc(npc)
         logger.info(f"Registered NPC: {npc.name} ({npc.id})")
 
     def unregister_npc(self, npc_id: str):
@@ -97,8 +123,13 @@ class NPCManager(INPCManager):
         ``SystemMessage``/``HumanMessage``/``AIMessage`` objects so the LLM
         receives proper chat-style context.
         """
+        system_prompt = npc.get_system_prompt()
+        if self._perception_tracker is not None and npc.perception.include_in_prompt:
+            perceived = self._perception_tracker.render_for(npc.id)
+            if perceived:
+                system_prompt += "\n\nRecent events you have observed:\n" + perceived
         messages: list[SystemMessage | HumanMessage | AIMessage] = [
-            SystemMessage(content=npc.get_system_prompt())
+            SystemMessage(content=system_prompt)
         ]
         for msg in npc.get_recent_conversation(n=settings.npc_memory_context_length):
             if msg["role"] == "user":
@@ -112,6 +143,15 @@ class NPCManager(INPCManager):
         if npc_id not in self._chat_locks:
             self._chat_locks[npc_id] = asyncio.Lock()
         return self._chat_locks[npc_id]
+
+    def _publish_chat_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Publish a chat event if an event bus is attached."""
+        if self._event_bus is None:
+            return
+        try:
+            self._event_bus.publish(event_type, data)
+        except Exception:
+            logger.exception("Failed to publish %s event", event_type)
 
     async def chat(
         self, npc_id: str, message: str, player_id: str = "player_1"
@@ -140,6 +180,9 @@ class NPCManager(INPCManager):
             # Add player message to NPC's memory
             max_hist = settings.npc_max_conversation_history
             npc.add_to_memory("user", message, max_history=max_hist)
+            self._publish_chat_event(
+                "npc.chat_sent", {"target_npc_id": npc.id, "text": message}
+            )
 
             # Build chat messages from history (includes the user message
             # just added) and invoke the LLM directly.
@@ -153,6 +196,9 @@ class NPCManager(INPCManager):
 
             # Add cleaned response to NPC's memory
             npc.add_to_memory("assistant", cleaned, max_history=max_hist)
+            self._publish_chat_event(
+                "npc.chat_received", {"source_npc_id": npc.id, "text": cleaned}
+            )
 
             # Update relationship based on sentiment (simple heuristic)
             if any(

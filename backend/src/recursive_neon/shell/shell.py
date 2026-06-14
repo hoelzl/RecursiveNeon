@@ -294,6 +294,22 @@ class Shell:
         async with self._state_lock:
             return await self._execute_line_unsafe(line)
 
+    def _publish_command_run(self, tokens: list[str]) -> None:
+        """Publish a ``shell.command_run`` event for the expanded tokens."""
+        if not tokens:
+            return
+        try:
+            self.session.container.event_bus.publish(
+                "shell.command_run",
+                {
+                    "command": tokens[0],
+                    "args": tokens[1:],
+                    "cwd": self.session.get_cwd_path(),
+                },
+            )
+        except Exception:
+            logger.exception("Failed to publish shell.command_run event")
+
     async def _execute_line_unsafe(self, line: str) -> int:
         """Parse and execute a single command line.
 
@@ -324,6 +340,7 @@ class Shell:
                 self.session.cwd_id,
                 self.session.container.app_service,
             )
+            self._publish_command_run(tokens)
             return await self._execute_tokens(tokens, self.output)
 
         # Determine if stderr should merge into stdout (2>&1)
@@ -352,6 +369,7 @@ class Shell:
                 self.session.cwd_id,
                 self.session.container.app_service,
             )
+            self._publish_command_run(tokens)
             is_last = i == len(pipeline.segments) - 1
 
             # Decide stderr destination for this segment
