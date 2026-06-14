@@ -11,6 +11,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from recursive_neon.config import settings
 from recursive_neon.models.game_state import GameState, SystemState
@@ -19,6 +20,7 @@ from recursive_neon.services.app_service import AppService
 from recursive_neon.services.game_event_bus import GameEventBus
 from recursive_neon.services.interfaces import (
     IAppService,
+    IConnectionManager,
     IGameEventBus,
     INPCManager,
     IOllamaClient,
@@ -28,6 +30,9 @@ from recursive_neon.services.interfaces import (
 from recursive_neon.services.npc_manager import NPCManager
 from recursive_neon.services.ollama_client import OllamaClient, OllamaLangChainAdapter
 from recursive_neon.services.process_manager import OllamaProcessManager
+
+if TYPE_CHECKING:
+    from recursive_neon.terminal import TerminalSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,8 @@ class ServiceContainer:
     system_state: SystemState
     game_state: GameState
     app_service: IAppService
+    terminal_manager: TerminalSessionManager
+    connection_manager: IConnectionManager
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)
     event_bus: IGameEventBus = field(default_factory=GameEventBus)
@@ -59,6 +66,8 @@ class ServiceContainer:
             f"system_state={type(self.system_state).__name__}, "
             f"game_state={type(self.game_state).__name__}, "
             f"app_service={type(self.app_service).__name__}, "
+            f"terminal_manager={type(self.terminal_manager).__name__}, "
+            f"connection_manager={type(self.connection_manager).__name__}, "
             f"event_bus={type(self.event_bus).__name__}, "
             f"process_table={type(self.process_table).__name__}, "
             f"start_time={self.start_time.isoformat()})"
@@ -155,6 +164,11 @@ class ServiceFactory:
         else:
             logger.info("NPCs loaded from saved state")
 
+        import dataclasses
+
+        from recursive_neon.connection_manager import ConnectionManager
+        from recursive_neon.terminal import TerminalSessionManager
+
         container = ServiceContainer(
             process_manager=process_manager,
             ollama_client=ollama_client,
@@ -162,9 +176,18 @@ class ServiceFactory:
             system_state=system_state,
             game_state=game_state,
             app_service=app_service,
+            terminal_manager=None,  # type: ignore[arg-type]
+            connection_manager=ConnectionManager(),
             start_time=start_time,
             process_table=ProcessTable.with_defaults(),
         )
+
+        terminal_manager = TerminalSessionManager(
+            container=container,
+            data_dir=data_dir,
+        )
+        container = dataclasses.replace(container, terminal_manager=terminal_manager)
+        terminal_manager._container = container
 
         logger.info(f"Production container created: {container}")
         return container
@@ -198,6 +221,11 @@ class ServiceFactory:
         app_service = mock_app_service or AppService(game_state)
         start_time = mock_start_time or datetime.now(tz=UTC)
 
+        import dataclasses
+
+        from recursive_neon.connection_manager import ConnectionManager
+        from recursive_neon.terminal import TerminalSessionManager
+
         container = ServiceContainer(
             process_manager=process_manager,
             ollama_client=ollama_client,
@@ -205,8 +233,14 @@ class ServiceFactory:
             system_state=system_state,
             game_state=game_state,
             app_service=app_service,
+            terminal_manager=None,  # type: ignore[arg-type]
+            connection_manager=ConnectionManager(),
             start_time=start_time,
         )
+
+        terminal_manager = TerminalSessionManager(container=container)
+        container = dataclasses.replace(container, terminal_manager=terminal_manager)
+        terminal_manager._container = container
 
         logger.info(f"Test container created: {container}")
         return container

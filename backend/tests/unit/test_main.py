@@ -18,6 +18,12 @@ from recursive_neon.main import app, handle_ws_message
 from recursive_neon.models.game_state import SystemStatus
 
 
+def test_test_container_has_terminal_and_connection_managers():
+    container = ServiceFactory.create_test_container()
+    assert container.terminal_manager is not None
+    assert container.connection_manager is not None
+
+
 @pytest.fixture(autouse=True)
 def _reset_global_container():
     """Ensure the global container is clean for each test."""
