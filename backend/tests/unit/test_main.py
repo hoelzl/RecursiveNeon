@@ -14,7 +14,7 @@ from recursive_neon.dependencies import (
     initialize_container,
     reset_container,
 )
-from recursive_neon.main import app, handle_ws_message
+from recursive_neon.main import app, get_container, handle_ws_message
 from recursive_neon.models.game_state import SystemStatus
 
 
@@ -27,8 +27,8 @@ def test_test_container_has_terminal_and_connection_managers():
 @pytest.fixture(autouse=True)
 def _reset_global_container():
     """Ensure the global container is clean for each test."""
-    yield
     reset_container()
+    yield
 
 
 @pytest.fixture
@@ -56,11 +56,13 @@ def container(mock_llm):
 def client(container):
     """A FastAPI TestClient with initialized container."""
     initialize_container(container)
+    app.dependency_overrides[get_container] = lambda: container
     c = TestClient(app, raise_server_exceptions=False)
     try:
         yield c
     finally:
         c.close()
+        app.dependency_overrides.clear()
 
 
 # ============================================================================

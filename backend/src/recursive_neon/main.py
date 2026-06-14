@@ -18,7 +18,6 @@ from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 
 from recursive_neon.config import settings
-from recursive_neon.connection_manager import ConnectionManager
 from recursive_neon.dependencies import (
     ServiceContainer,
     ServiceFactory,
@@ -27,6 +26,7 @@ from recursive_neon.dependencies import (
 )
 from recursive_neon.models.game_state import StatusResponse, SystemStatus
 from recursive_neon.models.npc import ChatRequest, ChatResponse, NPCListResponse
+from recursive_neon.services.interfaces import IConnectionManager
 from recursive_neon.terminal import TerminalSessionManager
 
 # Configure logging
@@ -35,6 +35,18 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+async def get_terminal_manager(
+    container: ServiceContainer = Depends(get_container),
+) -> TerminalSessionManager:
+    return container.terminal_manager
+
+
+async def get_connection_manager(
+    container: ServiceContainer = Depends(get_container),
+) -> IConnectionManager:
+    return container.connection_manager
 
 
 @asynccontextmanager
@@ -49,14 +61,6 @@ async def lifespan(app: FastAPI):
     try:
         container = await ServiceFactory.create_production_container()
         initialize_container(container)
-        app.state.services = container
-
-        # Terminal session manager for WebSocket-driven shells
-        terminal_manager = TerminalSessionManager(
-            container=container,
-            data_dir=str(settings.data_dir),
-        )
-        app.state.terminal_manager = terminal_manager
 
         # Start ollama server. Failure is non-fatal: chat endpoints will
         # return a clear error, but the rest of the backend stays usable.
@@ -222,12 +226,11 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
 # ============================================================================
 
 
-ws_manager = ConnectionManager()
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(
-    websocket: WebSocket, container: ServiceContainer = Depends(get_container)
+    websocket: WebSocket,
+    container: ServiceContainer = Depends(get_container),
+    manager: IConnectionManager = Depends(get_connection_manager),
 ):
     """
     Main WebSocket endpoint for real-time communication.
@@ -238,7 +241,7 @@ async def websocket_endpoint(
         "data": { ... }
     }
     """
-    if not await ws_manager.connect(websocket):
+    if not await manager.connect(websocket):
         return
 
     try:
@@ -250,13 +253,13 @@ async def websocket_endpoint(
             logger.debug(f"WebSocket message: {msg_type}")
 
             response = await handle_ws_message(container, msg_type, msg_data)
-            await ws_manager.send_personal(response, websocket)
+            await manager.send_personal(response, websocket)
 
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        manager.disconnect(websocket)
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        ws_manager.disconnect(websocket)
+        manager.disconnect(websocket)
         with contextlib.suppress(Exception):
             await websocket.close(code=1011, reason="Internal error")
 
@@ -325,7 +328,10 @@ async def handle_app_message(container: ServiceContainer, msg_data: dict) -> dic
 
 
 @app.websocket("/ws/terminal")
-async def terminal_websocket(websocket: WebSocket):
+async def terminal_websocket(
+    websocket: WebSocket,
+    terminal_manager: TerminalSessionManager = Depends(get_terminal_manager),
+):
     """WebSocket endpoint for interactive terminal sessions.
 
     Protocol (JSON messages):
@@ -345,8 +351,7 @@ async def terminal_websocket(websocket: WebSocket):
     """
     await websocket.accept()
 
-    manager: TerminalSessionManager = app.state.terminal_manager
-    session = manager.create_session()
+    session = terminal_manager.create_session()
 
     try:
         await session.start()
@@ -375,7 +380,7 @@ async def terminal_websocket(websocket: WebSocket):
     except Exception as e:
         logger.error("Terminal WS error for %s: %s", session.session_id, e)
     finally:
-        await manager.remove_session(session.session_id)
+        await terminal_manager.remove_session(session.session_id)
 
 
 async def _ws_reader(websocket: WebSocket, session) -> None:
