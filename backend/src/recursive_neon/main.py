@@ -37,6 +37,7 @@ from recursive_neon.services.interfaces import (
     IConnectionManager,
     ITerminalSessionManager,
 )
+from recursive_neon.terminal import TerminalSession
 
 # Configure logging only if no handler is already attached so that imports
 # during tests do not reconfigure the root logger.
@@ -398,7 +399,7 @@ async def terminal_websocket(
         await terminal_manager.remove_session(session.session_id)
 
 
-async def _ws_reader(websocket: WebSocket, session) -> None:
+async def _ws_reader(websocket: WebSocket, session: TerminalSession) -> None:
     """Read messages from the WebSocket and feed them into the shell."""
     while True:
         try:
@@ -427,7 +428,7 @@ async def _ws_reader(websocket: WebSocket, session) -> None:
             )
 
 
-async def _ws_writer(websocket: WebSocket, session) -> None:
+async def _ws_writer(websocket: WebSocket, session: TerminalSession) -> None:
     """Drain the shell's output queue and send messages to the WebSocket."""
     while True:
         msg = await session.output_queue.get()
