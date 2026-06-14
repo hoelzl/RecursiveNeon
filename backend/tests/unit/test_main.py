@@ -256,7 +256,7 @@ class TestConnectionManager:
     def test_connect_and_disconnect(self):
         from unittest.mock import AsyncMock
 
-        from recursive_neon.main import ConnectionManager
+        from recursive_neon.connection_manager import ConnectionManager
 
         mgr = ConnectionManager()
         ws = AsyncMock()
@@ -270,7 +270,7 @@ class TestConnectionManager:
         """Disconnecting a non-existent connection should not raise."""
         from unittest.mock import AsyncMock
 
-        from recursive_neon.main import ConnectionManager
+        from recursive_neon.connection_manager import ConnectionManager
 
         mgr = ConnectionManager()
         ws = AsyncMock()
@@ -281,7 +281,7 @@ class TestConnectionManager:
         """If one client errors during broadcast, others still receive."""
         from unittest.mock import AsyncMock
 
-        from recursive_neon.main import ConnectionManager
+        from recursive_neon.connection_manager import ConnectionManager
 
         mgr = ConnectionManager()
         good_ws = AsyncMock()

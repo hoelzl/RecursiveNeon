@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 
 from recursive_neon.config import settings
+from recursive_neon.connection_manager import ConnectionManager
 from recursive_neon.dependencies import (
     ServiceContainer,
     ServiceFactory,
@@ -219,42 +220,6 @@ async def get_stats(container: ServiceContainer = Depends(get_container)):
 # ============================================================================
 # WebSocket
 # ============================================================================
-
-
-class ConnectionManager:
-    """Manages WebSocket connections."""
-
-    MAX_CONNECTIONS = 50
-
-    def __init__(self):
-        self.active_connections: set[WebSocket] = set()
-
-    async def connect(self, websocket: WebSocket) -> bool:
-        """Accept a WebSocket connection. Returns False if limit reached."""
-        if len(self.active_connections) >= self.MAX_CONNECTIONS:
-            await websocket.close(code=1013, reason="Server overloaded")
-            logger.warning(
-                "Connection rejected: limit reached (%d)", self.MAX_CONNECTIONS
-            )
-            return False
-        await websocket.accept()
-        self.active_connections.add(websocket)
-        logger.info(f"Client connected. Total: {len(self.active_connections)}")
-        return True
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
-        logger.info(f"Client disconnected. Total: {len(self.active_connections)}")
-
-    async def send_personal(self, message: dict, websocket: WebSocket):
-        await websocket.send_json(message)
-
-    async def broadcast(self, message: dict):
-        for connection in list(self.active_connections):
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                logger.error(f"Error broadcasting to client: {e}")
 
 
 ws_manager = ConnectionManager()

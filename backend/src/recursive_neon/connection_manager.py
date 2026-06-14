@@ -43,9 +43,10 @@ class ConnectionManager(IConnectionManager):
         await websocket.send_json(message)
 
     async def broadcast(self, message: dict[str, Any]) -> None:
-        """Stub: does not remove dead connections yet."""
+        """Broadcast a message to all active connections, removing dead ones."""
         for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
-            except Exception:  # noqa: BLE001
-                logger.warning("Failed to send message to a connection")
+            except Exception as e:  # noqa: BLE001
+                logger.error("Error broadcasting to client: %s", e)
+                self.disconnect(connection)
