@@ -14,6 +14,7 @@ import contextlib
 import logging
 import uuid
 from dataclasses import dataclass, field
+from typing import Literal
 
 from recursive_neon.dependencies import ServiceContainer
 from recursive_neon.shell.output import QueueOutput
@@ -105,7 +106,7 @@ class TerminalSession:
     input_queue: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
     output_queue: asyncio.Queue[dict] = field(default_factory=asyncio.Queue)
     key_queue: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
-    mode: str = "cooked"
+    mode: Literal["cooked", "raw"] = "cooked"
     _shell_task: asyncio.Task | None = field(default=None, repr=False)
     _terminal_size: tuple[int, int] = (80, 24)
     _resize_pending: tuple[int, int] | None = field(default=None, repr=False)
