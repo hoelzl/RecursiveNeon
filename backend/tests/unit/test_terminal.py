@@ -9,6 +9,7 @@ import asyncio
 import json
 
 import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from recursive_neon.config import settings
@@ -674,6 +675,23 @@ class TestCompletionLocking:
         assert lock_acquired == ["execute", "complete"]
 
         await mgr.remove_session(session.session_id)
+
+
+class TestConnectionLimits:
+    def test_terminal_rejects_connection_over_limit(self, client):
+        # Patch the manager to a tiny limit for the test
+        container = get_container()
+        container.terminal_manager.max_connections = 1
+
+        with client.websocket_connect("/ws/terminal") as ws:
+            _recv_until_prompt_sync(ws, timeout=5.0)
+
+            # Second connection should be rejected
+            with (
+                pytest.raises(WebSocketDisconnect),
+                client.websocket_connect("/ws/terminal") as ws2,
+            ):
+                ws2.receive_json()
 
 
 # ============================================================================

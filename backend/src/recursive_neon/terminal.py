@@ -223,10 +223,14 @@ class TerminalSessionManager:
     AUTO_SAVE_INTERVAL_SECONDS = 60
 
     def __init__(
-        self, container: ServiceContainer, data_dir: str | None = None
+        self,
+        container: ServiceContainer,
+        data_dir: str | None = None,
+        max_connections: int = 50,
     ) -> None:
         self._container = container
         self._data_dir = data_dir
+        self.max_connections = max_connections
         self._sessions: dict[str, TerminalSession] = {}
         self._auto_save_task: asyncio.Task | None = None
 

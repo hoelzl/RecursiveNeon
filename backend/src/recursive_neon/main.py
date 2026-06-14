@@ -360,6 +360,10 @@ async def terminal_websocket(
     """
     await websocket.accept()
 
+    if terminal_manager.active_count >= terminal_manager.max_connections:
+        await websocket.close(code=1013, reason="Server overloaded")
+        return
+
     session = terminal_manager.create_session()
 
     try:
