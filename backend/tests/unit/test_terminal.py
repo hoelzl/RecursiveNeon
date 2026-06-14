@@ -256,6 +256,26 @@ class TestTerminalSessionIsolation:
         await mgr.remove_session(s1.session_id)
         await mgr.remove_session(s2.session_id)
 
+    async def test_concurrent_file_creation_is_safe(self, container):
+        mgr = TerminalSessionManager(container=container)
+        s1 = mgr.create_session()
+        s2 = mgr.create_session()
+
+        root_id = s1.shell.session.resolve_path("/").id
+        s1.shell.session.container.app_service.create_file(
+            {"name": "a.txt", "parent_id": root_id, "content": "a"}
+        )
+        s2.shell.session.container.app_service.create_file(
+            {"name": "b.txt", "parent_id": root_id, "content": "b"}
+        )
+
+        children = s1.shell.session.container.app_service.list_directory(root_id)
+        names = {c.name for c in children}
+        assert {"a.txt", "b.txt"} <= names
+
+        await mgr.remove_session(s1.session_id)
+        await mgr.remove_session(s2.session_id)
+
 
 class TestTerminalSession:
     async def test_start_and_stop(self, container):
