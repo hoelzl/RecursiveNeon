@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from recursive_neon.models.app_models import FileSystemState, NotesState, TasksState
+from recursive_neon.models.npc import QueuedMessage
 
 
 class SystemStatus(StrEnum):
@@ -37,6 +38,10 @@ class GameState(BaseModel):
     notes: NotesState = Field(default_factory=NotesState)
     tasks: TasksState = Field(default_factory=TasksState)
     filesystem: FileSystemState = Field(default_factory=FileSystemState)
+
+    # Pending NPC→player messages (Phase 9d).  Sources live on the
+    # FileNode tree; messages accumulate here until delivered.
+    npc_messages: list[QueuedMessage] = Field(default_factory=list)
 
 
 class SystemState(BaseModel):

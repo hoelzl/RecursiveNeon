@@ -40,6 +40,29 @@ class ConversationMessage(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
+class QueuedMessage(BaseModel):
+    """An NPC→player message held for delivery at the next session.
+
+    Used by the NPC message queue (Phase 9d) so NPCs can initiate contact
+    rather than only responding to ``chat``.  Messages are *displayed* at
+    session start; they are not auto-appended to the NPC's conversation
+    history — responding remains a player-initiated ``chat`` action.
+    """
+
+    id: str = Field(..., description="Unique message identifier")
+    npc_id: str = Field(..., description="Source NPC identifier")
+    text: str = Field(..., description="Message body")
+    queued_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    deliver_after: datetime | None = Field(
+        default=None,
+        description="Optional time after which the message becomes deliverable",
+    )
+    delivered_at: datetime | None = Field(
+        default=None,
+        description="When the message was shown to the player, if ever",
+    )
+
+
 class NPCMemory(BaseModel):
     """Memory of past interactions with player"""
 

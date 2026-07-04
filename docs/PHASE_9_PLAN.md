@@ -289,6 +289,25 @@ examples. **Draft `docs/STORY_BIBLE.md` before 9c starts.** It feeds
 
 ## 9d: NPC Initiative + Queued Messages
 
+> **Status (2026-07-04)**: Implemented. `NPCMessageQueue` mirrors the
+> FlagService pattern: a thin synchronous mutator over
+> `game_state.npc_messages`, with `AppService` owning the
+> `npc_messages.json` round-trip. Delivery renders at session start in
+> `Shell.run()` (the single shared hook for local CLI, WebSocket, and
+> browser transports). Implementation notes:
+> - The queue is a *display* mechanism: messages are shown in a
+>   "Messages while you were away" block but are NOT appended to NPC
+>   conversation history — responding remains a player-initiated
+>   `chat` action.
+> - Because the production container is shared across concurrent WS
+>   sessions, `mark_delivered` is global: once shown, a message is
+>   suppressed for all sessions. This matches the between-session
+>   continuity intent (each message shows once); per-player delivery
+>   tracking would require a first-class player-identity concept that
+>   doesn't exist yet.
+> - Two new events on the bus: `npc.message.queued`,
+>   `npc.message.delivered`.
+
 ### Goal
 
 NPCs can *send* the player messages that arrive at the start of the

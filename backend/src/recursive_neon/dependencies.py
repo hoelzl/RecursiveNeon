@@ -24,12 +24,14 @@ from recursive_neon.services.interfaces import (
     IFlagService,
     IGameEventBus,
     INPCManager,
+    INPCMessageQueue,
     IOllamaClient,
     IProcessManager,
     ITerminalSessionManager,
     LLMInterface,
 )
 from recursive_neon.services.npc_manager import NPCManager
+from recursive_neon.services.npc_messages import NPCMessageQueue
 from recursive_neon.services.ollama_client import OllamaClient, OllamaLangChainAdapter
 from recursive_neon.services.process_manager import OllamaProcessManager
 
@@ -53,6 +55,7 @@ class ServiceContainer:
     terminal_manager: ITerminalSessionManager
     connection_manager: IConnectionManager
     flag_service: IFlagService
+    npc_message_queue: INPCMessageQueue
     start_time: datetime
     process_table: ProcessTable = field(default_factory=ProcessTable)
     event_bus: IGameEventBus = field(default_factory=GameEventBus)
@@ -69,6 +72,7 @@ class ServiceContainer:
             f"terminal_manager={type(self.terminal_manager).__name__}, "
             f"connection_manager={type(self.connection_manager).__name__}, "
             f"flag_service={type(self.flag_service).__name__}, "
+            f"npc_message_queue={type(self.npc_message_queue).__name__}, "
             f"event_bus={type(self.event_bus).__name__}, "
             f"process_table={type(self.process_table).__name__}, "
             f"start_time={self.start_time.isoformat()})"
@@ -137,6 +141,7 @@ class ServiceFactory:
         game_state = GameState()
         event_bus = GameEventBus()
         flag_service = FlagService(game_state=game_state, event_bus=event_bus)
+        npc_message_queue = NPCMessageQueue(game_state=game_state, event_bus=event_bus)
         start_time = datetime.now(tz=UTC)
 
         app_service = AppService(game_state, event_bus=event_bus)
@@ -169,6 +174,9 @@ class ServiceFactory:
         # Load flags (non-fatal if missing)
         await app_service.load_flags_from_disk(data_dir)
 
+        # Load pending NPC messages (non-fatal if missing)
+        await app_service.load_npc_messages_from_disk(data_dir)
+
         # Load NPC state from disk, or create defaults
         if not await npc_manager.load_npcs_from_disk(data_dir):
             npc_manager.create_default_npcs()
@@ -191,6 +199,7 @@ class ServiceFactory:
             terminal_manager=None,  # type: ignore[arg-type]
             connection_manager=ConnectionManager(),
             flag_service=flag_service,
+            npc_message_queue=npc_message_queue,
             start_time=start_time,
             process_table=ProcessTable.with_defaults(),
             event_bus=event_bus,
@@ -234,6 +243,7 @@ class ServiceFactory:
         game_state = mock_game_state or GameState()
         event_bus = GameEventBus()
         flag_service = FlagService(game_state=game_state, event_bus=event_bus)
+        npc_message_queue = NPCMessageQueue(game_state=game_state, event_bus=event_bus)
         app_service = mock_app_service or AppService(game_state, event_bus=event_bus)
         start_time = mock_start_time or datetime.now(tz=UTC)
 
@@ -252,6 +262,7 @@ class ServiceFactory:
             terminal_manager=None,  # type: ignore[arg-type]
             connection_manager=ConnectionManager(),
             flag_service=flag_service,
+            npc_message_queue=npc_message_queue,
             start_time=start_time,
             event_bus=event_bus,
         )

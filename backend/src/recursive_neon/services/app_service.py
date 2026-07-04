@@ -24,6 +24,7 @@ from recursive_neon.models.app_models import (
     TaskList,
 )
 from recursive_neon.models.game_state import GameState
+from recursive_neon.models.npc import QueuedMessage
 from recursive_neon.services.interfaces import IGameEventBus
 
 logger = logging.getLogger(__name__)
@@ -823,6 +824,47 @@ class AppService:
             logger.warning("Corrupt flags.json: %s", e)
             return False
 
+    async def save_npc_messages_to_disk(
+        self, data_dir: str = "backend/game_data"
+    ) -> None:
+        """Save pending NPC messages to disk."""
+        async with self._save_lock:
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "npc_messages.json",
+                {
+                    "messages": [
+                        msg.model_dump(mode="json")
+                        for msg in self.game_state.npc_messages
+                    ]
+                },
+            )
+
+    async def load_npc_messages_from_disk(
+        self, data_dir: str = "backend/game_data"
+    ) -> bool:
+        """Load pending NPC messages from disk.
+
+        Returns True if a file was found.  Corrupt files are logged and
+        treated as missing (non-fatal), so a bad ``npc_messages.json``
+        cannot block startup.
+        """
+        data = await asyncio.to_thread(
+            self._sync_load_json, data_dir, "npc_messages.json"
+        )
+        if data is None:
+            return False
+        try:
+            raw = data.get("messages", [])
+            self.game_state.npc_messages = [
+                QueuedMessage.model_validate(item) for item in raw
+            ]
+            return True
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("Corrupt npc_messages.json: %s", e)
+            return False
+
     async def save_all_to_disk(self, data_dir: str = "backend/game_data") -> None:
         """Save all state (filesystem, notes, tasks) to disk."""
         async with self._save_lock:
@@ -865,6 +907,17 @@ class AppService:
                 "flags.json",
                 {"flags": self.game_state.flags},
             )
+            await asyncio.to_thread(
+                self._sync_save_json,
+                data_dir,
+                "npc_messages.json",
+                {
+                    "messages": [
+                        msg.model_dump(mode="json")
+                        for msg in self.game_state.npc_messages
+                    ]
+                },
+            )
 
     async def load_all_from_disk(self, data_dir: str = "backend/game_data") -> bool:
         """Load all state from disk. Returns True if filesystem was loaded."""
@@ -872,6 +925,7 @@ class AppService:
         await self.load_notes_from_disk(data_dir)
         await self.load_tasks_from_disk(data_dir)
         await self.load_flags_from_disk(data_dir)
+        await self.load_npc_messages_from_disk(data_dir)
         return fs_loaded
 
     def _safe_roots(self) -> list[Path]:

@@ -11,10 +11,11 @@ These interfaces enable:
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from recursive_neon.models.app_models import FileNode, Note, Task, TaskList
-from recursive_neon.models.npc import NPC, ChatResponse
+from recursive_neon.models.npc import NPC, ChatResponse, QueuedMessage
 
 # ============================================================================
 # LLM Interface (for LangChain compatibility)
@@ -130,6 +131,30 @@ class IFlagService(Protocol):
     def get_flag(self, key: str, default: Any = None) -> Any: ...
     def has_flag(self, key: str) -> bool: ...
     def list_flags(self) -> dict[str, Any]: ...
+
+
+# ============================================================================
+# NPC Message Queue Interface
+# ============================================================================
+
+
+@runtime_checkable
+class INPCMessageQueue(Protocol):
+    """Protocol for the pending NPC→player message queue (Phase 9d).
+
+    Messages accumulate until the next session start, where the shell
+    renders them via :meth:`pending` and marks each shown id delivered via
+    :meth:`mark_delivered`.
+    """
+
+    def queue(
+        self,
+        npc_id: str,
+        text: str,
+        deliver_after: datetime | None = None,
+    ) -> str: ...
+    def pending(self, npc_id: str | None = None) -> list[QueuedMessage]: ...
+    def mark_delivered(self, message_id: str) -> None: ...
 
 
 # ============================================================================

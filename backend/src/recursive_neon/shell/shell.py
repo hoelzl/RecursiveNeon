@@ -32,6 +32,7 @@ from recursive_neon.shell.output import (
     MAGENTA,
     RED,
     RESET,
+    YELLOW,
     CapturedOutput,
     Output,
 )
@@ -250,6 +251,13 @@ class Shell:
 
         self.output.write(WELCOME_BANNER)
 
+        # Deliver any NPC messages that arrived while the player was away
+        # (Phase 9d).  Failures here must not block the shell from starting.
+        try:
+            await self._deliver_pending_npc_messages()
+        except Exception:
+            logger.exception("Failed to deliver pending NPC messages")
+
         while True:
             try:
                 prompt_text = self._build_prompt()
@@ -288,6 +296,38 @@ class Shell:
             logger.info("Game state saved to %s", self.data_dir)
         except Exception as e:
             logger.error("Failed to save game state: %s", e)
+
+    async def _deliver_pending_npc_messages(self) -> None:
+        """Render NPC messages queued since the player's last session.
+
+        Looks up the source NPC's display name (falling back to the id),
+        writes a "Messages while you were away" block in the chat style,
+        and marks each shown message delivered so it will not re-show.
+        Display-only — messages are NOT appended to NPC conversation
+        history; responding remains a player-initiated ``chat`` action.
+        """
+        container = self.session.container
+        queue = container.npc_message_queue
+        pending = queue.pending()
+        if not pending:
+            return
+
+        out = self.output
+        out.writeln()
+        out.writeln(out.styled("── Messages while you were away ", DIM) + "─" * 36)
+        for message in pending:
+            npc = container.npc_manager.get_npc(message.npc_id)
+            name = npc.name if npc is not None else message.npc_id
+            timestamp = message.queued_at.strftime("%H:%M:%S")
+            out.writeln(
+                f"[{out.styled(name, YELLOW)}] "
+                f"{out.styled(timestamp, DIM)} — {message.text}"
+            )
+        out.writeln("─" * 60)
+        out.writeln()
+
+        for message in pending:
+            queue.mark_delivered(message.id)
 
     async def execute_line(self, line: str) -> int:
         """Parse and execute a single command line under the shell state lock."""

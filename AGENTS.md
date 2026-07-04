@@ -15,11 +15,11 @@ This file is the single source of truth for AI coding agents working on Recursiv
 - Additional **TUI apps/minigames** (`codebreaker`, `sysmon`, `fsbrowse`, `portscan`, `memdump`).
 - A **WebSocket terminal protocol** (`/ws/terminal`) that serves the same shell to a Python CLI client and to a React/xterm.js browser terminal.
 
-**Current status**: V2 reboot. Phases 0-7f are complete. Phase 8 tasks 1-3 (xterm.js browser terminal over `/ws/terminal`) are implemented. Phase 9a (flag/quest state), 9b (NPC perception filter), and 9c (knowledge gates in NPC prompts) are complete. Phase 8 tasks 4-6 (desktop chrome, GUI apps) and the remaining Phase 9 sub-phases (9d NPC initiative, 9e Director/Fate, 9f vertical slice) are the next work. The legacy v1 code lives on the `legacy/v1` branch and should never be merged.
+**Current status**: V2 reboot. Phases 0-7f are complete. Phase 8 tasks 1-3 (xterm.js browser terminal over `/ws/terminal`) are implemented. Phase 9a (flag/quest state), 9b (NPC perception filter), 9c (knowledge gates in NPC prompts), and 9d (NPC initiative + queued messages) are complete. Phase 8 tasks 4-6 (desktop chrome, GUI apps) and the remaining Phase 9 sub-phases (9e Director/Fate, 9f vertical slice) are the next work. The legacy v1 code lives on the `legacy/v1` branch and should never be merged.
 
 **Test counts (as of the latest collect)**:
 
-- Backend pytest suite: **2,619 tests** collected (1 skipped).
+- Backend pytest suite: **2,642 tests** collected (1 skipped).
 - Frontend vitest suite: **42 tests** across 3 files.
 - Editor parity harness: **32 scenarios** validated side-by-side against GNU Emacs 29.3.
 
@@ -461,7 +461,7 @@ Frontend dev server proxies `/api` and `/ws` to `localhost:8000` via `vite.confi
 ## 11. What's Next
 
 - **Phase 8 tasks 4-6**: desktop chrome, GUI apps, window manager. Re-evaluate scope after the editor-as-shell work; the roadmap in `docs/EDITOR_SHELL_ROADMAP.md` argues that a fullscreen xterm.js pane running neon-edit may satisfy most of the "desktop" need.
-- **Phase 9**: game-reactive systems. 9a (flags), 9b (NPC perception), and 9c (knowledge gates) are complete; 9d (NPC initiative + queued messages), 9e (Director/Fate system), and 9f (Act 1 vertical slice) remain. See `docs/PHASE_9_PLAN.md`.
+- **Phase 9**: game-reactive systems. 9a (flags), 9b (NPC perception), 9c (knowledge gates), and 9d (NPC initiative + queued messages) are complete; 9e (Director/Fate system) and 9f (Act 1 vertical slice) remain. See `docs/PHASE_9_PLAN.md`.
 
 ---
 
