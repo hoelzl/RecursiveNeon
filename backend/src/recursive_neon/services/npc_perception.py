@@ -3,12 +3,39 @@
 Tracks game-world events each NPC is configured to perceive, stores them in
 bounded per-NPC buffers, and renders a human-readable summary for injection
 into NPC system prompts.
+
+Events are retained as structured :class:`PerceivedEvent` records so that
+knowledge gates (Phase 9c) can query them programmatically via
+:meth:`NPCPerceptionTracker.has_observed` without depending on the
+rendered summary wording.
 """
 
 from collections import defaultdict, deque
-from typing import Any
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any, Callable, Mapping
 
 from recursive_neon.models.npc import NPC, PerceptionConfig
+
+
+@dataclass(frozen=True)
+class PerceivedEvent:
+    """A single event observed by an NPC.
+
+    Attributes:
+        event_type: The event bus channel, e.g. ``filesystem.read``.
+        data: The raw event payload as published.
+        timestamp: When the event was observed by the tracker.
+        summary: Pre-rendered human-readable line for prompt injection.
+            May be empty for event types the renderer does not know; such
+            events are still queryable via :meth:`has_observed` but are
+            omitted from :meth:`render_for` output.
+    """
+
+    event_type: str
+    data: dict[str, Any]
+    timestamp: datetime
+    summary: str
 
 
 class NPCPerceptionTracker:
@@ -23,7 +50,7 @@ class NPCPerceptionTracker:
 
     def __init__(self) -> None:
         self._configs: dict[str, PerceptionConfig] = {}
-        self._buffers: dict[str, deque[str]] = defaultdict(
+        self._buffers: dict[str, deque[PerceivedEvent]] = defaultdict(
             lambda: deque(maxlen=NPCPerceptionTracker._default_buffer_size())
         )
 
@@ -39,7 +66,7 @@ class NPCPerceptionTracker:
         size = npc.perception.buffer_size
         existing = self._buffers.get(npc.id)
         if existing is None or existing.maxlen != size:
-            new_buffer: deque[str] = deque(maxlen=size)
+            new_buffer: deque[PerceivedEvent] = deque(maxlen=size)
             if existing:
                 new_buffer.extend(existing)
             self._buffers[npc.id] = new_buffer
@@ -52,21 +79,99 @@ class NPCPerceptionTracker:
             if not self._is_subscribed(npc_id, config, event_type, data):
                 continue
             summary = self._format_event(event_type, data)
-            if summary:
-                self._buffers[npc_id].append(summary)
+            # Store the structured record regardless of whether the renderer
+            # knows this event type: knowledge gates query by event_type/data
+            # and must be able to observe events that have no summary.
+            self._buffers[npc_id].append(
+                PerceivedEvent(
+                    event_type=event_type,
+                    data=data,
+                    timestamp=datetime.now(tz=UTC),
+                    summary=summary,
+                )
+            )
 
     def render_for(self, npc_id: str) -> str:
-        """Return a newline-separated summary of recent perceived events."""
+        """Return a newline-separated summary of recent perceived events.
+
+        Events whose summary is empty (unknown event types) are omitted from
+        the rendered prompt output.
+        """
         buffer = self._buffers.get(npc_id)
         if not buffer:
             return ""
-        return "\n".join(buffer)
+        return "\n".join(event.summary for event in buffer if event.summary)
+
+    def has_observed(
+        self,
+        npc_id: str,
+        event_type: str | None = None,
+        *,
+        data_match: Mapping[str, Any] | None = None,
+        min_count: int = 1,
+        predicate: Callable[[PerceivedEvent], bool] | None = None,
+    ) -> bool:
+        """Return True if *npc_id* has observed enough matching events.
+
+        Args:
+            npc_id: The NPC whose buffer to query.
+            event_type: If given, only count events whose ``event_type``
+                equals this string.
+            data_match: If given, a mapping of required ``data`` fields.
+                String values are matched as ``startswith`` prefixes (so
+                ``{"path": "/tmp/review/"}`` matches ``/tmp/review/log.txt``);
+                non-string values are compared by equality.
+            min_count: Minimum number of matching events required. Defaults
+                to ``1``.
+            predicate: Optional extra callable applied to each candidate
+                :class:`PerceivedEvent`. Use this for matchers that cannot be
+                expressed via ``data_match`` (e.g. substring search across
+                reconstructed command lines).
+
+        Returns:
+            True once at least ``min_count`` matching events are found.
+        """
+        buffer = self._buffers.get(npc_id)
+        if not buffer:
+            return False
+        count = 0
+        for event in buffer:
+            if event_type is not None and event.event_type != event_type:
+                continue
+            if data_match is not None and not self._data_matches(
+                event.data, data_match
+            ):
+                continue
+            if predicate is not None and not predicate(event):
+                continue
+            count += 1
+            if count >= min_count:
+                return True
+        return False
 
     def clear(self, npc_id: str) -> None:
         """Clear the perception buffer for a single NPC."""
         buffer = self._buffers.get(npc_id)
         if buffer is not None:
             buffer.clear()
+
+    @staticmethod
+    def _data_matches(actual: dict[str, Any], requested: Mapping[str, Any]) -> bool:
+        """Subset-match *requested* against *actual* event data.
+
+        String values use ``startswith`` so filesystem path prefixes work
+        naturally; all other values use equality.
+        """
+        for key, value in requested.items():
+            if key not in actual:
+                return False
+            actual_value = actual[key]
+            if isinstance(value, str) and isinstance(actual_value, str):
+                if not actual_value.startswith(value):
+                    return False
+            elif actual_value != value:
+                return False
+        return True
 
     def _is_subscribed(
         self,
@@ -148,5 +253,6 @@ class NPCPerceptionTracker:
             text = data.get("text", "")
             return f"{source} said: {text}"
 
-        # Unknown event types are ignored by the renderer.
+        # Unknown event types have no rendered summary; they remain
+        # queryable via has_observed.
         return ""

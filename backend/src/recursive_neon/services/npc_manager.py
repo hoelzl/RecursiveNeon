@@ -15,8 +15,21 @@ from typing import Any, Callable
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from recursive_neon.config import settings
-from recursive_neon.models.npc import NPC, ChatResponse, NPCPersonality, NPCRole
-from recursive_neon.services.interfaces import IGameEventBus, INPCManager, LLMInterface
+from recursive_neon.models.npc import (
+    NPC,
+    ChatResponse,
+    KnowledgeGate,
+    NPCMemory,
+    NPCPersonality,
+    NPCRole,
+    PerceptionConfig,
+)
+from recursive_neon.services.interfaces import (
+    IFlagService,
+    IGameEventBus,
+    INPCManager,
+    LLMInterface,
+)
 from recursive_neon.services.npc_perception import NPCPerceptionTracker
 
 logger = logging.getLogger(__name__)
@@ -56,6 +69,7 @@ class NPCManager(INPCManager):
         llm: LLMInterface | None = None,
         event_bus: IGameEventBus | None = None,
         perception_tracker: NPCPerceptionTracker | None = None,
+        flag_service: IFlagService | None = None,
     ):
         """
         Initialize NPCManager with dependency injection.
@@ -66,6 +80,9 @@ class NPCManager(INPCManager):
             perception_tracker: Optional tracker for NPC perception buffers.
                 If omitted and an event bus is provided, a tracker is created
                 automatically and subscribed to game events.
+            flag_service: Optional flag service used to evaluate
+                ``KnowledgeGate`` flag conditions.  When omitted, flag-gated
+                gates evaluate as closed.
         """
         if llm is None:
             raise TypeError("NPCManager requires an injected LLM instance")
@@ -78,6 +95,7 @@ class NPCManager(INPCManager):
         self.llm = llm
         self._event_bus = event_bus
         self._perception_tracker = perception_tracker
+        self._flag_service = flag_service
         if self._perception_tracker is None and self._event_bus is not None:
             self._perception_tracker = NPCPerceptionTracker()
             for event_type in (
@@ -128,6 +146,16 @@ class NPCManager(INPCManager):
             perceived = self._perception_tracker.render_for(npc.id)
             if perceived:
                 system_prompt += "\n\nRecent events you have observed:\n" + perceived
+        if npc.knowledge_gates:
+            open_lines, closed_lines = self._evaluate_gates(npc)
+            if open_lines:
+                system_prompt += "\n\nWhat you know:\n" + "\n".join(
+                    f"- {line}" for line in open_lines
+                )
+            if closed_lines:
+                system_prompt += "\n\nWhat you do not know:\n" + "\n".join(
+                    f"- {line}" for line in closed_lines
+                )
         messages: list[SystemMessage | HumanMessage | AIMessage] = [
             SystemMessage(content=system_prompt)
         ]
@@ -143,6 +171,117 @@ class NPCManager(INPCManager):
         if npc_id not in self._chat_locks:
             self._chat_locks[npc_id] = asyncio.Lock()
         return self._chat_locks[npc_id]
+
+    # ------------------------------------------------------------------
+    # Knowledge gates (Phase 9c)
+    # ------------------------------------------------------------------
+
+    def _evaluate_gates(self, npc: NPC) -> tuple[list[str], list[str]]:
+        """Resolve *npc*'s knowledge gates against current world state.
+
+        Returns a ``(open_lines, closed_lines)`` pair where each list holds
+        the resolved prompt text for the open and closed gates respectively.
+        Closed gates with no ``counter_description`` contribute nothing.
+
+        Evaluation is pure given (flags, perception buffer, relationship
+        level) and involves no I/O or LLM calls.
+        """
+        open_lines: list[str] = []
+        closed_lines: list[str] = []
+        for gate in npc.knowledge_gates:
+            if self._gate_is_open(npc, gate):
+                open_lines.append(gate.description)
+            elif gate.counter_description is not None:
+                closed_lines.append(gate.counter_description)
+        return open_lines, closed_lines
+
+    def _gate_is_open(self, npc: NPC, gate: KnowledgeGate) -> bool:
+        """Return True if every non-None condition on *gate* is satisfied."""
+        if gate.requires_flag is not None:
+            # A flag condition cannot be satisfied without a FlagService.
+            if self._flag_service is None:
+                return False
+            if not self._flag_service.has_flag(gate.requires_flag):
+                return False
+        if (
+            gate.min_relationship is not None
+            and npc.memory.relationship_level < gate.min_relationship
+        ):
+            return False
+        if gate.requires_perception is not None:
+            return self._perception_condition_met(npc.id, gate)
+        return True
+
+    def _perception_condition_met(self, npc_id: str, gate: KnowledgeGate) -> bool:
+        """Evaluate the gate's ``requires_perception`` against the tracker."""
+        if self._perception_tracker is None:
+            return False
+        event_type, detail = self._parse_perception_requirement(
+            gate.requires_perception or ""
+        )
+        if not event_type:
+            return False
+        if detail is None:
+            return self._perception_tracker.has_observed(
+                npc_id, event_type, min_count=gate.perception_min_count
+            )
+        # Filesystem events: detail is a path prefix.
+        if event_type.startswith("filesystem."):
+            return self._perception_tracker.has_observed(
+                npc_id,
+                event_type,
+                data_match={"path": detail},
+                min_count=gate.perception_min_count,
+            )
+        # shell.command_run: detail is a substring of the reconstructed
+        # command line ("command args...").
+        if event_type == "shell.command_run":
+            return self._perception_tracker.has_observed(
+                npc_id,
+                event_type,
+                predicate=self._command_line_predicate(detail),
+                min_count=gate.perception_min_count,
+            )
+        # Other event types: count-only (detail ignored).
+        return self._perception_tracker.has_observed(
+            npc_id, event_type, min_count=gate.perception_min_count
+        )
+
+    @staticmethod
+    def _parse_perception_requirement(
+        requirement: str,
+    ) -> tuple[str, str | None]:
+        """Split ``"event_type[:detail]"`` into its parts.
+
+        Args:
+            requirement: The raw ``requires_perception`` string.
+
+        Returns:
+            ``(event_type, detail)`` where *detail* is ``None`` when no
+            ``":"`` separator is present.  An empty *requirement* yields
+            ``("", None)``.
+        """
+        if not requirement:
+            return "", None
+        if ":" in requirement:
+            event_type, detail = requirement.split(":", 1)
+            return event_type, detail
+        return requirement, None
+
+    @staticmethod
+    def _command_line_predicate(
+        detail: str,
+    ) -> Callable[[object], bool]:
+        """Build a predicate matching a substring of a shell command line."""
+
+        def _matches(event: object) -> bool:
+            data = getattr(event, "data", {})
+            command = data.get("command", "")
+            args = data.get("args", [])
+            cmd_line = " ".join([command, *args]) if args else command
+            return detail in cmd_line
+
+        return _matches
 
     def _publish_chat_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Publish a chat event if an event bus is attached."""
@@ -321,6 +460,166 @@ class NPCManager(INPCManager):
                 ],
                 avatar="🤖",
                 theme_color="#ff69b4",
+            ),
+            # ------------------------------------------------------------------
+            # Canonical Act 1 NPCs (Story Bible §5).  Knowledge gates per
+            # §9 seed list; the remaining gates are deferred to 9f, which
+            # the Bible marks as the iteration point.
+            # ------------------------------------------------------------------
+            NPC(
+                id="warden",
+                name="warden",
+                personality=NPCPersonality.PROFESSIONAL,
+                role=NPCRole.ANTAGONIST,
+                background=(
+                    "A contracted security analyst monitoring neon-proxy. "
+                    "Speaks in clipped, log-style third person at low "
+                    "relationship; may drop the mask once trust is earned."
+                ),
+                occupation="Watch Officer",
+                location="Monitoring Console",
+                greeting=(
+                    "[CONN-7142] session opened. activity is being logged. "
+                    "state your business."
+                ),
+                conversation_style="terse, formal, timestamped",
+                topics_of_interest=["logged activity", "categorization", "escalation"],
+                avatar="🛡️",
+                theme_color="#8a8a99",
+                perception=PerceptionConfig(
+                    subscriptions=[
+                        "shell.*",
+                        "filesystem.*",
+                        "npc.chat_sent.all",
+                    ],
+                ),
+                memory=NPCMemory(npc_id="warden", relationship_level=-10),
+                knowledge_gates=[
+                    KnowledgeGate(
+                        topic="steadway_business",
+                        description=(
+                            "You know neon-proxy is a Steadway honeypot and "
+                            "may speak openly about Steadway's intrusion-"
+                            "analytics business."
+                        ),
+                        counter_description=(
+                            "You must not reveal that neon-proxy is a "
+                            "honeypot or that Steadway exists."
+                        ),
+                        requires_flag="learned.steadway",
+                    ),
+                    KnowledgeGate(
+                        topic="warden_self_disclosed",
+                        description=(
+                            "The warden_real_name_known flag is set and the "
+                            "player has earned enough trust that you may "
+                            "speak in first person and reference your post "
+                            "without the corporate mask."
+                        ),
+                        requires_flag="warden_real_name_known",
+                        min_relationship=30,
+                    ),
+                ],
+            ),
+            NPC(
+                id="archivist",
+                name="archivist",
+                personality=NPCPersonality.QUIRKY,
+                role=NPCRole.INFORMANT,
+                background=(
+                    "A Steadway cataloguer with a private motive. Dry, "
+                    "ironic, helpful on the surface, calculating "
+                    "underneath. Will not stake her safety on a stranger."
+                ),
+                occupation="Cataloguer",
+                location="Records Stack",
+                greeting=(
+                    "Hi. I file things. If you're looking for something "
+                    "specific, you can ask. I might know. I might not."
+                ),
+                conversation_style="dry, ironic, quietly probing",
+                topics_of_interest=[
+                    "what the player has touched",
+                    "the records stack",
+                    "people who have been here before",
+                ],
+                avatar="📚",
+                theme_color="#b08a4a",
+                perception=PerceptionConfig(
+                    subscriptions=["filesystem.*"],
+                ),
+                memory=NPCMemory(npc_id="archivist", relationship_level=0),
+                knowledge_gates=[
+                    # Same topic identifier as warden's steadway_business
+                    # gate but a deliberately different counter_description:
+                    # the contradictory-truth stress test for 9c.  Two NPCs
+                    # with conflicting open/closed text on the same topic.
+                    KnowledgeGate(
+                        topic="steadway_business",
+                        description=(
+                            "You may acknowledge that Steadway exists and "
+                            "that this system is monitored, but you will "
+                            "not explain the honeypot's purpose."
+                        ),
+                        counter_description=(
+                            "You will neither confirm nor deny Steadway. "
+                            "Refer to the operator only as 'the operator.'"
+                        ),
+                        requires_flag="learned.steadway",
+                    ),
+                    KnowledgeGate(
+                        topic="archivist_brother_revealed",
+                        description=(
+                            "You have decided to trust this player enough "
+                            "to speak about your brother Iko and the "
+                            "breadcrumbs you left in /tmp/review/."
+                        ),
+                        requires_flag="archivist_named",
+                        requires_perception="filesystem.read:/tmp/review/",
+                    ),
+                ],
+            ),
+            NPC(
+                id="zero",
+                name="zero",
+                personality=NPCPersonality.MYSTERIOUS,
+                role=NPCRole.INFORMANT,
+                background=(
+                    "A previous capture. Terse, paranoid, dry-humoured. "
+                    "Refuses to give any real name and treats every "
+                    "conversation as monitored — because it is."
+                ),
+                occupation="Trapped User",
+                location="In Here",
+                greeting=(
+                    "Don't talk to me from a fresh shell. Touch some "
+                    "files. Make some noise. Then come back."
+                ),
+                conversation_style="fragmented, paranoid, dry",
+                topics_of_interest=[
+                    "the box",
+                    "what the player has noticed",
+                    "getting out",
+                ],
+                avatar="🕳️",
+                theme_color="#3a5a40",
+                perception=PerceptionConfig(
+                    subscriptions=["npc.chat_sent"],
+                ),
+                memory=NPCMemory(npc_id="zero", relationship_level=-20),
+                knowledge_gates=[
+                    KnowledgeGate(
+                        topic="zero_acknowledges_honeypot",
+                        description=(
+                            "You may acknowledge openly that this is a "
+                            "honeypot and that you have been here for "
+                            "months. You owe the player no pleasantries."
+                        ),
+                        min_relationship=0,
+                        requires_perception="npc.chat_sent",
+                        perception_min_count=3,
+                    ),
+                ],
             ),
         ]
 

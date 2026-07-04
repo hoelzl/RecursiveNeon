@@ -100,7 +100,7 @@ class TestNPCEndpoints:
         resp = client.get("/npcs")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["npcs"]) == 5
+        assert len(data["npcs"]) == 8
 
     def test_get_npc_exists(self, client):
         resp = client.get("/npcs/receptionist_aria")
@@ -163,7 +163,7 @@ class TestStatsEndpoint:
         data = resp.json()
         assert "system" in data
         assert "npc_manager" in data
-        assert data["npc_manager"]["total_npcs"] == 5
+        assert data["npc_manager"]["total_npcs"] == 8
 
 
 # ============================================================================
@@ -185,7 +185,7 @@ class TestHandleWsMessage:
     async def test_get_npcs(self, ws_container):
         resp = await handle_ws_message(ws_container, "get_npcs", {})
         assert resp["type"] == "npcs_list"
-        assert len(resp["data"]["npcs"]) == 5
+        assert len(resp["data"]["npcs"]) == 8
 
     async def test_chat_message(self, ws_container, mock_llm):
         from langchain_core.messages import AIMessage
@@ -250,7 +250,7 @@ class TestWebSocket:
             ws.send_json({"type": "get_npcs", "data": {}})
             resp = ws.receive_json()
             assert resp["type"] == "npcs_list"
-            assert len(resp["data"]["npcs"]) == 5
+            assert len(resp["data"]["npcs"]) == 8
 
 
 # ============================================================================

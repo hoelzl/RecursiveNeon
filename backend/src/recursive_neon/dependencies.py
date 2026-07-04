@@ -109,9 +109,10 @@ class ServiceFactory:
         ollama_client: IOllamaClient | None = None,
         llm: LLMInterface | None = None,
         event_bus: IGameEventBus | None = None,
+        flag_service: IFlagService | None = None,
     ) -> INPCManager:
         if llm is not None:
-            return NPCManager(llm=llm, event_bus=event_bus)
+            return NPCManager(llm=llm, event_bus=event_bus, flag_service=flag_service)
         if ollama_client is None:
             raise TypeError(
                 "create_npc_manager requires either an ollama_client or an injected llm"
@@ -122,7 +123,7 @@ class ServiceFactory:
             temperature=0.7,
             max_tokens=settings.max_response_tokens,
         )
-        return NPCManager(llm=adapter, event_bus=event_bus)
+        return NPCManager(llm=adapter, event_bus=event_bus, flag_service=flag_service)
 
     @classmethod
     async def create_production_container(cls) -> ServiceContainer:
@@ -140,7 +141,9 @@ class ServiceFactory:
 
         app_service = AppService(game_state, event_bus=event_bus)
         npc_manager = cls.create_npc_manager(
-            ollama_client=ollama_client, event_bus=event_bus
+            ollama_client=ollama_client,
+            event_bus=event_bus,
+            flag_service=flag_service,
         )
 
         # Initialize state: try to load from disk, otherwise load initial state

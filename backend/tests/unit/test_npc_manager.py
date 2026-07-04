@@ -201,11 +201,12 @@ class TestNPCManagerWithDependencyInjection:
         """Test creating default NPCs."""
         npcs = npc_manager.create_default_npcs()
 
-        # Verify correct number of NPCs created
-        assert len(npcs) == 5
+        # Verify correct number of NPCs created (5 V1 placeholders + 3
+        # canonical Story Bible NPCs: warden, archivist, zero).
+        assert len(npcs) == 8
 
         # Verify they were registered
-        assert len(npc_manager.npcs) == 5
+        assert len(npc_manager.npcs) == 8
 
         # Verify NPC IDs are unique
         npc_ids = [npc.id for npc in npcs]
@@ -399,7 +400,7 @@ class TestNPCPersistence:
 
         fresh = NPCManager(llm=mock_llm)
         assert await fresh.load_npcs_from_disk(str(tmp_path)) is True
-        assert len(fresh.npcs) == 5
+        assert len(fresh.npcs) == 8
 
     async def test_load_corrupt_npcs_json(self, mock_llm, tmp_path):
         """Corrupt JSON returns False without crashing."""

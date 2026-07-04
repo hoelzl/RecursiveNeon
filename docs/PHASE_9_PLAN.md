@@ -198,6 +198,21 @@ overhear player plotting.
 
 ## 9c: Knowledge Gates in NPC Prompts
 
+> **Status (2026-07-04)**: Implemented. Engine + a representative subset
+> of gates seeded on `warden` / `archivist` / `zero`. Remaining Story
+> Bible §9 gates deferred to 9f, which the Bible marks as the iteration
+> point. Implementation notes that diverged from the original sketch:
+> - The perception tracker's buffer was upgraded from rendered strings
+>   to structured `PerceivedEvent` records so gates can query by
+>   `event_type` / `data` (the original string buffer was lossy). Prompt
+>   rendering is unchanged.
+> - `KnowledgeGate` gained `perception_min_count` and `min_relationship`
+>   fields to cover the Story Bible §9 predicate shapes (count-based
+>   perception, composite flag+relationship gates) that the original
+>   sketch did not anticipate.
+> - `FlagService` is injected into `NPCManager` and gates evaluate in
+>   `_build_messages` against `(flags, perception buffer, relationship)`.
+
 ### Goal
 
 NPC system prompts assert what each NPC *does* and *does not* know,

@@ -144,6 +144,149 @@ class TestNPCPerceptionTracker:
 
 
 @pytest.mark.unit
+class TestPerceptionQuery:
+    """Tests for the structured ``has_observed`` query API (Phase 9c)."""
+
+    def test_has_observed_false_for_empty_buffer(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["shell.*"]))
+
+        assert tracker.has_observed("npc_1", "shell.command_run") is False
+
+    def test_has_observed_true_after_matching_event(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["filesystem.*"]))
+
+        tracker.handle_event(
+            "filesystem.read", {"file_id": "f1", "path": "/etc/passwd"}
+        )
+
+        assert tracker.has_observed("npc_1", "filesystem.read") is True
+
+    def test_has_observed_ignores_non_matching_event_type(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["shell.*", "filesystem.*"]))
+
+        tracker.handle_event("filesystem.read", {"file_id": "f1", "path": "/a"})
+
+        assert tracker.has_observed("npc_1", "shell.command_run") is False
+        assert tracker.has_observed("npc_1", "filesystem.read") is True
+
+    def test_has_observed_with_data_match_exact(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["filesystem.*"]))
+
+        tracker.handle_event(
+            "filesystem.read", {"file_id": "f1", "path": "/etc/passwd"}
+        )
+        tracker.handle_event(
+            "filesystem.read", {"file_id": "f2", "path": "/etc/shadow"}
+        )
+
+        assert (
+            tracker.has_observed(
+                "npc_1", "filesystem.read", data_match={"path": "/etc/passwd"}
+            )
+            is True
+        )
+        assert (
+            tracker.has_observed(
+                "npc_1", "filesystem.read", data_match={"path": "/missing"}
+            )
+            is False
+        )
+
+    def test_has_observed_with_data_match_path_prefix(self) -> None:
+        """String data_match values use startswith, so path prefixes work."""
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["filesystem.*"]))
+
+        tracker.handle_event(
+            "filesystem.read",
+            {"file_id": "f1", "path": "/tmp/review/log.txt"},
+        )
+        tracker.handle_event(
+            "filesystem.read", {"file_id": "f2", "path": "/etc/passwd"}
+        )
+
+        assert (
+            tracker.has_observed(
+                "npc_1",
+                "filesystem.read",
+                data_match={"path": "/tmp/review/"},
+            )
+            is True
+        )
+        assert (
+            tracker.has_observed(
+                "npc_1",
+                "filesystem.read",
+                data_match={"path": "/tmp/missing/"},
+            )
+            is False
+        )
+
+    def test_has_observed_respects_min_count(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["npc.chat_sent"]))
+        tracker.register_npc(_make_npc("npc_2", ["npc.chat_sent.all"]))
+
+        for _ in range(2):
+            tracker.handle_event(
+                "npc.chat_sent", {"target_npc_id": "npc_1", "text": "hi"}
+            )
+
+        assert tracker.has_observed("npc_1", "npc.chat_sent", min_count=2) is True
+        assert tracker.has_observed("npc_1", "npc.chat_sent", min_count=3) is False
+
+    def test_has_observed_unknown_event_type_is_queryable(self) -> None:
+        """Even with no rendered summary, structured records are queryable."""
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["custom.*"]))
+
+        tracker.handle_event("custom.thing", {"x": 1})
+
+        # Not rendered...
+        assert tracker.render_for("npc_1") == ""
+        # ...but queryable.
+        assert tracker.has_observed("npc_1", "custom.thing") is True
+
+    def test_has_observed_is_per_npc_isolated(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("a", ["filesystem.*"]))
+        tracker.register_npc(_make_npc("b", ["filesystem.*"]))
+
+        tracker.handle_event("filesystem.read", {"file_id": "f1", "path": "/a"})
+        tracker.clear("b")
+
+        assert tracker.has_observed("a", "filesystem.read") is True
+        assert tracker.has_observed("b", "filesystem.read") is False
+
+    def test_has_observed_with_predicate(self) -> None:
+        tracker = NPCPerceptionTracker()
+        tracker.register_npc(_make_npc("npc_1", ["shell.*"]))
+
+        tracker.handle_event(
+            "shell.command_run",
+            {"command": "find", "args": ["-name", "*.key"], "cwd": "/"},
+        )
+        tracker.handle_event(
+            "shell.command_run", {"command": "ls", "args": [], "cwd": "/"}
+        )
+
+        def has_key_search(event: object) -> bool:
+            data = getattr(event, "data", {})
+            cmd = data.get("command", "")
+            args = data.get("args", [])
+            return "*.key" in " ".join([cmd, *args])
+
+        assert (
+            tracker.has_observed("npc_1", "shell.command_run", predicate=has_key_search)
+            is True
+        )
+
+
+@pytest.mark.unit
 class TestNPCManagerPerceptionIntegration:
     @pytest.fixture
     def bus(self) -> GameEventBus:

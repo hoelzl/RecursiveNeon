@@ -69,6 +69,55 @@ class PerceptionConfig(BaseModel):
     )
 
 
+class KnowledgeGate(BaseModel):
+    """A conditional knowledge assertion on an NPC's system prompt.
+
+    Knowledge gates are evaluated at prompt-build time in ``NPCManager``.
+    A gate whose conditions are all satisfied is *open*: its
+    ``description`` is injected under a "What you know" section.  A gate
+    whose conditions are not satisfied is *closed*: its
+    ``counter_description`` (if any) is injected under a "What you do not
+    know" section; closed gates without a ``counter_description`` are
+    silent.
+
+    The model intentionally holds no service references: evaluation is
+    performed by ``NPCManager`` against the injected ``FlagService`` and
+    the NPC's ``NPCPerceptionTracker``.
+
+    ``requires_perception`` grammar:
+
+        - ``"filesystem.read"``               — any event of that type
+        - ``"filesystem.read:/tmp/review/"``  — event_type ``":"`` literal
+          detail; for ``filesystem.*`` events the detail is matched as a
+          path prefix on ``data["path"]``, and for ``shell.command_run``
+          as a substring of the reconstructed command line.
+    """
+
+    topic: str = Field(..., description="Gate identifier, e.g. 'steadway_business'")
+    description: str = Field(
+        ...,
+        description="Prompt text injected under 'What you know' when the gate is open",
+    )
+    counter_description: str | None = Field(
+        default=None,
+        description="Prompt text injected under 'What you do not know' when closed",
+    )
+    requires_flag: str | None = Field(
+        default=None, description="Flag key that must be truthy for the gate to open"
+    )
+    requires_perception: str | None = Field(
+        default=None,
+        description="Event-type or 'event_type:detail' that must have been observed",
+    )
+    perception_min_count: int = Field(
+        default=1, description="Minimum matching observed events for the gate to open"
+    )
+    min_relationship: int | None = Field(
+        default=None,
+        description="Floor on NPC.memory.relationship_level for the gate to open",
+    )
+
+
 class NPC(BaseModel):
     """NPC definition"""
 
@@ -107,6 +156,9 @@ class NPC(BaseModel):
 
     # Perception
     perception: PerceptionConfig = Field(default_factory=PerceptionConfig)
+
+    # Knowledge gates (Phase 9c) — evaluated by NPCManager at prompt-build time.
+    knowledge_gates: list[KnowledgeGate] = Field(default_factory=list)
 
     def model_post_init(self, __context: object) -> None:
         """Sync memory.npc_id with self.id after construction."""
