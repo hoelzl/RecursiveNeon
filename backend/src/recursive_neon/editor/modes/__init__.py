@@ -168,6 +168,15 @@ defmode(
 )
 
 
+def build_core_modes() -> dict[str, Mode]:
+    """Return fresh modes for the deterministic core editor profile."""
+    fundamental = Mode(
+        name="fundamental-mode",
+        doc="The default major mode with no special behaviour.",
+    )
+    return {fundamental.name: fundamental}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Auto-mode detection
 # ═══════════════════════════════════════════════════════════════════════

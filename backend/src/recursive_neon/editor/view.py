@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from recursive_neon.editor.default_commands import build_default_keymap
 from recursive_neon.editor.editor import Editor
 from recursive_neon.editor.faces import resolve_face
 from recursive_neon.editor.mark import Mark
@@ -58,7 +57,11 @@ class EditorView:
     """
 
     def __init__(self, editor: Editor | None = None) -> None:
-        self.editor = editor or Editor(global_keymap=build_default_keymap())
+        if editor is None:
+            from recursive_neon.editor.default_commands import build_default_keymap
+
+            editor = Editor(global_keymap=build_default_keymap())
+        self.editor = editor
         self._width: int = 80
         self._height: int = 24
         self._tui_launcher: Callable | None = None
@@ -971,6 +974,8 @@ def create_editor_for_file(
 
     This is the convenience factory used by the shell command.
     """
+    from recursive_neon.editor.default_commands import build_default_keymap
+
     editor = Editor(global_keymap=build_default_keymap())
     editor.create_buffer(name=name, text=content, filepath=filepath)
     # Auto-detect major mode from file extension

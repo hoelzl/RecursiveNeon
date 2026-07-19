@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 # into this one, so the order is safe).
 import recursive_neon.editor.isearch_commands  # noqa: F401
 from recursive_neon.editor.commands import defcommand
+from recursive_neon.editor.editing_primitives import auto_fill_break as _auto_fill_break
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.mark import Mark
 from recursive_neon.editor.register_commands import (  # noqa: F401
@@ -245,26 +246,6 @@ def self_insert_command(ed: Editor, prefix: int | None) -> None:
         buf = ed.buffer
         if buf.point.col > fill_col:
             _auto_fill_break(buf, fill_col)
-
-
-def _auto_fill_break(buf: Buffer, fill_col: int) -> None:
-    """Break the current line at the last space before *fill_col*."""
-    line = buf.lines[buf.point.line]
-    # Find the last space at or before fill_col
-    break_col = line.rfind(" ", 0, fill_col)
-    if break_col <= 0:
-        return
-    # Replace the space with a newline
-    saved_line = buf.point.line
-    saved_col = buf.point.col
-    buf.point.move_to(saved_line, break_col)
-    buf.delete_char_forward()  # remove the space
-    buf.insert_char("\n")
-    # Restore point relative to the break
-    if saved_col > break_col:
-        buf.point.move_to(saved_line + 1, saved_col - break_col - 1)
-    else:
-        buf.point.move_to(saved_line, saved_col)
 
 
 @defcommand("newline", "Insert a newline.")
