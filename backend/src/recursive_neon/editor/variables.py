@@ -122,3 +122,21 @@ defvar(
     "``column-number-mode`` command.",
     var_type=bool,
 )
+
+
+def build_core_variables() -> dict[str, EditorVariable]:
+    """Return fresh built-in variables for the deterministic core profile."""
+    specs = (
+        ("fill-column", 70, int),
+        ("tab-width", 8, int),
+        ("indent-tabs-mode", False, bool),
+        ("truncate-lines", True, bool),
+        ("auto-fill", False, bool),
+        ("case-fold-search", True, bool),
+        ("line-number-mode", True, bool),
+        ("column-number-mode", False, bool),
+    )
+    return {
+        name: EditorVariable(name=name, default=default, type=var_type)
+        for name, default, var_type in specs
+    }

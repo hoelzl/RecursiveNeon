@@ -12,15 +12,15 @@ Undo boundaries are inserted automatically between commands.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
 
 from recursive_neon.editor.buffer import Buffer
-from recursive_neon.editor.commands import COMMANDS
+from recursive_neon.editor.commands import COMMANDS, Command
 from recursive_neon.editor.keymap import Keymap
 from recursive_neon.editor.killring import KillRing
 from recursive_neon.editor.minibuffer import CompleterFn, Minibuffer
-from recursive_neon.editor.modes import MODES
-from recursive_neon.editor.variables import VARIABLES
+from recursive_neon.editor.modes import MODES, Mode
+from recursive_neon.editor.variables import VARIABLES, EditorVariable
 
 if TYPE_CHECKING:
     from recursive_neon.editor.replace_commands import _QueryReplaceSession
@@ -68,7 +68,14 @@ class _RegisterSession:
 class Editor:
     """Top-level editor state and command dispatch."""
 
-    def __init__(self, *, global_keymap: Keymap | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        global_keymap: Keymap | None = None,
+        commands: Mapping[str, Command] | None = None,
+        modes: Mapping[str, Mode] | None = None,
+        variables: Mapping[str, EditorVariable] | None = None,
+    ) -> None:
         # Buffer management
         self._buffers: list[Buffer] = []
         self._current_index: int = 0
@@ -81,6 +88,13 @@ class Editor:
 
         # Keymap — the global keymap is the root of the lookup chain
         self.global_keymap: Keymap = global_keymap or Keymap("global")
+        self.commands: Mapping[str, Command] = (
+            commands if commands is not None else COMMANDS
+        )
+        self.modes: Mapping[str, Mode] = modes if modes is not None else MODES
+        self.variables: Mapping[str, EditorVariable] = (
+            variables if variables is not None else VARIABLES
+        )
 
         # Prefix key state: when a prefix keymap is active, the next
         # key is looked up in it instead of the global keymap.
@@ -268,7 +282,7 @@ class Editor:
         buf = Buffer(name=name, text=text, filepath=filepath)
         buf.kill_ring = self.kill_ring  # share the kill ring
         # Assign the default major mode
-        fundamental = MODES.get("fundamental-mode")
+        fundamental = self.modes.get("fundamental-mode")
         if fundamental is not None:
             buf.major_mode = fundamental
         self._buffers.append(buf)
@@ -713,7 +727,7 @@ class Editor:
 
     def _execute_command_by_name(self, name: str, *, key: str | None = None) -> None:
         """Look up and execute a named command."""
-        cmd = COMMANDS.get(name)
+        cmd = self.commands.get(name)
         if cmd is None:
             self.message = f"Unknown command: {name}"
             self._prefix_arg = None
@@ -779,7 +793,7 @@ class Editor:
 
         Returns True if the command was found and executed.
         """
-        cmd = COMMANDS.get(name)
+        cmd = self.commands.get(name)
         if cmd is None:
             return False
         # Same ``undo``-is-chaining and coalescing exceptions as
@@ -916,7 +930,7 @@ class Editor:
             key_str = key
 
         if isinstance(target, str):
-            cmd = COMMANDS.get(target)
+            cmd = self.commands.get(target)
             doc = cmd.doc if cmd else ""
             lines = [
                 f"{key_str} runs the command {target}",
@@ -989,14 +1003,14 @@ class Editor:
         if buf.major_mode is not None and name in buf.major_mode.variables:
             return buf.major_mode.variables[name]
         # 4. Global default
-        var = VARIABLES.get(name)
+        var = self.variables.get(name)
         if var is not None:
             return var.default
         return None
 
     def set_variable(self, name: str, value: Any) -> None:
         """Set a variable's global default.  Validates the value."""
-        var = VARIABLES.get(name)
+        var = self.variables.get(name)
         if var is None:
             self.message = f"Unknown variable: {name}"
             return
@@ -1017,7 +1031,7 @@ class Editor:
         user runs ``M-x text-mode``. Pass ``verbose=True`` to surface the
         mode name as a one-shot message (mostly useful for debugging).
         """
-        mode = MODES.get(mode_name)
+        mode = self.modes.get(mode_name)
         if mode is None or not mode.is_major:
             self.message = f"Unknown major mode: {mode_name}"
             return False
@@ -1040,7 +1054,7 @@ class Editor:
         If inactive, activate it (call ``on_enter``).
         Returns False if the mode is not found.
         """
-        mode = MODES.get(mode_name)
+        mode = self.modes.get(mode_name)
         if mode is None or mode.is_major:
             self.message = f"Unknown minor mode: {mode_name}"
             return False
@@ -1137,7 +1151,7 @@ class Editor:
         if buf is None:
             buf = Buffer(name=buf_name, text="")
             buf.kill_ring = self.kill_ring
-            fundamental = MODES.get("fundamental-mode")
+            fundamental = self.modes.get("fundamental-mode")
             if fundamental is not None:
                 buf.major_mode = fundamental
             self._buffers.append(buf)
